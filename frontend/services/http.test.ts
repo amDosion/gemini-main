@@ -115,4 +115,35 @@ describe('http service utilities', () => {
 
     await expect(requestJson('/api/fail')).rejects.toThrow('body.modelId: Field required');
   });
+
+  it('redacts sensitive credentials from surfaced JSON error messages', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          detail:
+            'download failed for https://files.example.com/object.png?token=secret-token&safe=1 using Bearer secret-bearer and api_key=secret-api-key',
+        }),
+        {
+          status: 502,
+          headers: { 'content-type': 'application/json' },
+        }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    let message = '';
+    try {
+      await requestJson('/api/fail');
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).not.toContain('secret-token');
+    expect(message).not.toContain('secret-bearer');
+    expect(message).not.toContain('secret-api-key');
+    expect(message).toContain('token=REDACTED');
+    expect(message).toContain('safe=1');
+    expect(message).toContain('Bearer REDACTED');
+    expect(message).toContain('api_key=REDACTED');
+  });
 });

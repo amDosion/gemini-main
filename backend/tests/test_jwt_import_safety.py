@@ -29,6 +29,8 @@ def _run_python(snippet: str) -> subprocess.CompletedProcess:
         cwd=backend_dir,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
 
@@ -251,6 +253,27 @@ def test_main_does_not_call_create_all_at_import_time():
     # If the app cannot import at all for unrelated env reasons (missing DB driver
     # etc.), surface that clearly rather than silently passing.
     assert "NO_CREATE_ALL_AT_IMPORT" in proc.stdout, (
+        f"stdout={proc.stdout!r}\nstderr={proc.stderr!r}"
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_main_startup_log_text_redacts_exception_content():
+    snippet = """
+        import os
+        os.environ.setdefault("JWT_SECRET_KEY", "import-safety-secret-dddddddddddd")
+
+        from app.main import _safe_startup_log_text
+
+        secret = "startup-secret-token"
+        output = _safe_startup_log_text(RuntimeError(f"route registration failed {secret}"))
+        assert secret not in output
+        assert "route registration failed" not in output
+        assert "RuntimeError" in output
+        print("SAFE_STARTUP_LOG_TEXT")
+    """
+    proc = _run_python(snippet)
+    assert "SAFE_STARTUP_LOG_TEXT" in proc.stdout, (
         f"stdout={proc.stdout!r}\nstderr={proc.stderr!r}"
     )
     assert proc.returncode == 0, proc.stderr

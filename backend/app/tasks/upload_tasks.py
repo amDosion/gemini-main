@@ -2,16 +2,18 @@
 Celery 上传任务
 负责异步处理文件上传到云存储
 """
+import copy
 import os
-import httpx
 import tempfile
 from datetime import datetime
+
 from sqlalchemy.orm.attributes import flag_modified
-import copy
 
 from app.core.celery_app import celery_app
 from app.core.database import SessionLocal
-from app.models.db_models import UploadTask, StorageConfig, ActiveStorage, ChatSession
+from app.models.db_models import ActiveStorage, ChatSession, StorageConfig, UploadTask
+from app.utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
+from app.utils.url_security import sync_get_with_redirect_guard
 
 
 @celery_app.task(bind=True, name='app.tasks.upload_tasks.process_upload')
@@ -97,14 +99,11 @@ def process_upload(self, task_id: str):
 
         elif task.source_url:
             # 模式 2: 从 URL 下载（同步方式）
-            print(f"[Celery] 下载图片: {task.source_url[:60]}...")
+            print(f"[Celery] 下载图片: {summarize_url_for_log(task.source_url)}")
 
-            # 使用 httpx 同步客户端下载
-            import httpx
-            with httpx.Client(timeout=30.0) as client:
-                response = client.get(task.source_url)
-                response.raise_for_status()
-                image_content = response.content
+            response = sync_get_with_redirect_guard(task.source_url, timeout=30.0, max_redirects=5)
+            response.raise_for_status()
+            image_content = response.content
 
             # 保存到临时文件
             temp_dir = tempfile.gettempdir()
@@ -145,7 +144,7 @@ def process_upload(self, task_id: str):
             task.target_url = result.get('url')
             task.completed_at = int(datetime.now().timestamp() * 1000)
             db.commit()
-            print(f"[Celery] 上传成功: {task.target_url}")
+            print(f"[Celery] 上传成功: {summarize_url_for_log(task.target_url)}")
 
             # 8. 更新数据库中的会话消息
             if task.session_id and task.message_id and task.attachment_id:
@@ -158,7 +157,10 @@ def process_upload(self, task_id: str):
                         task.target_url
                     )
                 except Exception as e:
-                    print(f"[Celery] ⚠️ 更新会话附件 URL 失败（任务已完成）: {e}")
+                    print(
+                        "[Celery] ⚠️ 更新会话附件 URL 失败（任务已完成）: "
+                        f"{summarize_text_for_log(e, label='error')}"
+                    )
 
             return {
                 'success': True,
@@ -169,7 +171,7 @@ def process_upload(self, task_id: str):
             task.status = 'failed'
             task.error_message = result.get('error', '上传失败')
             db.commit()
-            print(f"[Celery] 上传失败: {task.error_message}")
+            print(f"[Celery] 上传失败: {summarize_text_for_log(task.error_message, label='error')}")
 
             return {
                 'success': False,
@@ -178,9 +180,7 @@ def process_upload(self, task_id: str):
             }
 
     except Exception as e:
-        print(f"[Celery] 任务失败: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"[Celery] 任务失败: {summarize_text_for_log(e, label='error')}")
 
         try:
             task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
@@ -248,7 +248,7 @@ def update_session_attachment_url_sync(
                             att.pop('tempUrl', None)
                             att.pop('file', None)
                             updated = True
-                            print(f"[Celery] ✅ 找到附件，更新 URL: {url[:60]}...")
+                            print(f"[Celery] ✅ 找到附件，更新 URL: {summarize_url_for_log(url)}")
                             break
                 if updated:
                     break
@@ -269,8 +269,6 @@ def update_session_attachment_url_sync(
                     print(f"[Celery] ❌ 重试 {max_retries} 次后仍未找到附件: {attachment_id}")
 
         except Exception as e:
-            print(f"[Celery] ❌ 更新会话失败: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"[Celery] ❌ 更新会话失败: {summarize_text_for_log(e, label='error')}")
             if attempt < max_retries - 1:
                 time.sleep(retry_delay)

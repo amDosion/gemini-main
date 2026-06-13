@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from ..execution_context import ExecutionContext
 
@@ -16,13 +16,14 @@ logger = logging.getLogger(__name__)
 async def execute_agent_node(
     engine: Any,
     node_id: str,
-    node_data: Dict[str, Any],
+    node_data: dict[str, Any],
     context: ExecutionContext,
-    initial_input: Dict[str, Any],
-    input_packets: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    from ....models.db_models import AgentRegistry
+    initial_input: dict[str, Any],
+    input_packets: list[dict[str, Any]],
+) -> dict[str, Any]:
     from sqlalchemy import func
+
+    from ....models.db_models import AgentRegistry
 
     agent_id = str(node_data.get("agent_id") or node_data.get("agentId") or "").strip()
     agent_name = str(node_data.get("agent_name") or node_data.get("agentName") or "").strip()
@@ -62,10 +63,12 @@ async def execute_agent_node(
         agent = engine._build_inline_agent(node_id=node_id, node_data=node_data)
 
     if not agent:
-        raise ValueError(f"Agent 节点 {node_id} 未找到匹配的 Agent（id={agent_id}, name={agent_name}）")
+        raise ValueError(
+            f"Agent 节点 {node_id} 未找到匹配的 Agent（id={agent_id}, name={agent_name}）"
+        )
 
-    agent_card_defaults: Dict[str, Any] = engine._extract_agent_card_defaults(agent)
-    llm_defaults: Dict[str, Any] = engine._extract_agent_llm_defaults(agent_card_defaults)
+    agent_card_defaults: dict[str, Any] = engine._extract_agent_card_defaults(agent)
+    llm_defaults: dict[str, Any] = engine._extract_agent_llm_defaults(agent_card_defaults)
 
     model_override_provider = (
         node_data.get("model_override_provider_id")
@@ -89,36 +92,24 @@ async def execute_agent_node(
         or ""
     )
     inline_override_provider = (
-        node_data.get("inlineProviderId")
-        or node_data.get("inline_provider_id")
-        or ""
+        node_data.get("inlineProviderId") or node_data.get("inline_provider_id") or ""
     )
-    inline_override_model = (
-        node_data.get("inlineModelId")
-        or node_data.get("inline_model_id")
-        or ""
-    )
+    inline_override_model = node_data.get("inlineModelId") or node_data.get("inline_model_id") or ""
     inline_override_profile = (
-        node_data.get("inlineProfileId")
-        or node_data.get("inline_profile_id")
-        or ""
+        node_data.get("inlineProfileId") or node_data.get("inline_profile_id") or ""
     )
 
     llm_default_provider = str(
-        engine._resolve_llm_default_value(llm_defaults, "providerId", "provider_id")
-        or ""
+        engine._resolve_llm_default_value(llm_defaults, "providerId", "provider_id") or ""
     ).strip()
     llm_default_model = str(
-        engine._resolve_llm_default_value(llm_defaults, "modelId", "model_id")
-        or ""
+        engine._resolve_llm_default_value(llm_defaults, "modelId", "model_id") or ""
     ).strip()
     llm_default_profile = str(
-        engine._resolve_llm_default_value(llm_defaults, "profileId", "profile_id")
-        or ""
+        engine._resolve_llm_default_value(llm_defaults, "profileId", "profile_id") or ""
     ).strip()
     llm_default_system_prompt = str(
-        engine._resolve_llm_default_value(llm_defaults, "systemPrompt", "system_prompt")
-        or ""
+        engine._resolve_llm_default_value(llm_defaults, "systemPrompt", "system_prompt") or ""
     ).strip()
 
     provider_id = (
@@ -127,9 +118,7 @@ async def execute_agent_node(
         or str(agent.provider_id or "").strip()
     )
     model_id = (
-        str(model_override_model).strip()
-        or llm_default_model
-        or str(agent.model_id or "").strip()
+        str(model_override_model).strip() or llm_default_model or str(agent.model_id or "").strip()
     )
     profile_id = str(model_override_profile).strip() or llm_default_profile
     if not provider_id or not model_id:
@@ -173,7 +162,9 @@ async def execute_agent_node(
     if agent_max_tokens is None:
         agent_max_tokens = llm_default_max_tokens
     if agent_max_tokens is None:
-        agent_max_tokens = engine._to_int(getattr(agent, "max_tokens", None), default=4096, minimum=1, maximum=65536)
+        agent_max_tokens = engine._to_int(
+            getattr(agent, "max_tokens", None), default=4096, minimum=1, maximum=65536
+        )
     if agent_max_tokens is None:
         agent_max_tokens = 4096
 
@@ -184,7 +175,9 @@ async def execute_agent_node(
         latest_input_payload = mapped
         previous_text = engine._extract_text_from_value(mapped)
     else:
-        latest_input_payload = input_packets[-1].get("output") if input_packets else context.get_latest_output()
+        latest_input_payload = (
+            input_packets[-1].get("output") if input_packets else context.get_latest_output()
+        )
         previous_text = engine._derive_node_input_text(context, initial_input, input_packets)
 
     if not previous_text:
@@ -200,50 +193,37 @@ async def execute_agent_node(
         system_prompt = base_prompt
 
     default_task_type = str(agent_card_defaults.get("defaultTaskType") or "").strip()
-    explicit_task_type = (
-        node_data.get("agent_task_type")
-        or node_data.get("agentTaskType")
-        or ""
-    )
-    has_explicit_task_type = bool(str(explicit_task_type or "").strip())
-    agent_task_type = (
-        explicit_task_type
-        or default_task_type
-        or "chat"
-    ).strip()
+    explicit_task_type = node_data.get("agent_task_type") or node_data.get("agentTaskType") or ""
+    agent_task_type = (explicit_task_type or default_task_type or "chat").strip()
     normalized_agent_task_type = str(agent_task_type or "").strip().lower().replace("_", "-")
 
     explicit_reference_image_url = (
-        node_data.get("agentReferenceImageUrl")
-        or node_data.get("agent_reference_image_url")
-        or ""
+        node_data.get("agentReferenceImageUrl") or node_data.get("agent_reference_image_url") or ""
     )
-    if str(explicit_reference_image_url or "").strip():
-        if normalized_agent_task_type not in {
-            "vision-understand",
-            "image-understand",
-            "vision-analyze",
-            "image-analyze",
-            "image-edit",
-            "video-gen",
-        }:
-            raise ValueError(
-                f"节点 {node_id} 配置了参考图，但 agentTaskType={agent_task_type}。"
-                "开发阶段不允许兼容推断，请显式设置为 vision-understand、image-edit 或 video-gen。"
-            )
+    if str(explicit_reference_image_url or "").strip() and normalized_agent_task_type not in {
+        "vision-understand",
+        "image-understand",
+        "vision-analyze",
+        "image-analyze",
+        "image-edit",
+        "video-gen",
+    }:
+        raise ValueError(
+            f"节点 {node_id} 配置了参考图，但 agentTaskType={agent_task_type}。"
+            "开发阶段不允许兼容推断，请显式设置为 vision-understand、image-edit 或 video-gen。"
+        )
 
-    has_explicit_inline_override = (
-        str(getattr(agent, "agent_type", "") or "").strip().lower() == "inline"
-        and bool(
-            str(inline_override_profile or "").strip()
-            or (
-                str(inline_override_provider or "").strip()
-                and not engine._is_active_inline_provider_token(inline_override_provider)
-            )
-            or (
-                str(inline_override_model or "").strip()
-                and not engine._is_auto_inline_model_token(inline_override_model)
-            )
+    has_explicit_inline_override = str(
+        getattr(agent, "agent_type", "") or ""
+    ).strip().lower() == "inline" and bool(
+        str(inline_override_profile or "").strip()
+        or (
+            str(inline_override_provider or "").strip()
+            and not engine._is_active_inline_provider_token(inline_override_provider)
+        )
+        or (
+            str(inline_override_model or "").strip()
+            and not engine._is_auto_inline_model_token(inline_override_model)
         )
     )
     has_explicit_model_override = bool(
@@ -253,27 +233,29 @@ async def execute_agent_node(
         or has_explicit_inline_override
     )
     model_overridden = has_explicit_model_override
-    seed_default_prefer_latest = str(getattr(agent, "agent_type", "") or "").strip().lower() == "seed"
+    seed_default_prefer_latest = (
+        str(getattr(agent, "agent_type", "") or "").strip().lower() == "seed"
+    )
     llm_default_prefer_latest = engine._resolve_llm_default_value(
         llm_defaults,
         "preferLatestModel",
         "prefer_latest_model",
     )
     default_prefer_latest = engine._to_bool(
-        llm_default_prefer_latest if llm_default_prefer_latest is not None else agent_card_defaults.get("preferLatestModel"),
+        llm_default_prefer_latest
+        if llm_default_prefer_latest is not None
+        else agent_card_defaults.get("preferLatestModel"),
         default=seed_default_prefer_latest,
     )
-    prefer_latest_raw = node_data.get("agentPreferLatestModel", node_data.get("agent_prefer_latest_model"))
+    prefer_latest_raw = node_data.get(
+        "agentPreferLatestModel", node_data.get("agent_prefer_latest_model")
+    )
     if prefer_latest_raw is None:
         prefer_latest_model = default_prefer_latest and not has_explicit_model_override
     else:
         prefer_latest_model = engine._to_bool(prefer_latest_raw, default=default_prefer_latest)
 
-    preferred_mode_hint = (
-        node_data.get("agentEditMode")
-        or node_data.get("agent_edit_mode")
-        or ""
-    )
+    preferred_mode_hint = node_data.get("agentEditMode") or node_data.get("agent_edit_mode") or ""
     if prefer_latest_model:
         resolved_model = engine._resolve_preferred_model_for_agent_task(
             provider_id=provider_id,
@@ -334,7 +316,12 @@ async def execute_agent_node(
         + (f" profile={profile_id}" if profile_id else "")
     )
 
-    if normalized_agent_task_type in {"vision-understand", "image-understand", "vision-analyze", "image-analyze"}:
+    if normalized_agent_task_type in {
+        "vision-understand",
+        "image-understand",
+        "vision-analyze",
+        "image-analyze",
+    }:
         reference_image_url = engine._resolve_agent_reference_image_url(
             node_data=node_data,
             context=context,
@@ -356,21 +343,33 @@ async def execute_agent_node(
             max_tokens=agent_max_tokens,
             profile_id=profile_id,
         )
-        vision_defaults = agent_card_defaults.get("visionUnderstand") if isinstance(agent_card_defaults.get("visionUnderstand"), dict) else {}
-        vision_output_format = str(
-            node_data.get("agentOutputFormat")
-            or node_data.get("agent_output_format")
-            or (vision_defaults.get("outputFormat") if isinstance(vision_defaults, dict) else "")
-            or "json"
-        ).strip().lower()
+        vision_defaults = (
+            agent_card_defaults.get("visionUnderstand")
+            if isinstance(agent_card_defaults.get("visionUnderstand"), dict)
+            else {}
+        )
+        vision_output_format = (
+            str(
+                node_data.get("agentOutputFormat")
+                or node_data.get("agent_output_format")
+                or (
+                    vision_defaults.get("outputFormat") if isinstance(vision_defaults, dict) else ""
+                )
+                or "json"
+            )
+            .strip()
+            .lower()
+        )
         if vision_output_format not in {"text", "json", "markdown"}:
             vision_output_format = "json"
-        vision_analysis = vision_result.get("analysis") if isinstance(vision_result.get("analysis"), dict) else {}
+        vision_analysis = (
+            vision_result.get("analysis") if isinstance(vision_result.get("analysis"), dict) else {}
+        )
         vision_text = str(vision_result.get("text") or "").strip()
         if vision_output_format == "json" and vision_analysis:
             vision_text = json.dumps(vision_analysis, ensure_ascii=False)
         elif vision_output_format == "markdown" and vision_analysis:
-            markdown_lines: List[str] = []
+            markdown_lines: list[str] = []
             for key, value in vision_analysis.items():
                 key_text = str(key or "").strip()
                 if not key_text:
@@ -390,7 +389,9 @@ async def execute_agent_node(
             "agentName": agent.name,
             "agentTaskType": normalized_agent_task_type,
             "model": f"{provider_id}/{model_id}",
-            "baseModel": f"{agent.provider_id}/{agent.model_id}" if agent.provider_id and agent.model_id else "",
+            "baseModel": f"{agent.provider_id}/{agent.model_id}"
+            if agent.provider_id and agent.model_id
+            else "",
             "modelOverridden": model_overridden,
             "profileId": profile_id,
             "runtime": "multimodal",
@@ -399,7 +400,7 @@ async def execute_agent_node(
         }
 
     if normalized_agent_task_type in {"image-gen", "image-edit"}:
-        image_tool_args: Dict[str, Any] = {
+        image_tool_args: dict[str, Any] = {
             "prompt": previous_text,
             "model_id": model_id,
         }
@@ -415,7 +416,9 @@ async def execute_agent_node(
             return True
 
         default_image_options = (
-            image_edit_defaults if normalized_agent_task_type == "image-edit" else image_generation_defaults
+            image_edit_defaults
+            if normalized_agent_task_type == "image-edit"
+            else image_generation_defaults
         )
         if isinstance(default_image_options, dict):
             default_to_tool_map = {
@@ -431,13 +434,15 @@ async def execute_agent_node(
                 "addMagicSuffix": "add_magic_suffix",
             }
             if normalized_agent_task_type == "image-edit":
-                default_to_tool_map.update({
-                    "editMode": "mode",
-                    "outputLanguage": "output_language",
-                    "maxRetries": "max_retries",
-                    "preserveProductIdentity": "preserve_product_identity",
-                    "productMatchThreshold": "product_match_threshold",
-                })
+                default_to_tool_map.update(
+                    {
+                        "editMode": "mode",
+                        "outputLanguage": "output_language",
+                        "maxRetries": "max_retries",
+                        "preserveProductIdentity": "preserve_product_identity",
+                        "productMatchThreshold": "product_match_threshold",
+                    }
+                )
             for src_key, dst_key in default_to_tool_map.items():
                 default_value = default_image_options.get(src_key)
                 if _has_effective_value(default_value):
@@ -494,15 +499,17 @@ async def execute_agent_node(
                 )
             image_tool_args["image_url"] = str(reference_image_url).strip()
             edit_prompt = (
-                node_data.get("agentEditPrompt")
-                or node_data.get("agent_edit_prompt")
-                or ""
+                node_data.get("agentEditPrompt") or node_data.get("agent_edit_prompt") or ""
             )
             if edit_prompt and edit_prompt.strip():
                 image_tool_args["edit_prompt"] = edit_prompt.strip()
             if isinstance(image_edit_defaults, dict):
                 default_edit_mode = image_edit_defaults.get("editMode")
-                if default_edit_mode and engine._get_tool_arg(image_tool_args, "mode", "edit_mode", "editMode") is None:
+                if (
+                    default_edit_mode
+                    and engine._get_tool_arg(image_tool_args, "mode", "edit_mode", "editMode")
+                    is None
+                ):
                     image_tool_args["mode"] = default_edit_mode
 
             preserve_product_identity = engine._to_bool(
@@ -577,7 +584,9 @@ async def execute_agent_node(
             "agentName": agent.name,
             "agentTaskType": normalized_agent_task_type,
             "model": f"{provider_id}/{model_id}",
-            "baseModel": f"{agent.provider_id}/{agent.model_id}" if agent.provider_id and agent.model_id else "",
+            "baseModel": f"{agent.provider_id}/{agent.model_id}"
+            if agent.provider_id and agent.model_id
+            else "",
             "modelOverridden": model_overridden,
             "profileId": profile_id,
             **{k: v for k, v in image_result.items() if k not in ("prompt",)},
@@ -716,11 +725,7 @@ async def execute_agent_node(
             normalized_video_mask = engine._extract_first_image_url(resolved_video_mask)
             if normalized_video_mask:
                 video_tool_args["video_mask_image"] = normalized_video_mask
-        raw_audio_url = (
-            node_data.get("agentAudioUrl")
-            or node_data.get("agent_audio_url")
-            or ""
-        )
+        raw_audio_url = node_data.get("agentAudioUrl") or node_data.get("agent_audio_url") or ""
         if str(raw_audio_url or "").strip():
             resolved_audio = (
                 context.resolve_template(raw_audio_url)
@@ -743,18 +748,21 @@ async def execute_agent_node(
             prompt=video_prompt,
             tool_args=video_tool_args,
         )
-        summary_text = str(
-            video_result.get("summaryText")
-            or video_result.get("text")
+        summary_text = (
+            str(
+                video_result.get("summaryText") or video_result.get("text") or "Generated video."
+            ).strip()
             or "Generated video."
-        ).strip() or "Generated video."
+        )
         return {
             "text": summary_text,
             "prompt": video_result.get("prompt", video_prompt),
             "agentName": agent.name,
             "agentTaskType": normalized_agent_task_type,
             "model": f"{provider_id}/{model_id}",
-            "baseModel": f"{agent.provider_id}/{agent.model_id}" if agent.provider_id and agent.model_id else "",
+            "baseModel": f"{agent.provider_id}/{agent.model_id}"
+            if agent.provider_id and agent.model_id
+            else "",
             "modelOverridden": model_overridden,
             "profileId": profile_id,
             **{k: v for k, v in video_result.items() if k not in ("prompt", "model")},
@@ -818,28 +826,29 @@ async def execute_agent_node(
             text=previous_text,
             tool_args=audio_tool_args,
         )
-        summary_text = str(
-            audio_result.get("summaryText")
-            or audio_result.get("text")
+        summary_text = (
+            str(
+                audio_result.get("summaryText")
+                or audio_result.get("text")
+                or "Generated speech audio."
+            ).strip()
             or "Generated speech audio."
-        ).strip() or "Generated speech audio."
+        )
         return {
             "text": summary_text,
             "agentName": agent.name,
             "agentTaskType": normalized_agent_task_type,
             "model": f"{provider_id}/{model_id}",
-            "baseModel": f"{agent.provider_id}/{agent.model_id}" if agent.provider_id and agent.model_id else "",
+            "baseModel": f"{agent.provider_id}/{agent.model_id}"
+            if agent.provider_id and agent.model_id
+            else "",
             "modelOverridden": model_overridden,
             "profileId": profile_id,
             **{k: v for k, v in audio_result.items() if k != "model"},
         }
 
     if normalized_agent_task_type in {"data-analysis", "table-analysis"}:
-        file_url = (
-            node_data.get("agentFileUrl")
-            or node_data.get("agent_file_url")
-            or ""
-        )
+        file_url = node_data.get("agentFileUrl") or node_data.get("agent_file_url") or ""
         if file_url and file_url.strip():
             resolved_url = context.resolve_template(file_url) if "{{" in file_url else file_url
             file_context = engine._build_file_reference_context(str(resolved_url))
@@ -856,10 +865,16 @@ async def execute_agent_node(
         or data_analysis_defaults.get("outputFormat")
         or ""
     )
-    if output_format and output_format.strip() and normalized_agent_task_type not in {"image-gen", "image-edit"}:
+    if (
+        output_format
+        and output_format.strip()
+        and normalized_agent_task_type not in {"image-gen", "image-edit"}
+    ):
         previous_text = f"{previous_text}\n\n请以 {output_format} 格式输出结果。"
 
-    if engine._should_use_adk_runtime(agent=agent, provider_id=provider_id, agent_task_type=agent_task_type):
+    if engine._should_use_adk_runtime(
+        agent=agent, provider_id=provider_id, agent_task_type=agent_task_type
+    ):
         try:
             adk_response = await engine._run_adk_text_chat(
                 agent=agent,
@@ -879,7 +894,9 @@ async def execute_agent_node(
                 "agentName": agent.name,
                 "agentTaskType": normalized_agent_task_type,
                 "model": f"{provider_id}/{model_id}",
-                "baseModel": f"{agent.provider_id}/{agent.model_id}" if agent.provider_id and agent.model_id else "",
+                "baseModel": f"{agent.provider_id}/{agent.model_id}"
+                if agent.provider_id and agent.model_id
+                else "",
                 "modelOverridden": model_overridden,
                 "profileId": profile_id,
                 "runtime": "adk",
@@ -918,7 +935,9 @@ async def execute_agent_node(
         "agentName": agent.name,
         "agentTaskType": normalized_agent_task_type,
         "model": f"{provider_id}/{model_id}",
-        "baseModel": f"{agent.provider_id}/{agent.model_id}" if agent.provider_id and agent.model_id else "",
+        "baseModel": f"{agent.provider_id}/{agent.model_id}"
+        if agent.provider_id and agent.model_id
+        else "",
         "modelOverridden": model_overridden,
         "profileId": profile_id,
         "runtime": "adapter",

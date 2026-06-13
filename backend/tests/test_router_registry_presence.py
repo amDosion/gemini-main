@@ -17,6 +17,8 @@ Covers two findings against ``app.routers.registry``:
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from fastapi import APIRouter, FastAPI
 
@@ -140,3 +142,17 @@ def test_workflows_registration_failure_propagates(monkeypatch) -> None:
     app = FastAPI()
     with pytest.raises(_BoomError):
         registry.register_routers(app)
+
+
+def test_auth_router_import_failure_log_is_summarized(caplog) -> None:
+    secret = "sorftime-secret-token"
+
+    with caplog.at_level(logging.ERROR, logger=registry.logger.name):
+        registry._log_auth_router_import_failure(
+            "Unexpected error",
+            RuntimeError(f"import failed {secret}"),
+        )
+
+    assert secret not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "RuntimeError" in caplog.text

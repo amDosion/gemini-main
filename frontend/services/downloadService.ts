@@ -20,8 +20,37 @@ interface SourceUrlDownloadOptions {
 
 const DEFAULT_OBJECT_URL_REVOKE_DELAY_MS = 2000;
 const FILE_NAME_SANITIZE_PATTERN = /[\\/:*?"<>|]/g;
+const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f]/g;
 const CONTENT_DISPOSITION_FILENAME_STAR = /filename\*\s*=\s*([^;]+)/i;
 const CONTENT_DISPOSITION_FILENAME = /filename\s*=\s*([^;]+)/i;
+
+const getBrowserOrigin = (): string =>
+  typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'http://localhost';
+
+const normalizeDownloadHref = (href: string): string => {
+  const normalized = String(href || '').trim();
+  if (!normalized) {
+    throw new Error('Unsupported download URL scheme');
+  }
+
+  const lowered = normalized.toLowerCase();
+  if (lowered.startsWith('data:') || lowered.startsWith('blob:')) {
+    return normalized;
+  }
+
+  try {
+    const parsed = new URL(normalized, getBrowserOrigin());
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return normalized;
+    }
+  } catch {
+    // fall through to the shared unsupported-scheme error
+  }
+
+  throw new Error('Unsupported download URL scheme');
+};
 
 const trimWrappedQuotes = (value: string): string => {
   const trimmed = value.trim();
@@ -40,8 +69,19 @@ const decodeMaybe = (value: string): string => {
 };
 
 const sanitizeFileName = (fileName: string, fallbackFileName: string): string => {
-  const normalized = fileName.replace(FILE_NAME_SANITIZE_PATTERN, '_').trim();
-  return normalized.length > 0 ? normalized : fallbackFileName;
+  const normalized = fileName
+    .replace(CONTROL_CHAR_PATTERN, '_')
+    .replace(FILE_NAME_SANITIZE_PATTERN, '_')
+    .trim();
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  const normalizedFallback = fallbackFileName
+    .replace(CONTROL_CHAR_PATTERN, '_')
+    .replace(FILE_NAME_SANITIZE_PATTERN, '_')
+    .trim();
+  return normalizedFallback.length > 0 ? normalizedFallback : 'download';
 };
 
 export const inferFileNameFromContentDisposition = (
@@ -73,10 +113,11 @@ export const inferFileNameFromContentDisposition = (
 };
 
 export const triggerBrowserDownload = ({ href, fileName }: BrowserDownloadOptions): void => {
+  const safeHref = normalizeDownloadHref(href);
   const anchor = document.createElement('a');
-  anchor.href = href;
+  anchor.href = safeHref;
   if (fileName) {
-    anchor.download = fileName;
+    anchor.download = sanitizeFileName(fileName, 'download');
   }
   document.body.appendChild(anchor);
   anchor.click();
@@ -107,6 +148,8 @@ const isBlobLikeSource = (sourceUrl: string): boolean =>
 const isHttpSource = (sourceUrl: string): boolean =>
   sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://');
 
+const isRelativeApiSource = (sourceUrl: string): boolean => sourceUrl.startsWith('/api/');
+
 const toStorageProxyUrl = (sourceUrl: string): string =>
   `/api/storage/download?url=${encodeURIComponent(sourceUrl)}`;
 
@@ -117,12 +160,14 @@ export const downloadSourceUrlInBrowser = async ({
   // dereferences the object URL; keep the module-wide safety delay by default.
   blobRevokeDelayMs = DEFAULT_OBJECT_URL_REVOKE_DELAY_MS,
 }: SourceUrlDownloadOptions): Promise<void> => {
-  if (isLocalBlobAttachmentUrl(sourceUrl)) {
+  const safeSourceUrl = String(sourceUrl || '').trim();
+
+  if (isLocalBlobAttachmentUrl(safeSourceUrl)) {
     return;
   }
 
-  if (isBlobLikeSource(sourceUrl)) {
-    const response = await fetch(sourceUrl);
+  if (isBlobLikeSource(safeSourceUrl)) {
+    const response = await fetch(safeSourceUrl);
     const blob = await response.blob();
     downloadBlobInBrowser({
       blob,
@@ -132,16 +177,21 @@ export const downloadSourceUrlInBrowser = async ({
     return;
   }
 
-  if (isHttpSource(sourceUrl)) {
+  if (isHttpSource(safeSourceUrl)) {
     triggerBrowserDownload({
-      href: toStorageProxyUrl(sourceUrl),
+      href: toStorageProxyUrl(safeSourceUrl),
       fileName,
     });
     return;
   }
 
-  triggerBrowserDownload({
-    href: sourceUrl,
-    fileName,
-  });
+  if (isRelativeApiSource(safeSourceUrl)) {
+    triggerBrowserDownload({
+      href: safeSourceUrl,
+      fileName,
+    });
+    return;
+  }
+
+  throw new Error('Unsupported download URL scheme');
 };

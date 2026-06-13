@@ -18,7 +18,6 @@ import {
   SYSTEM_STATUS_POLL_INTERVAL_MS,
 } from './headerHelpers';
 import { HeaderUserInfoDialog } from './HeaderUserInfoDialog';
-import { HeaderSystemConfigDialog } from './HeaderSystemConfigDialog';
 import { HeaderModelSelector } from './HeaderModelSelector';
 import { HeaderProfileSelector } from './HeaderProfileSelector';
 
@@ -66,6 +65,12 @@ const USER_INFO_FIELD_ORDER: Array<keyof AuthUser> = [
   'updatedAt',
   'lastLoginAt',
 ];
+
+const HeaderSystemConfigDialog = React.lazy(() =>
+  import('./HeaderSystemConfigDialog').then((module) => ({
+    default: module.HeaderSystemConfigDialog,
+  }))
+);
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '—';
@@ -322,6 +327,8 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  const shouldRenderSystemConfigDialog = !!isSystemConfigDialogOpen && !!currentUser?.isAdmin;
+
   return (
     <header className="h-14 flex items-center justify-between gap-3 px-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-50 shrink-0 sticky top-0">
       <div
@@ -423,24 +430,28 @@ export const Header: React.FC<HeaderProps> = ({
         handleChangePassword={handleChangePassword}
       />
 
-      <HeaderSystemConfigDialog
-        isOpen={!!isSystemConfigDialogOpen && !!currentUser?.isAdmin}
-        systemConfig={systemConfig}
-        editedSystemConfig={editedSystemConfig}
-        isLoadingSystemConfig={isLoadingSystemConfig}
-        isSavingSystemConfig={isSavingSystemConfig}
-        systemConfigError={systemConfigError}
-        systemStatus={systemStatus}
-        isLoadingSystemStatus={isLoadingSystemStatus}
-        systemStatusError={systemStatusError}
-        isCleaningUp={isCleaningUp}
-        hasSystemConfigChanges={hasSystemConfigChanges}
-        closeSystemConfigDialog={closeSystemConfigDialog}
-        handleSystemConfigValueChange={handleSystemConfigValueChange}
-        loadSystemStatus={loadSystemStatus}
-        setIsCleanupConfirmOpen={setIsCleanupConfirmOpen}
-        handleSaveSystemConfig={handleSaveSystemConfig}
-      />
+      {shouldRenderSystemConfigDialog && (
+        <React.Suspense fallback={null}>
+          <HeaderSystemConfigDialog
+            isOpen={shouldRenderSystemConfigDialog}
+            systemConfig={systemConfig}
+            editedSystemConfig={editedSystemConfig}
+            isLoadingSystemConfig={isLoadingSystemConfig}
+            isSavingSystemConfig={isSavingSystemConfig}
+            systemConfigError={systemConfigError}
+            systemStatus={systemStatus}
+            isLoadingSystemStatus={isLoadingSystemStatus}
+            systemStatusError={systemStatusError}
+            isCleaningUp={isCleaningUp}
+            hasSystemConfigChanges={hasSystemConfigChanges}
+            closeSystemConfigDialog={closeSystemConfigDialog}
+            handleSystemConfigValueChange={handleSystemConfigValueChange}
+            loadSystemStatus={loadSystemStatus}
+            setIsCleanupConfirmOpen={setIsCleanupConfirmOpen}
+            handleSaveSystemConfig={handleSaveSystemConfig}
+          />
+        </React.Suspense>
+      )}
       {isCleanupConfirmOpen &&
         typeof document !== 'undefined' &&
         createPortal(

@@ -99,25 +99,16 @@ const getKindPalette = (kind: FileKind): { bg: string; fg: string } => {
   }
 };
 
-export const createGeneratedThumb = (kind: FileKind, ext: string): string => {
-  const safeLabel =
+export const getGeneratedThumbPresentation = (
+  kind: FileKind,
+  ext: string
+): { bg: string; fg: string; label: string } => {
+  const label =
     (ext || kind)
       .replace(/[^a-zA-Z0-9]/g, '')
       .toUpperCase()
       .slice(0, 4) || 'FILE';
-  const palette = getKindPalette(kind);
-  const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="88" height="88" viewBox="0 0 88 88">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="${palette.bg}"/>
-      <stop offset="100%" stop-color="#0f172a"/>
-    </linearGradient>
-  </defs>
-  <rect x="2" y="2" width="84" height="84" rx="14" fill="url(#g)" stroke="#1e293b" stroke-width="2"/>
-  <text x="44" y="49" text-anchor="middle" dominant-baseline="middle" font-size="18" font-family="Arial, sans-serif" font-weight="700" fill="${palette.fg}">${safeLabel}</text>
-</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  return { ...getKindPalette(kind), label };
 };
 
 export const formatBytes = (bytes?: number | null): string => {

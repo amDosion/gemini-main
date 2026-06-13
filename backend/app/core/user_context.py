@@ -76,8 +76,8 @@ def get_current_user_id(request: Request) -> Optional[str]:
     从请求中获取当前用户 ID（不强制要求认证）
     
     优先级：
-    1. Authorization header（Bearer token 认证）- ✅ 优先使用
-    2. Cookie 中的 access_token（向后兼容）
+    1. Authorization header（Bearer token 认证）- ✅ 有效时优先使用
+    2. Cookie 中的 access_token（向后兼容 / 浏览器 httpOnly cookie）
     
     Args:
         request: FastAPI 请求对象
@@ -85,54 +85,62 @@ def get_current_user_id(request: Request) -> Optional[str]:
     Returns:
         用户 ID 或 None（如果未认证）
     """
-    token = None
-    token_source = None
-    
     try:
+        token_candidates: list[tuple[str, str]] = []
+
         # ✅ 1. 优先从 Authorization header 获取 token
         auth_header = request.headers.get("Authorization")
         if auth_header:
             parts = auth_header.split()
             if len(parts) == 2 and parts[0].lower() == "bearer":
-                token = parts[1]
-                token_source = "Authorization header"
+                token_candidates.append((parts[1], "Authorization header"))
         
-        # 2. 如果 Authorization header 中没有，尝试从 Cookie 获取（向后兼容）
-        if not token:
-            token = request.cookies.get("access_token")
-            if token:
-                token_source = "Cookie (access_token)"
+        # 2. 尝试从 Cookie 获取（浏览器同源请求优先依赖 httpOnly cookie）。
+        # Authorization header 可能被 provider/API-key 兼容路径占用；只有它是
+        # 有效本地 access token 时才应阻止 cookie fallback。
+        cookie_token = request.cookies.get("access_token")
+        if cookie_token and all(candidate != cookie_token for candidate, _ in token_candidates):
+            token_candidates.append((cookie_token, "Cookie (access_token)"))
         
         # 3. 如果都没有 token，返回 None
-        if not token:
+        if not token_candidates:
             logger.debug(f"[UserContext] 未找到 token (路径: {request.url.path})")
             return None
-        
-        # 解码 token
-        payload: TokenPayload = decode_token(token)
-        
-        # 验证 token 类型
-        if payload.type != "access":
-            logger.warning(f"[UserContext] Token 类型错误: {payload.type} (路径: {request.url.path})")
-            return None
 
-        # ✅ 核心：校验 token 是否仍为用户当前有效会话（logout 后立即失效）
-        if not _is_access_token_active_in_db(payload.sub, token):
-            logger.info(
-                "[UserContext] access_token 已失效或已撤销 (来源: %s, 路径: %s)",
-                token_source,
-                request.url.path,
-            )
-            return None
-        
-        user_id = payload.sub
-        logger.debug(f"[UserContext] 提取 user_id: {user_id} (来源: {token_source}, 路径: {request.url.path})")
-        
-        return user_id
-        
-    except JWTError as e:
-        logger.warning(f"[UserContext] JWT 解码失败 (来源: {token_source}, 路径: {request.url.path}): {e}")
+        for token, token_source in token_candidates:
+            try:
+                # 解码 token
+                payload: TokenPayload = decode_token(token)
+            except JWTError as e:
+                logger.warning(
+                    "[UserContext] JWT 解码失败 (来源: %s, 路径: %s): %s",
+                    token_source,
+                    request.url.path,
+                    e,
+                )
+                continue
+
+            # 验证 token 类型
+            if payload.type != "access":
+                logger.warning(f"[UserContext] Token 类型错误: {payload.type} (路径: {request.url.path})")
+                continue
+
+            # ✅ 核心：校验 token 是否仍为用户当前有效会话（logout 后立即失效）
+            if not _is_access_token_active_in_db(payload.sub, token):
+                logger.info(
+                    "[UserContext] access_token 已失效或已撤销 (来源: %s, 路径: %s)",
+                    token_source,
+                    request.url.path,
+                )
+                continue
+
+            user_id = payload.sub
+            logger.debug(f"[UserContext] 提取 user_id: {user_id} (来源: {token_source}, 路径: {request.url.path})")
+
+            return user_id
+
         return None
+
     except Exception as e:
         logger.error(f"[UserContext] 提取 user_id 时发生错误 (路径: {request.url.path}): {e}", exc_info=True)
         return None

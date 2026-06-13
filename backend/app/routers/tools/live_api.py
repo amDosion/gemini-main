@@ -8,8 +8,8 @@ Live API Router - Live API 路由
 """
 
 from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, status
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field, JsonValue
+from typing import Dict, Optional
 from sqlalchemy.orm import Session
 from fastapi.responses import StreamingResponse
 import logging
@@ -20,11 +20,13 @@ from ...core.database import get_db
 from ...core.dependencies import require_current_user
 from ...core.user_context import extract_user_id_from_token
 from ...services.gemini.agent.live_api import LiveAPIHandler
+from ...utils.log_sanitization import summarize_text_for_log
 from ...utils.sse import encode_sse_data
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/live", tags=["live-api"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
 
 
 def _resolve_websocket_user_id(websocket: WebSocket) -> Optional[str]:
@@ -56,13 +58,31 @@ def _resolve_websocket_user_id(websocket: WebSocket) -> Optional[str]:
 
 class QueryRequest(BaseModel):
     """查询请求"""
-    input: str
-    agent_id: Optional[str] = None
+    input: str = Field(min_length=1, max_length=200_000)
+    agent_id: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )
 
+
+class LiveQueryResponse(BaseModel):
+    """Live API 同步查询响应。"""
+
+    output: str = Field(max_length=1_000_000)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    runtime: Optional[str] = Field(default=None, max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    model: Optional[str] = Field(default=None, max_length=256)
+    agent_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    agent_name: Optional[str] = Field(default=None, max_length=256)
+    session_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    invocation_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    usage: Dict[str, JsonValue] = Field(default_factory=dict)
+    event_count: Optional[int] = Field(default=None, ge=0, le=10_000)
 
 # ==================== API Endpoints ====================
 
-@router.post("/query")
+@router.post("/query", response_model=LiveQueryResponse)
 async def query(
     request_body: QueryRequest,
     user_id: str = Depends(require_current_user),
@@ -86,11 +106,32 @@ async def query(
         return result
         
     except Exception as e:
-        logger.error(f"[Live API] Error in query: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Live API] Error in query: user=%s agent=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(request_body.agent_id, label="agent_id"),
+            summarize_text_for_log(e, label="query_error"),
+        )
+        raise HTTPException(status_code=500, detail="Live API query failed")
 
 
-@router.post("/stream-query")
+@router.post(
+    "/stream-query",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Server-sent Live API query events",
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "type": "string",
+                        "maxLength": 1_000_000,
+                    }
+                }
+            },
+        }
+    },
+)
 async def stream_query(
     request_body: QueryRequest,
     user_id: str = Depends(require_current_user),
@@ -115,7 +156,12 @@ async def stream_query(
                 # so the frontend consumes camelCase without converting.
                 yield encode_sse_data(chunk, camel_case=True)
         except Exception as e:
-            logger.error(f"[Live API] Error in stream query: {e}", exc_info=True)
+            logger.error(
+                "[Live API] Error in stream query: user=%s agent=%s error=%s",
+                summarize_text_for_log(user_id, label="user_id"),
+                summarize_text_for_log(request_body.agent_id, label="agent_id"),
+                summarize_text_for_log(e, label="stream_query_error"),
+            )
             yield encode_sse_data({"error": str(e)}, camel_case=True)
     
     return StreamingResponse(
@@ -157,9 +203,16 @@ async def bidi_stream(
                 message = json.loads(data)
                 await queue.put(message)
         except WebSocketDisconnect:
-            logger.info(f"[Live API] WebSocket disconnected for user {user_id}")
+            logger.info(
+                "[Live API] WebSocket disconnected: user=%s",
+                summarize_text_for_log(user_id, label="user_id"),
+            )
         except Exception as e:
-            logger.error(f"[Live API] Error receiving message: {e}", exc_info=True)
+            logger.error(
+                "[Live API] Error receiving message: user=%s error=%s",
+                summarize_text_for_log(user_id, label="user_id"),
+                summarize_text_for_log(e, label="websocket_receive_error"),
+            )
     
     # 启动发送任务
     async def send_responses():
@@ -170,9 +223,16 @@ async def bidi_stream(
             ):
                 await websocket.send_json(response)
         except WebSocketDisconnect:
-            logger.info(f"[Live API] WebSocket disconnected for user {user_id}")
+            logger.info(
+                "[Live API] WebSocket disconnected: user=%s",
+                summarize_text_for_log(user_id, label="user_id"),
+            )
         except Exception as e:
-            logger.error(f"[Live API] Error sending response: {e}", exc_info=True)
+            logger.error(
+                "[Live API] Error sending response: user=%s error=%s",
+                summarize_text_for_log(user_id, label="user_id"),
+                summarize_text_for_log(e, label="websocket_send_error"),
+            )
     
     # 并发运行接收和发送
     try:
@@ -181,6 +241,10 @@ async def bidi_stream(
             send_responses()
         )
     except Exception as e:
-        logger.error(f"[Live API] Error in bidi stream: {e}", exc_info=True)
+        logger.error(
+            "[Live API] Error in bidi stream: user=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(e, label="bidi_stream_error"),
+        )
     finally:
         await websocket.close()

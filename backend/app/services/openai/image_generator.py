@@ -4,10 +4,12 @@ OpenAI 图片生成器
 处理 OpenAI 的图片生成操作（GPT Image）。
 """
 from __future__ import annotations
-from typing import Dict, Any, List, Optional
+
 import logging
 import time
+from typing import Any, Dict, List, Optional
 
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 from ._shared import (
     build_async_client,
     call_image_api_with_fanout,
@@ -51,7 +53,10 @@ class ImageGenerator:
             client=kwargs.get("client"),
         )
         
-        logger.info(f"[OpenAI ImageGenerator] Initialized with base_url={self.base_url}")
+        logger.info(
+            "[OpenAI ImageGenerator] Initialized with base_url=%s",
+            summarize_url_for_log(self.base_url),
+        )
     
     async def generate_image(
         self,
@@ -77,7 +82,11 @@ class ImageGenerator:
         """
         operation_start = time.perf_counter()
         try:
-            logger.info(f"[OpenAI ImageGenerator] Image generation: model={model}, prompt={prompt[:50]}...")
+            logger.info(
+                "[OpenAI ImageGenerator] Image generation: model=%s, prompt=%s",
+                model,
+                summarize_text_for_log(prompt, label="prompt"),
+            )
             enhanced_prompt = None
             effective_prompt = prompt
             if kwargs.get("enhance_prompt") or kwargs.get("enhancePrompt"):
@@ -163,7 +172,10 @@ class ImageGenerator:
             return results
         
         except Exception as e:
-            logger.error(f"[OpenAI ImageGenerator] Image generation error: {e}", exc_info=True)
+            logger.error(
+                "[OpenAI ImageGenerator] Image generation error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise
 
     async def _call_generate_image_api(
@@ -224,7 +236,7 @@ class ImageGenerator:
             request_kwargs.get("n", 1),
             request_kwargs.get("quality"),
             request_kwargs.get("output_format"),
-            self.base_url,
+            summarize_url_for_log(self.base_url),
             self.image_timeout,
             self.image_max_retries,
             len(prompt or ""),

@@ -36,6 +36,7 @@ from .vertexai.segmentation_service import SegmentationService
 from .vertexai.tryon_service import TryOnService
 from .common.pdf_extractor import PDFExtractorService
 from ...utils.attachment_handler import is_base64_url
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -590,7 +591,7 @@ class GoogleService(BaseProviderService):
         logger.info(f"[GoogleService] ========== 开始图片生成 ==========")
         logger.info(f"[GoogleService] 📥 请求参数:")
         logger.info(f"[GoogleService]     - model: {model}")
-        logger.info(f"[GoogleService]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
+        logger.info(f"[GoogleService]     - prompt: {summarize_text_for_log(prompt, label='prompt')}")
         logger.info(f"[GoogleService]     - prompt长度: {len(prompt)}")
         logger.info(f"[GoogleService]     - 额外参数: {list(kwargs.keys())}")
         for key, value in kwargs.items():
@@ -1316,9 +1317,12 @@ class GoogleService(BaseProviderService):
         if self.use_official_sdk:
             self._ensure_legacy_feature_services()
         
-        prompt_log = f"prompt='{prompt[:30]}...'" if prompt and len(prompt) > 30 else f"prompt='{prompt}'"
         logger.info(f"[Google Service] Delegating image segmentation to SegmentationService: model={model}, mask_mode={mask_mode}")
-        logger.info(f"[Google Service] Segmentation parameters: {prompt_log}, additional_params={list(kwargs.keys())}")
+        logger.info(
+            "[Google Service] Segmentation parameters: prompt=%s, additional_params=%s",
+            summarize_text_for_log(prompt, label="prompt"),
+            list(kwargs.keys()),
+        )
 
         return await self.segmentation_service.segment_image(image_path, model, prompt, mask_mode, **kwargs)
 

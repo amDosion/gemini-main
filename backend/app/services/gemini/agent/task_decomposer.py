@@ -15,6 +15,8 @@ from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
+from ....utils.log_sanitization import summarize_text_for_log
+
 if TYPE_CHECKING:
     from ..google_service import GoogleService
 
@@ -124,7 +126,10 @@ class SmartTaskDecomposer:
             )
             
             # 调用 LLM
-            logger.info(f"[SmartTaskDecomposer] Decomposing task: {task[:50]}...")
+            logger.info(
+                "[SmartTaskDecomposer] Decomposing task: %s",
+                summarize_text_for_log(task, label="task"),
+            )
             response = await self._call_llm(prompt)
             
             # 解析响应
@@ -137,7 +142,10 @@ class SmartTaskDecomposer:
             logger.error(f"[SmartTaskDecomposer] JSON parsing error: {e}")
             raise RuntimeError(f"Failed to parse LLM response as JSON: {e}")
         except Exception as e:
-            logger.error(f"[SmartTaskDecomposer] Error decomposing task: {e}", exc_info=True)
+            logger.error(
+                "[SmartTaskDecomposer] Error decomposing task: %s",
+                summarize_text_for_log(e, label="decomposition_error"),
+            )
             raise RuntimeError(f"Failed to decompose task: {e}")
     
     def _build_decomposition_prompt(
@@ -270,7 +278,10 @@ class SmartTaskDecomposer:
             return text
             
         except Exception as e:
-            logger.error(f"[SmartTaskDecomposer] LLM call failed: {e}", exc_info=True)
+            logger.error(
+                "[SmartTaskDecomposer] LLM call failed: %s",
+                summarize_text_for_log(e, label="llm_error"),
+            )
             raise RuntimeError(f"LLM call failed: {e}")
     
     def _extract_json_from_response(self, response: str) -> str:
@@ -362,7 +373,10 @@ class SmartTaskDecomposer:
             
         except json.JSONDecodeError as e:
             logger.error(f"[SmartTaskDecomposer] JSON decode error: {e}")
-            logger.error(f"[SmartTaskDecomposer] Response text: {response[:500]}")
+            logger.error(
+                "[SmartTaskDecomposer] Response text: %s",
+                summarize_text_for_log(response, label="decomposer_response"),
+            )
             raise ValueError(f"Invalid JSON format: {e}")
     
     def _validate_dependencies(self, subtasks: List[SubTask]) -> None:

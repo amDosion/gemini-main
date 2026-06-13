@@ -15,30 +15,54 @@ import base64
 import os
 from pathlib import Path
 
+from app.utils.log_sanitization import summarize_text_for_log
+
 logger = logging.getLogger(__name__)
 
-# 延迟导入 pandas（如果未安装则使用占位实现）
-try:
-    import pandas as pd
-    import numpy as np
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    logger.warning("[ExcelTools] pandas not available, using placeholder implementation")
-
-# 延迟导入 matplotlib（如果未安装则使用占位实现）
-try:
-    import matplotlib
-    matplotlib.use('Agg')  # 非交互式后端
-    import matplotlib.pyplot as plt
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
-    logger.warning("[ExcelTools] matplotlib not available, chart generation disabled")
+_pd: Any | None = None
+_np: Any | None = None
+_pandas_import_attempted = False
+_plt: Any | None = None
+_matplotlib_import_attempted = False
 
 
 ALLOWED_TABLE_SUFFIXES = {".xlsx", ".xls", ".csv", ".tsv"}
 ALLOWED_TABLE_ROOTS_ENV = "EXCEL_WORKFLOW_ALLOWED_ROOTS"
+
+
+def _get_pandas_numpy() -> tuple[Any | None, Any | None]:
+    global _np, _pd, _pandas_import_attempted
+
+    if _pandas_import_attempted:
+        return _pd, _np
+    _pandas_import_attempted = True
+    try:
+        import numpy as numpy_module  # type: ignore
+        import pandas as pandas_module  # type: ignore
+    except ImportError:
+        logger.warning("[ExcelTools] pandas not available, using placeholder implementation")
+        return None, None
+    _pd = pandas_module
+    _np = numpy_module
+    return _pd, _np
+
+
+def _get_pyplot() -> Any | None:
+    global _matplotlib_import_attempted, _plt
+
+    if _matplotlib_import_attempted:
+        return _plt
+    _matplotlib_import_attempted = True
+    try:
+        import matplotlib  # type: ignore
+
+        matplotlib.use('Agg')  # 非交互式后端
+        import matplotlib.pyplot as pyplot_module  # type: ignore
+    except ImportError:
+        logger.warning("[ExcelTools] matplotlib not available, chart generation disabled")
+        return None
+    _plt = pyplot_module
+    return _plt
 
 
 def _resolve_allowed_table_roots() -> List[Path]:
@@ -106,12 +130,16 @@ def _resolve_table_path(file_path: str) -> Path:
 
 
 def _sanitize_dataframe_for_json(df):
-    if not PANDAS_AVAILABLE:
+    pd, _ = _get_pandas_numpy()
+    if pd is None:
         return df
-    return df.where(pd.notna(df), None)
+    return df.astype(object).where(pd.notna(df), None)
 
 
 def _build_dataframe_from_payload(df_data: Dict[str, Any]):
+    pd, _ = _get_pandas_numpy()
+    if pd is None:
+        raise RuntimeError("pandas not installed")
     if isinstance(df_data, dict) and "cleaned_data" in df_data:
         return pd.DataFrame(df_data["cleaned_data"])
     if isinstance(df_data, dict) and "records" in df_data:
@@ -149,7 +177,8 @@ async def read_excel_file(
     Returns:
         数据结构信息（列名、数据类型、形状、样本数据等）
     """
-    if not PANDAS_AVAILABLE:
+    pd, _ = _get_pandas_numpy()
+    if pd is None:
         return {
             "error": "pandas not installed. Please install: pip install pandas openpyxl",
             "file_path": file_path
@@ -157,7 +186,10 @@ async def read_excel_file(
     
     try:
         resolved_path = _resolve_table_path(file_path)
-        logger.info(f"[ExcelTools] Reading table file: {resolved_path}")
+        logger.info(
+            "[ExcelTools] Reading table file: %s",
+            summarize_text_for_log(resolved_path, label="file_path"),
+        )
 
         # 读取文件（支持 Excel + CSV/TSV）
         suffix = resolved_path.suffix.lower()
@@ -186,11 +218,15 @@ async def read_excel_file(
             "file_path": str(resolved_path)
         }
         
-        logger.info(f"[ExcelTools] Excel file read successfully: {result['shape']}")
+        logger.info("[ExcelTools] Excel file read successfully: shape=%s", result["shape"])
         return result
         
     except Exception as e:
-        logger.error(f"[ExcelTools] Error reading Excel file: {e}", exc_info=True)
+        logger.error(
+            "[ExcelTools] Error reading Excel file: file_path=%s error=%s",
+            summarize_text_for_log(file_path, label="file_path"),
+            summarize_text_for_log(e, label="read_error"),
+        )
         return {
             "error": str(e),
             "file_path": file_path
@@ -215,14 +251,18 @@ async def clean_dataframe(
     Returns:
         清理后的数据（字典格式）
     """
-    if not PANDAS_AVAILABLE:
+    pd, np = _get_pandas_numpy()
+    if pd is None or np is None:
         return {
             "error": "pandas not installed",
             "cleaned_data": df_data
         }
     
     try:
-        logger.info(f"[ExcelTools] Cleaning dataframe with rules: {cleaning_rules}")
+        logger.info(
+            "[ExcelTools] Cleaning dataframe with rules: %s",
+            summarize_text_for_log(cleaning_rules, label="cleaning_rules"),
+        )
         
         # 从字典重建 DataFrame
         df = _build_dataframe_from_payload(df_data)
@@ -277,7 +317,7 @@ async def clean_dataframe(
             cleaning_steps.append("数据标准化")
             issues_fixed.append("数据已标准化")
         
-        logger.info(f"[ExcelTools] Data cleaning completed: {len(cleaning_steps)} steps")
+        logger.info("[ExcelTools] Data cleaning completed: steps=%s", len(cleaning_steps))
         sanitized_df = _sanitize_dataframe_for_json(df)
         
         return {
@@ -289,7 +329,10 @@ async def clean_dataframe(
         }
         
     except Exception as e:
-        logger.error(f"[ExcelTools] Error cleaning dataframe: {e}", exc_info=True)
+        logger.error(
+            "[ExcelTools] Error cleaning dataframe: %s",
+            summarize_text_for_log(e, label="clean_error"),
+        )
         return {
             "error": str(e),
             "cleaned_data": df_data
@@ -315,7 +358,8 @@ async def analyze_dataframe(
     Returns:
         分析结果
     """
-    if not PANDAS_AVAILABLE:
+    pd, np = _get_pandas_numpy()
+    if pd is None or np is None:
         return {
             "error": "pandas not installed",
             "analysis_type": analysis_type
@@ -323,7 +367,11 @@ async def analyze_dataframe(
     
     try:
         normalized_analysis_type = _normalize_analysis_type(analysis_type)
-        logger.info(f"[ExcelTools] Analyzing dataframe: requested={analysis_type}, normalized={normalized_analysis_type}")
+        logger.info(
+            "[ExcelTools] Analyzing dataframe: requested=%s normalized=%s",
+            summarize_text_for_log(analysis_type, label="analysis_type"),
+            normalized_analysis_type,
+        )
 
         allowed_types = {"comprehensive", "statistics", "correlation", "trends", "distribution"}
         if normalized_analysis_type not in allowed_types:
@@ -396,12 +444,15 @@ async def analyze_dataframe(
         
         result["insights"] = insights if insights else ["数据无明显趋势或相关性"]
         
-        logger.info(f"[ExcelTools] Data analysis completed: {len(result)} analysis types")
+        logger.info("[ExcelTools] Data analysis completed: analysis_types=%s", len(result))
         result["analysis_type"] = normalized_analysis_type
         return result
         
     except Exception as e:
-        logger.error(f"[ExcelTools] Error analyzing dataframe: {e}", exc_info=True)
+        logger.error(
+            "[ExcelTools] Error analyzing dataframe: %s",
+            summarize_text_for_log(e, label="analysis_error"),
+        )
         return {
             "error": str(e),
             "analysis_type": _normalize_analysis_type(analysis_type)
@@ -428,11 +479,21 @@ async def generate_chart(
     Returns:
         Base64 编码的图片（data:image/png;base64,...）
     """
-    if not PANDAS_AVAILABLE or not MATPLOTLIB_AVAILABLE:
+    pd, _ = _get_pandas_numpy()
+    if pd is None:
+        return ""
+    plt = _get_pyplot()
+    if plt is None:
         return ""
     
     try:
-        logger.info(f"[ExcelTools] Generating {chart_type} chart: {x_column} vs {y_column}")
+        logger.info(
+            "[ExcelTools] Generating chart: type=%s x=%s y=%s title=%s",
+            summarize_text_for_log(chart_type, label="chart_type"),
+            summarize_text_for_log(x_column, label="x_column"),
+            summarize_text_for_log(y_column, label="y_column"),
+            summarize_text_for_log(title, label="title"),
+        )
         
         # 从字典重建 DataFrame
         df = _build_dataframe_from_payload(df_data)
@@ -457,7 +518,10 @@ async def generate_chart(
             else:
                 df[x_column].value_counts().plot(kind='pie', autopct='%1.1f%%')
         else:
-            logger.warning(f"[ExcelTools] Unsupported chart type: {chart_type}")
+            logger.warning(
+                "[ExcelTools] Unsupported chart type: %s",
+                summarize_text_for_log(chart_type, label="chart_type"),
+            )
             plt.close()
             return ""
         
@@ -472,11 +536,14 @@ async def generate_chart(
         chart_base64 = base64.b64encode(buffer.read()).decode()
         plt.close()
         
-        logger.info(f"[ExcelTools] Chart generated successfully")
+        logger.info("[ExcelTools] Chart generated successfully")
         return f"data:image/png;base64,{chart_base64}"
         
     except Exception as e:
-        logger.error(f"[ExcelTools] Error generating chart: {e}", exc_info=True)
-        if MATPLOTLIB_AVAILABLE:
+        logger.error(
+            "[ExcelTools] Error generating chart: %s",
+            summarize_text_for_log(e, label="chart_error"),
+        )
+        if plt is not None:
             plt.close()
         return ""

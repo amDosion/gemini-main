@@ -55,6 +55,10 @@ class ResearchStatusResponse(BaseModel):
     usage: Optional[dict] = None
 
 
+class ResearchCancelResponse(BaseModel):
+    message: str = Field(max_length=128)
+
+
 class ResearchContinueRequest(BaseModel):
     prompt: str = Field(..., min_length=10, max_length=10000)
     agent: str = "deep-research-pro-preview-12-2025"
@@ -374,7 +378,7 @@ async def get_research_status(
         raise handle_gemini_error(exc)
 
 
-@router.post("/cancel/{interaction_id}")
+@router.post("/cancel/{interaction_id}", response_model=ResearchCancelResponse)
 async def cancel_research(
     interaction_id: str,
     user_id: str = Depends(require_current_user),

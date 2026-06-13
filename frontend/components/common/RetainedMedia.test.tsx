@@ -63,6 +63,78 @@ describe('RetainedMedia', () => {
     );
   });
 
+  it('does not render internal local-blob video keys', () => {
+    render(
+      <RetainedVideo
+        src="local-blob:retained-file-only-video"
+        data-testid="internal-video"
+      />
+    );
+
+    expect(screen.queryByTestId('internal-video')).toBeNull();
+    expect(mediaCacheMock.retainMediaObjectUrl).not.toHaveBeenCalled();
+  });
+
+  it('does not render internal local-blob audio keys', () => {
+    render(
+      <RetainedAudio
+        src="local-blob:retained-file-only-audio"
+        data-testid="internal-audio"
+      />
+    );
+
+    expect(screen.queryByTestId('internal-audio')).toBeNull();
+    expect(mediaCacheMock.retainMediaObjectUrl).not.toHaveBeenCalled();
+  });
+
+  it('renders safe inline video data urls for retained video', () => {
+    render(
+      <RetainedVideo
+        src="data:video/mp4;base64,YWJj"
+        data-testid="inline-video"
+      />
+    );
+
+    expect(screen.getByTestId('inline-video').getAttribute('src')).toBe(
+      'data:video/mp4;base64,YWJj'
+    );
+  });
+
+  it('renders safe inline audio data urls for retained audio', () => {
+    render(
+      <RetainedAudio
+        src="data:audio/wav;base64,YWJj"
+        data-testid="inline-audio"
+      />
+    );
+
+    expect(screen.getByTestId('inline-audio').getAttribute('src')).toBe(
+      'data:audio/wav;base64,YWJj'
+    );
+  });
+
+  it('does not render unsafe inline or non-browser media urls', () => {
+    render(
+      <>
+        <RetainedVideo
+          src="data:audio/wav;base64,YWJj"
+          data-testid="wrong-family-video"
+        />
+        <RetainedAudio
+          src="data:audio/wav,not-base64"
+          data-testid="non-base64-audio"
+        />
+        <RetainedVideo src="javascript:alert(1)" data-testid="script-video" />
+        <RetainedAudio src="file:///tmp/audio.wav" data-testid="file-audio" />
+      </>
+    );
+
+    expect(screen.queryByTestId('wrong-family-video')).toBeNull();
+    expect(screen.queryByTestId('non-base64-audio')).toBeNull();
+    expect(screen.queryByTestId('script-video')).toBeNull();
+    expect(screen.queryByTestId('file-audio')).toBeNull();
+  });
+
   it('lets callers recover failed retained video blobs before surfacing onError', () => {
     const onRecoverMediaError = vi.fn(() => true);
     const onError = vi.fn();

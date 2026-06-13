@@ -1,19 +1,7 @@
 import React from 'react';
 import { UrlContextMetadata } from '../../types/types';
 import { Link2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
-
-/** Allow only http/https URLs; returns undefined for any other scheme. */
-function safeHref(url: string): string | undefined {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-      return url;
-    }
-  } catch {
-    // malformed URL — do not render as href
-  }
-  return undefined;
-}
+import { toSafeNewTabUrl } from '../../utils/safeOpen';
 
 interface UrlContextStatusProps {
   metadata: UrlContextMetadata | null | undefined;
@@ -34,6 +22,8 @@ export const UrlContextStatus: React.FC<UrlContextStatusProps> = ({ metadata }) 
             item.urlRetrievalStatus === 'URL_RETRIEVAL_STATUS_SUCCESS' ||
             item.urlRetrievalStatus === 'SUCCESS';
           const isUnsafe = item.urlRetrievalStatus?.includes('UNSAFE');
+          const safeHref = toSafeNewTabUrl(item.retrievedUrl);
+          const linkClassName = "truncate text-slate-300 hover:text-blue-400 hover:underline";
 
           return (
             <div
@@ -48,15 +38,21 @@ export const UrlContextStatus: React.FC<UrlContextStatusProps> = ({ metadata }) 
                 ) : (
                   <XCircle size={14} className="text-red-500 shrink-0" />
                 )}
-                <a
-                  href={safeHref(item.retrievedUrl)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="truncate text-slate-300 hover:text-blue-400 hover:underline"
-                  title={item.retrievedUrl}
-                >
-                  {item.retrievedUrl}
-                </a>
+                {safeHref ? (
+                  <a
+                    href={safeHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={linkClassName}
+                    title={item.retrievedUrl}
+                  >
+                    {item.retrievedUrl}
+                  </a>
+                ) : (
+                  <span className={linkClassName} title={item.retrievedUrl}>
+                    {item.retrievedUrl}
+                  </span>
+                )}
               </div>
               <span
                 className={`text-[9px] font-mono uppercase ml-2 shrink-0 ${isSuccess ? 'text-emerald-500' : 'text-slate-500'}`}

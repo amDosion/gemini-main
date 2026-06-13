@@ -37,6 +37,7 @@ import {
   isPlainObject,
   normalizeImageValue,
 } from '../workflowResultUtils';
+import { triggerBrowserDownload } from '../../../services/downloadService';
 
 import type { LogLevel } from '../ExecutionLogPanel';
 
@@ -337,12 +338,9 @@ export const useWorkflowResultMedia = ({
         addLog('system', '系统', 'warn', '当前结果没有可用的执行记录，无法下载媒体');
         return;
       }
-      const anchor = document.createElement('a');
-      anchor.href = `/api/workflows/history/${encodeURIComponent(executionId)}/${mediaKind}/download`;
-      anchor.rel = 'noreferrer';
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
+      triggerBrowserDownload({
+        href: `/api/workflows/history/${encodeURIComponent(executionId)}/${mediaKind}/download`,
+      });
       addLog('system', '系统', 'info', successMessage);
     },
     [addLog, executionId]

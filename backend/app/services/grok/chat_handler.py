@@ -9,6 +9,13 @@ import logging
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
+from ..common.openai_compatible_multimodal import (
+    is_image_attachment,
+    normalize_multimodal_content,
+    resolve_attachment_url,
+)
+from ...utils.log_sanitization import summarize_text_for_log
+
 logger = logging.getLogger(__name__)
 
 # grok2api 聊天接口支持的参数
@@ -109,64 +116,15 @@ class ChatHandler:
     @classmethod
     def _normalize_multimodal_content(cls, content: Any, attachments: List[Any]) -> Any:
         """Normalize content with image attachments into multimodal format."""
-        parts: List[Dict[str, Any]] = []
-
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict):
-                    item_type = str(item.get("type") or "").strip().lower()
-                    if item_type == "text":
-                        text_value = str(item.get("text") or "").strip()
-                        if text_value:
-                            parts.append({"type": "text", "text": text_value})
-                        continue
-                    if item_type == "image_url" and isinstance(item.get("image_url"), dict):
-                        image_url = str(item["image_url"].get("url") or "").strip()
-                        if image_url:
-                            parts.append({"type": "image_url", "image_url": {"url": image_url}})
-                        continue
-                item_text = str(item or "").strip()
-                if item_text:
-                    parts.append({"type": "text", "text": item_text})
-        else:
-            text_value = str(content or "").strip()
-            if text_value:
-                parts.append({"type": "text", "text": text_value})
-
-        for attachment in attachments:
-            url = cls._resolve_attachment_url(attachment)
-            if not url or not cls._is_image_attachment(attachment, url):
-                continue
-            parts.append({"type": "image_url", "image_url": {"url": url}})
-
-        if not attachments:
-            return content
-        if len(parts) == 0:
-            return str(content or "").strip()
-        return parts
+        return normalize_multimodal_content(content, attachments)
 
     @staticmethod
     def _resolve_attachment_url(attachment: Any) -> str:
-        if not isinstance(attachment, dict):
-            return ""
-        for key in ("url", "temp_url", "tempUrl", "file_uri", "fileUri", "base64_data", "base64Data"):
-            value = attachment.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return ""
+        return resolve_attachment_url(attachment)
 
     @staticmethod
     def _is_image_attachment(attachment: Any, url: str) -> bool:
-        mime_type = ""
-        if isinstance(attachment, dict):
-            mime_type = str(attachment.get("mime_type") or attachment.get("mimeType") or "").strip().lower()
-        if mime_type.startswith("image/"):
-            return True
-        lowered_url = str(url or "").strip().lower()
-        if lowered_url.startswith("data:image/"):
-            return True
-        clean_url = lowered_url.split("?", 1)[0].split("#", 1)[0]
-        return clean_url.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"))
+        return is_image_attachment(attachment, url)
 
     async def chat(
         self,
@@ -186,7 +144,7 @@ class ChatHandler:
             聊天响应字典
         """
         try:
-            logger.info(f"[Grok ChatHandler] Chat request: model={model}, messages={len(messages)}")
+            logger.info("[Grok ChatHandler] Chat request: model=%s, messages=%s", model, len(messages))
 
             supported_params = _filter_allowed_kwargs(kwargs)
             prepared_messages = self._prepare_messages(messages)
@@ -223,15 +181,18 @@ class ChatHandler:
                 result["reasoning_content"] = reasoning_content
 
             logger.info(
-                f"[Grok ChatHandler] Chat response: "
-                f"tokens={result['usage']['total_tokens']}, "
-                f"finish_reason={result['finish_reason']}"
+                "[Grok ChatHandler] Chat response: tokens=%s, finish_reason=%s",
+                result["usage"]["total_tokens"],
+                result["finish_reason"],
             )
 
             return result
 
         except Exception as e:
-            logger.error(f"[Grok ChatHandler] Chat error: {e}", exc_info=True)
+            logger.error(
+                "[Grok ChatHandler] Chat error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise
 
     async def stream_chat(
@@ -252,7 +213,7 @@ class ChatHandler:
             流式响应块
         """
         try:
-            logger.info(f"[Grok ChatHandler] Stream chat request: model={model}, messages={len(messages)}")
+            logger.info("[Grok ChatHandler] Stream chat request: model=%s, messages=%s", model, len(messages))
 
             supported_params = _filter_allowed_kwargs(kwargs)
             prepared_messages = self._prepare_messages(messages)
@@ -328,16 +289,19 @@ class ChatHandler:
             }
 
             logger.info(
-                f"[Grok ChatHandler] Stream completed: "
-                f"tokens={total_tokens}, "
-                f"finish_reason={finish_reason}"
+                "[Grok ChatHandler] Stream completed: tokens=%s, finish_reason=%s",
+                total_tokens,
+                finish_reason,
             )
 
         except Exception as e:
-            logger.error(f"[Grok ChatHandler] Stream error: {e}", exc_info=True)
+            logger.error(
+                "[Grok ChatHandler] Stream error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             yield {
                 "content": "",
                 "chunk_type": "error",
-                "error": str(e),
+                "error": "Grok stream chat failed",
             }
             yield self._build_error_done_chunk()

@@ -7,10 +7,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
-from ..execution_context import ExecutionContext
 from ....utils.safe_expression_eval import safe_eval_expression
+from ..execution_context import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,12 @@ logger = logging.getLogger(__name__)
 MAX_LOOP_ITERATIONS = 1000
 
 
-def resolve_max_visits(engine: Any, node_type: str, node_data: Dict[str, Any]) -> int:
+def resolve_max_visits(engine: Any, node_type: str, node_data: dict[str, Any]) -> int:
     if node_type == "loop":
         try:
-            max_iterations = int(node_data.get("max_iterations") or node_data.get("maxIterations") or 3)
+            max_iterations = int(
+                node_data.get("max_iterations") or node_data.get("maxIterations") or 3
+            )
         except (TypeError, ValueError):
             max_iterations = 3
         # DoS guard: client-controlled iteration count is clamped to [0, MAX].
@@ -33,7 +35,7 @@ def resolve_max_visits(engine: Any, node_type: str, node_data: Dict[str, Any]) -
     return engine.DEFAULT_MAX_NODE_VISITS
 
 
-def resolve_max_parallel_nodes(engine: Any, initial_input: Dict[str, Any]) -> int:
+def resolve_max_parallel_nodes(engine: Any, initial_input: dict[str, Any]) -> int:
     raw = None
     if isinstance(initial_input, dict):
         raw = (
@@ -58,10 +60,10 @@ def resolve_max_parallel_nodes(engine: Any, initial_input: Dict[str, Any]) -> in
 
 def select_outgoing_edges(
     engine: Any,
-    node: Dict[str, Any],
-    outgoing_edges: List[Dict[str, Any]],
-    routing: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    node: dict[str, Any],
+    outgoing_edges: list[dict[str, Any]],
+    routing: dict[str, Any],
+) -> list[dict[str, Any]]:
     if not outgoing_edges:
         return []
 
@@ -74,7 +76,9 @@ def select_outgoing_edges(
     if mode == "branch":
         branch = (routing.get("branch") or "true").lower()
         preferred_handle = "output-true" if branch == "true" else "output-false"
-        selected = [edge for edge in outgoing_edges if engine._get_source_handle(edge) == preferred_handle]
+        selected = [
+            edge for edge in outgoing_edges if engine._get_source_handle(edge) == preferred_handle
+        ]
         if selected:
             return selected
 
@@ -85,7 +89,9 @@ def select_outgoing_edges(
     if mode == "branch_index":
         branch_index = int(routing.get("branchIndex", 0))
         preferred_handle = f"output-{branch_index}"
-        selected = [edge for edge in outgoing_edges if engine._get_source_handle(edge) == preferred_handle]
+        selected = [
+            edge for edge in outgoing_edges if engine._get_source_handle(edge) == preferred_handle
+        ]
         if selected:
             return selected
 
@@ -96,7 +102,9 @@ def select_outgoing_edges(
     if mode == "loop":
         should_continue = bool(routing.get("continue"))
         preferred_handle = "output-true" if should_continue else "output-false"
-        selected = [edge for edge in outgoing_edges if engine._get_source_handle(edge) == preferred_handle]
+        selected = [
+            edge for edge in outgoing_edges if engine._get_source_handle(edge) == preferred_handle
+        ]
         if selected:
             return selected
 
@@ -112,16 +120,18 @@ def select_outgoing_edges(
                 return selected
 
     node_id = node.get("id", "unknown")
-    logger.warning("[WorkflowEngine] Unknown routing mode '%s' on node %s, fallback to all", mode, node_id)
+    logger.warning(
+        "[WorkflowEngine] Unknown routing mode '%s' on node %s, fallback to all", mode, node_id
+    )
     return outgoing_edges
 
 
-def get_source_handle(engine: Any, edge: Dict[str, Any]) -> str:
+def get_source_handle(engine: Any, edge: dict[str, Any]) -> str:
     _ = engine
     return edge.get("source_handle") or edge.get("sourceHandle") or ""
 
 
-def get_node_type(engine: Any, node: Dict[str, Any]) -> str:
+def get_node_type(engine: Any, node: dict[str, Any]) -> str:
     _ = engine
     node_data = node.get("data", {}) or {}
     node_type = node_data.get("type") or node.get("type") or "unknown"
@@ -131,8 +141,8 @@ def get_node_type(engine: Any, node: Dict[str, Any]) -> str:
 def derive_node_input_text(
     engine: Any,
     context: ExecutionContext,
-    initial_input: Dict[str, Any],
-    input_packets: List[Dict[str, Any]],
+    initial_input: dict[str, Any],
+    input_packets: list[dict[str, Any]],
 ) -> str:
     if input_packets:
         latest_packet = input_packets[-1]
@@ -142,7 +152,9 @@ def derive_node_input_text(
     if latest_output is not None:
         return engine._extract_text_from_value(latest_output)
 
-    task = initial_input.get("task") or initial_input.get("input") or initial_input.get("text") or ""
+    task = (
+        initial_input.get("task") or initial_input.get("input") or initial_input.get("text") or ""
+    )
     return str(task)
 
 
@@ -197,9 +209,9 @@ def evaluate_expression(
     engine: Any,
     expression: str,
     context: ExecutionContext,
-    initial_input: Dict[str, Any],
-    input_packets: List[Dict[str, Any]],
-) -> Tuple[bool, str]:
+    initial_input: dict[str, Any],
+    input_packets: list[dict[str, Any]],
+) -> tuple[bool, str]:
     if expression is None:
         return False, ""
 
@@ -219,7 +231,7 @@ def evaluate_expression(
     if lowered in ("false", "no", "0"):
         return False, resolved_text
 
-    includes_match = re.match(r'^(.*)\.includes\((.*)\)$', resolved_text)
+    includes_match = re.match(r"^(.*)\.includes\((.*)\)$", resolved_text)
     if includes_match:
         left = includes_match.group(1).strip().strip("\"'")
         right = includes_match.group(2).strip().strip("\"'")
@@ -230,14 +242,13 @@ def evaluate_expression(
         return contains_value, resolved_text
 
     normalized = (
-        resolved_text
-        .replace("&&", " and ")
+        resolved_text.replace("&&", " and ")
         .replace("||", " or ")
         .replace("===", "==")
         .replace("!==", "!=")
     )
-    normalized = re.sub(r'\btrue\b', "True", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r'\bfalse\b', "False", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\btrue\b", "True", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bfalse\b", "False", normalized, flags=re.IGNORECASE)
 
     safe_locals = {
         "len": len,
@@ -278,7 +289,7 @@ async def select_router_branch(
     router_prompt: str,
     input_text: str,
     outgoing_count: int,
-) -> Tuple[int, str]:
+) -> tuple[int, str]:
     if outgoing_count <= 1:
         return 0, "single_branch"
 
@@ -289,7 +300,7 @@ async def select_router_branch(
             routing_prompt = (
                 "你是工作流路由器。"
                 f"请根据输入与规则，从 0 到 {outgoing_count - 1} 中选一个最合适的分支编号。"
-                "只输出 JSON，格式：{\"branchIndex\": number, \"reason\": \"...\"}"
+                '只输出 JSON，格式：{"branchIndex": number, "reason": "..."}'
             )
             if router_prompt and router_prompt.strip():
                 routing_prompt = f"{routing_prompt}\n\n路由规则：\n{router_prompt.strip()}"
@@ -297,10 +308,9 @@ async def select_router_branch(
             response = await engine._invoke_llm_chat(
                 provider_id=provider_id,
                 model_id=model_id,
-                messages=[{
-                    "role": "user",
-                    "content": f"输入内容：\n{input_text or ''}\n\n请输出 JSON。"
-                }],
+                messages=[
+                    {"role": "user", "content": f"输入内容：\n{input_text or ''}\n\n请输出 JSON。"}
+                ],
                 system_prompt=routing_prompt,
                 temperature=0.1,
                 max_tokens=256,
@@ -340,7 +350,7 @@ def select_router_branch_heuristic(
     router_prompt: str,
     input_text: str,
     outgoing_count: int,
-) -> Tuple[int, str]:
+) -> tuple[int, str]:
     _ = engine
     text = (input_text or "").lower()
     if strategy == "keyword":
@@ -369,7 +379,7 @@ def select_router_branch_heuristic(
     return hash_value % outgoing_count, "intent:hash"
 
 
-def merge_outputs(engine: Any, inputs: List[Any], strategy: str) -> Any:
+def merge_outputs(engine: Any, inputs: list[Any], strategy: str) -> Any:
     if not inputs:
         return {"text": ""}
 
@@ -377,7 +387,7 @@ def merge_outputs(engine: Any, inputs: List[Any], strategy: str) -> Any:
         return inputs[-1]
 
     if strategy == "json_merge":
-        merged: Dict[str, Any] = {}
+        merged: dict[str, Any] = {}
         for item in inputs:
             if isinstance(item, dict):
                 merged.update(item)
@@ -393,7 +403,7 @@ def merge_outputs(engine: Any, inputs: List[Any], strategy: str) -> Any:
     }
 
 
-def parse_tool_args(engine: Any, raw_args: Any) -> Dict[str, Any]:
+def parse_tool_args(engine: Any, raw_args: Any) -> dict[str, Any]:
     _ = engine
     if raw_args is None:
         return {}
@@ -452,8 +462,5 @@ def resolve_template_value(engine: Any, value: Any, context: ExecutionContext) -
     if isinstance(value, list):
         return [engine._resolve_template_value(item, context) for item in value]
     if isinstance(value, dict):
-        return {
-            key: engine._resolve_template_value(item, context)
-            for key, item in value.items()
-        }
+        return {key: engine._resolve_template_value(item, context) for key, item in value.items()}
     return value

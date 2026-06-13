@@ -26,6 +26,7 @@ from ..common.model_capabilities import ModelConfig
 from ..common.provider_config import ProviderConfig
 from ...core.sdk_executor import run_in_sdk_thread
 from ...utils.attachment_handler import is_http_url
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -360,7 +361,7 @@ class TongyiService(BaseProviderService):
         logger.info(f"[TongyiService] ========== 开始图片生成 ==========")
         logger.info(f"[TongyiService] 📥 请求参数:")
         logger.info(f"[TongyiService]     - model: {model}")
-        logger.info(f"[TongyiService]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
+        logger.info(f"[TongyiService]     - prompt: {summarize_text_for_log(prompt, label='prompt')}")
         logger.info(f"[TongyiService]     - prompt长度: {len(prompt)}")
         for key, value in kwargs.items():
             if key in [
@@ -481,7 +482,10 @@ class TongyiService(BaseProviderService):
             url_type = "HTTP" if result.url and is_http_url(result.url) else "其他"
             logger.info(f"[TongyiService]     - 第 {idx+1} 张图片: URL类型={url_type}, mime_type={formatted_result['mime_type']}")
             if enhanced_prompt:
-                logger.info(f"[TongyiService]     - 增强后提示词: {enhanced_prompt[:80]}...")
+                logger.info(
+                    "[TongyiService]     - 增强后提示词: %s",
+                    summarize_text_for_log(enhanced_prompt, label="enhanced_prompt"),
+                )
         
         total_time = (time.time() - start_time) * 1000
         logger.info(f"[TongyiService] ✅ [步骤4] 格式转换完成 (耗时: {total_time:.2f}ms)")

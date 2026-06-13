@@ -1,3 +1,5 @@
+import { isSafeInlineImageDataUrl } from '../../utils/safeMediaDataUrl';
+
 export const PREVIEW_IMAGE_MAX_ENTRIES = 40;
 const INLINE_MEDIA_DATA_URL_MAX_CHARS = 4096;
 
@@ -25,7 +27,8 @@ const stripMarkdownCodeFence = (text: string): string => {
 
 export const isLikelyImageUrl = (value: string) => {
   if (!value) return false;
-  if (/^(data:image\/|blob:)/.test(value)) return true;
+  if (value.startsWith('data:image/')) return isSafeInlineImageDataUrl(value);
+  if (value.startsWith('blob:')) return true;
   if (/^https?:\/\//.test(value) || value.startsWith('/')) {
     const normalized = value.toLowerCase().split('?')[0].split('#')[0];
     if (/\.(png|jpg|jpeg|webp|gif|bmp|svg)$/.test(normalized)) return true;
@@ -125,7 +128,7 @@ export const isDirectlyRenderableImageUrl = (value: unknown) => {
   const normalized = value.trim();
   if (!normalized) return false;
   if (isBrowserLocalBlobUrl(normalized)) return false;
-  if (normalized.startsWith('data:image/')) return true;
+  if (normalized.startsWith('data:image/')) return isSafeInlineImageDataUrl(normalized);
   if (/^https?:\/\//.test(normalized)) return true;
   if (normalized.startsWith('/')) {
     return !isLocalFilesystemPath(normalized);

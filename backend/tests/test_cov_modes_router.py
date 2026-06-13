@@ -28,6 +28,7 @@ controls/capabilities probes.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
 import pytest
@@ -303,6 +304,33 @@ class TestPureHelpers:
         assert chunk["chunk_type"] == "done"
         assert chunk["finish_reason"] == "error"
 
+    def test_safe_log_text_redacts_user_content(self):
+        out = modes._safe_log_text("secret prompt with sk-testSECRETSECRET", label="prompt")
+
+        assert "secret prompt" not in out
+        assert "sk-testSECRETSECRET" not in out
+        assert out == "<redacted prompt; length=38>"
+
+    def test_safe_log_url_redacts_query_fragment_and_inline_payloads(self):
+        signed_url = (
+            "https://cdn.example.com/private/image.png"
+            "?X-Amz-Signature=secret-signature&token=secret-token#download"
+        )
+        signed_out = modes._safe_log_url(signed_url)
+
+        assert "cdn.example.com" in signed_out
+        assert "secret-signature" not in signed_out
+        assert "secret-token" not in signed_out
+        assert "download" not in signed_out
+        assert "query_params=2" in signed_out
+        assert "fragment=redacted" in signed_out
+
+        data_url = "data:image/png;base64," + ("A" * 128)
+        data_out = modes._safe_log_url(data_url)
+
+        assert "A" * 32 not in data_out
+        assert data_out == f"Base64 Data URL (长度: {len(data_url)} 字符)"
+
 
 class TestMultiAgentBuilders:
     def _req(self, **kw):
@@ -533,14 +561,22 @@ class TestHandleModeDispatch:
         assert resp.status_code == 400
         assert "bad input shape" in resp.json()["detail"]
 
-    def test_generic_method_runtime_error_classified(self, make_client, monkeypatch):
+    def test_generic_method_runtime_error_classified(self, make_client, monkeypatch, caplog):
+        secret = "sorftime-secret-token"
+
         async def understand_video(**kwargs):
-            raise RuntimeError("429 rate limit exceeded")
+            raise RuntimeError(f"429 rate limit exceeded {secret}")
 
         _patch_provider(monkeypatch, {"understand_video": understand_video})
         client = make_client(monkeypatch=monkeypatch)
-        resp = _post(client, "google", "video-understand", {"model_id": "m", "prompt": "x"})
+        with caplog.at_level(logging.ERROR, logger=modes.logger.name):
+            resp = _post(client, "google", "video-understand", {"model_id": "m", "prompt": "x"})
         assert resp.status_code == 429
+        assert resp.json()["detail"] == "Mode request failed"
+        log_text = "\n".join(record.getMessage() for record in caplog.records)
+        assert secret not in log_text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in log_text
 
 
 class TestImageModeErrorMapping:
@@ -1134,14 +1170,18 @@ class TestMultiAgentEndpoint:
 
 
 class TestStreamEndpoint:
-    def test_non_streaming_mode_rejected(self, make_client, monkeypatch):
+    def test_non_streaming_mode_rejected(self, make_client, monkeypatch, caplog):
         _patch_provider(monkeypatch, {"generate_image": lambda **k: None})
         client = make_client(monkeypatch=monkeypatch)
-        resp = client.post(
-            "/api/modes/google/image-gen/stream",
-            json={"model_id": "m", "prompt": "x"},
-        )
+        with caplog.at_level(logging.ERROR, logger=modes.logger.name):
+            resp = client.post(
+                "/api/modes/google/image-gen/stream",
+                json={"model_id": "m", "prompt": "x"},
+            )
         assert resp.status_code == 500  # ValueError("does not support streaming") → outer 500
+        assert resp.json()["detail"] == "Mode stream failed"
+        assert "does not support streaming" not in caplog.text
+        assert "Traceback" not in caplog.text
 
     def test_chat_stream_yields_sse(self, make_client, monkeypatch):
         async def stream_chat(**kwargs):
@@ -1159,20 +1199,27 @@ class TestStreamEndpoint:
         assert "hello" in text
         assert "world" in text
 
-    def test_chat_stream_error_emits_error_chunk(self, make_client, monkeypatch):
+    def test_chat_stream_error_emits_error_chunk(self, make_client, monkeypatch, caplog):
+        secret = "sorftime-secret-token"
+
         async def stream_chat(**kwargs):
-            raise RuntimeError("mid-stream boom")
+            raise RuntimeError(f"mid-stream boom {secret}")
             yield  # pragma: no cover
 
         _patch_provider(monkeypatch, {"stream_chat": stream_chat})
         client = make_client(monkeypatch=monkeypatch)
-        resp = client.post(
-            "/api/modes/google/chat/stream",
-            json={"model_id": "m", "prompt": "hi"},
-        )
+        with caplog.at_level(logging.ERROR, logger=modes.logger.name):
+            resp = client.post(
+                "/api/modes/google/chat/stream",
+                json={"model_id": "m", "prompt": "hi"},
+            )
         # error is caught inside generate() → still 200 with an error chunk + done
         assert resp.status_code == 200
         assert "stream_error" in resp.text or "error" in resp.text
+        assert secret not in resp.text
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
 
     def test_stream_invalid_param_keys_returns_400(self, make_client, monkeypatch):
         _patch_provider(monkeypatch, {"stream_chat": lambda **k: None})
@@ -1206,14 +1253,22 @@ class TestGetEndpoints:
         assert body["schema"]["aspect_ratios"] == ["1:1"]
         assert body["model_id"] == "imagen-3"
 
-    def test_controls_schema_internal_error_returns_500(self, make_client, monkeypatch):
+    def test_controls_schema_internal_error_returns_500(self, make_client, monkeypatch, caplog):
+        secret = "sorftime-secret-token"
+
         def boom(**k):
-            raise RuntimeError("catalog corrupt")
+            raise RuntimeError(f"catalog corrupt {secret}")
 
         monkeypatch.setattr(modes, "resolve_runtime_mode_controls_schema", boom)
         client = make_client(monkeypatch=monkeypatch)
-        resp = client.get("/api/modes/google/image-gen/controls")
+        with caplog.at_level(logging.ERROR, logger=modes.logger.name):
+            resp = client.get("/api/modes/google/image-gen/controls")
         assert resp.status_code == 500
+        assert resp.json()["detail"] == "Failed to resolve controls schema"
+        assert secret not in resp.text
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
 
     def test_capabilities_success(self, make_client, monkeypatch):
         monkeypatch.setattr(
@@ -1243,12 +1298,20 @@ class TestGetEndpoints:
         assert body["capabilities"][0]["id"] == "image-gen"
         assert body["capabilities"][0]["runtime_enabled"] is True
 
-    def test_capabilities_internal_error_returns_500(self, make_client, monkeypatch):
+    def test_capabilities_internal_error_returns_500(self, make_client, monkeypatch, caplog):
+        secret = "sorftime-secret-token"
+
         def boom(**k):
-            raise RuntimeError("probe failed")
+            raise RuntimeError(f"probe failed {secret}")
 
         monkeypatch.setattr(modes, "get_mode_catalog", lambda include_internal=False: [])
         monkeypatch.setattr(modes, "build_provider_mode_capabilities", boom)
         client = make_client(monkeypatch=monkeypatch)
-        resp = client.get("/api/modes/google/capabilities")
+        with caplog.at_level(logging.ERROR, logger=modes.logger.name):
+            resp = client.get("/api/modes/google/capabilities")
         assert resp.status_code == 500
+        assert resp.json()["detail"] == "Failed to probe mode capabilities"
+        assert secret not in resp.text
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text

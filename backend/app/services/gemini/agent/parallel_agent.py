@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional, AsyncGenerator
 from dataclasses import dataclass
 
 from .base_agent_executor import BaseAgentExecutor
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,11 @@ class ParallelAgent:
             for idx, (task, result) in enumerate(zip(self.tasks, results)):
                 output_key = task.output_key or f"task_{idx}"
                 if isinstance(result, Exception):
-                    logger.error(f"[ParallelAgent] Task {idx + 1} failed: {result}")
+                    logger.error(
+                        "[ParallelAgent] Task %s failed: %s",
+                        idx + 1,
+                        summarize_text_for_log(result, label="task_error"),
+                    )
                     errors[output_key] = str(result)
                     aggregated_results[output_key] = None
                 else:
@@ -130,7 +135,10 @@ class ParallelAgent:
             }
 
         except Exception as e:
-            logger.error(f"[ParallelAgent] Parallel execution failed: {e}", exc_info=True)
+            logger.error(
+                "[ParallelAgent] Parallel execution failed: %s",
+                summarize_text_for_log(e, label="parallel_error"),
+            )
             return {
                 "success": False,
                 "error": str(e),
@@ -227,7 +235,10 @@ class ParallelAgent:
             }
 
         except Exception as e:
-            logger.error(f"[ParallelAgent] Stream execution failed: {e}", exc_info=True)
+            logger.error(
+                "[ParallelAgent] Stream execution failed: %s",
+                summarize_text_for_log(e, label="stream_error"),
+            )
             yield {
                 "event_type": "error",
                 "error": str(e)

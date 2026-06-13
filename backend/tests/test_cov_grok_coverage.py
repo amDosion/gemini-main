@@ -8,6 +8,7 @@ the modules' own logic is exercised directly.
 from __future__ import annotations
 
 import base64
+import logging
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
@@ -25,7 +26,7 @@ from app.services.grok.image_editor import (
     DEFAULT_MODEL,
     ImageEditor,
 )
-
+from app.services.grok.model_manager import ModelManager
 
 # ---------------------------------------------------------------------------
 # Fakes / helpers for the AsyncOpenAI client boundary
@@ -345,10 +346,17 @@ async def test_chat_none_content_and_none_finish_reason_defaults():
     assert result["usage"]["total_tokens"] == 0
 
 
-async def test_chat_propagates_client_error():
-    handler, _ = _make_handler(error=RuntimeError("boom"))
+async def test_chat_propagates_client_error(caplog):
+    error_text = "boom with secret-token"
+    handler, _ = _make_handler(error=RuntimeError(error_text))
     with pytest.raises(RuntimeError, match="boom"):
-        await handler.chat([{"role": "user", "content": "q"}], model="grok-3")
+        with caplog.at_level(logging.ERROR, logger="app.services.grok.chat_handler"):
+            await handler.chat([{"role": "user", "content": "q"}], model="grok-3")
+
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert f"<redacted error; length={len(error_text)}>" in log_text
+    assert "secret-token" not in log_text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 # ===========================================================================
@@ -441,13 +449,21 @@ async def test_stream_chat_enable_thinking_maps_reasoning_effort():
     assert completions.calls[0]["reasoning_effort"] == "high"
 
 
-async def test_stream_chat_error_yields_error_then_done():
-    handler, _ = _make_handler(error=ValueError("stream failed"))
-    out = await _collect(handler.stream_chat([{"role": "user", "content": "x"}], model="grok-3"))
+async def test_stream_chat_error_yields_error_then_done(caplog):
+    error_text = "stream failed with secret-token"
+    handler, _ = _make_handler(error=ValueError(error_text))
+    with caplog.at_level(logging.ERROR, logger="app.services.grok.chat_handler"):
+        out = await _collect(handler.stream_chat([{"role": "user", "content": "x"}], model="grok-3"))
+
     assert out[0]["chunk_type"] == "error"
-    assert "stream failed" in out[0]["error"]
+    assert out[0]["error"] == "Grok stream chat failed"
     assert out[1]["chunk_type"] == "done"
     assert out[1]["finish_reason"] == "error"
+
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert f"<redacted error; length={len(error_text)}>" in log_text
+    assert "secret-token" not in log_text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 # ===========================================================================
@@ -526,7 +542,7 @@ async def test_load_image_bytes_from_http(monkeypatch):
     ed = _editor()
 
     # CANON-011: _load_image_bytes now runs the SSRF guard first; this test pins
-    # the download mechanics, so pass the (non-resolvable) test host through.
+    # the guarded download mechanics, so pass the (non-resolvable) test host through.
     async def _passthrough(url):
         return url
 
@@ -550,12 +566,17 @@ async def test_load_image_bytes_from_http(monkeypatch):
         async def __aexit__(self, *a):
             return False
 
-        async def get(self, url):
-            assert url == "https://x/img.png"
-            return _Resp()
+    calls = []
+
+    async def _guarded_get(client, url, *, max_redirects):
+        assert isinstance(client, _Client)
+        calls.append((url, max_redirects))
+        return _Resp(), url
 
     monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    monkeypatch.setattr("app.services.grok.image_editor.get_with_redirect_guard", _guarded_get)
     assert await ed._load_image_bytes("https://x/img.png") == b"downloaded"
+    assert calls == [("https://x/img.png", 5)]
 
 
 async def test_load_image_bytes_unsupported_type_raises():
@@ -575,10 +596,10 @@ async def test_load_image_bytes_unsupported_string_scheme_raises():
 # ===========================================================================
 
 class _FakePostResponse:
-    def __init__(self, json_data, status_code=200):
+    def __init__(self, json_data, status_code=200, text="error-body"):
         self._json = json_data
         self.status_code = status_code
-        self.text = "error-body"
+        self.text = text
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -733,14 +754,22 @@ async def test_edit_image_empty_data_raises_runtime_error(monkeypatch):
         await ed.edit_image(prompt="p", reference_images=["https://in/a.png"])
 
 
-async def test_edit_image_http_status_error_propagates(monkeypatch):
+async def test_edit_image_http_status_error_propagates(monkeypatch, caplog):
     ed = _editor()
     await _patch_load_bytes(monkeypatch)
-    resp = _FakePostResponse({"data": []}, status_code=500)
+    response_text = "provider response leaked secret-token"
+    resp = _FakePostResponse({"data": []}, status_code=500, text=response_text)
     _patch_post(monkeypatch, resp)
 
-    with pytest.raises(httpx.HTTPStatusError):
-        await ed.edit_image(prompt="p", reference_images=["https://in/a.png"])
+    with caplog.at_level(logging.ERROR, logger="app.services.grok.image_editor"):
+        with pytest.raises(httpx.HTTPStatusError):
+            await ed.edit_image(prompt="p", reference_images=["https://in/a.png"])
+
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert f"<redacted provider_error; length={len(response_text)}>" in log_text
+    assert "secret-token" not in log_text
+    assert response_text not in log_text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 async def test_edit_image_limits_references_to_16(monkeypatch):
@@ -752,3 +781,70 @@ async def test_edit_image_limits_references_to_16(monkeypatch):
     refs = [f"https://in/{i}.png" for i in range(30)]
     await ed.edit_image(prompt="p", reference_images=refs)
     assert len(_FakePostClient.last_call["files"]) == 16
+
+
+# ===========================================================================
+# ModelManager
+# ===========================================================================
+
+class _FakeModelsResponse:
+    def __init__(self, json_data=None, status_code=200, text="models-error"):
+        self._json = json_data if json_data is not None else {"data": []}
+        self.status_code = status_code
+        self.text = text
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "bad models response",
+                request=httpx.Request("GET", "https://grok.example.test/v1/models"),
+                response=self,
+            )
+
+    def json(self):
+        return self._json
+
+
+class _FakeModelsClient:
+    def __init__(self, response: _FakeModelsResponse):
+        self._response = response
+
+    def make(self):
+        outer = self
+
+        class _Client:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get(self, url, headers=None):
+                _FakePostClient.last_call = {"url": url, "headers": headers}
+                return outer._response
+
+        return _Client
+
+
+def _patch_model_get(monkeypatch, response: _FakeModelsResponse):
+    fake = _FakeModelsClient(response)
+    monkeypatch.setattr(httpx, "AsyncClient", fake.make())
+
+
+async def test_model_manager_http_error_logs_response_summary(monkeypatch, caplog):
+    response_text = "provider models response leaked secret-token"
+    _patch_model_get(monkeypatch, _FakeModelsResponse(status_code=502, text=response_text))
+    manager = ModelManager(api_key="key-123", base_url="https://grok.example.test/v1")
+
+    with caplog.at_level(logging.ERROR, logger="app.services.grok.model_manager"):
+        with pytest.raises(httpx.HTTPStatusError):
+            await manager.get_available_models()
+
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert f"<redacted provider_error; length={len(response_text)}>" in log_text
+    assert response_text not in log_text
+    assert "secret-token" not in log_text
+    assert all(record.exc_info is None for record in caplog.records)

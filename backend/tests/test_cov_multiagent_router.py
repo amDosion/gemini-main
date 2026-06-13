@@ -23,6 +23,7 @@ validation (400/403/409), nonce replay (409), and deprecation headers.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, AsyncIterator, Dict, List
 
@@ -177,6 +178,15 @@ def _patch_runner(monkeypatch, runner: _FakeRunner, api_key: str = "key-123"):
         return runner, api_key
 
     monkeypatch.setattr(ma, "_create_adk_runner_for_agent", _fake_factory)
+
+
+def _assert_generic_error_response(resp, caplog, *, detail: str, secret: str) -> None:
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == detail
+    assert secret not in resp.text
+    assert secret not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "<redacted error; length=" in caplog.text
 
 
 # =========================================================================== #
@@ -783,6 +793,23 @@ class TestBasicEndpoints:
         names = {a["name"] for a in resp.json()["agents"]}
         assert names == {"ADKOne"}
 
+    def test_list_agents_error_is_generic(self, client, monkeypatch, caplog):
+        secret = "registry-list-secret"
+
+        async def boom(self, **kwargs):
+            raise RuntimeError(f"registry exploded {secret}")
+
+        monkeypatch.setattr(ma.AgentRegistryService, "list_agents", boom)
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.get("/api/multi-agent/agents")
+
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Failed to list agents"
+        assert secret not in resp.text
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
+
     def test_register_agent_happy_path(self, client, db_session):
         resp = client.post(
             "/api/multi-agent/agents/register",
@@ -794,17 +821,25 @@ class TestBasicEndpoints:
         # Persisted to DB
         assert db_session.query(AgentRegistry).filter_by(name="Registered").first() is not None
 
-    def test_register_agent_error_maps_500(self, client, monkeypatch):
+    def test_register_agent_error_is_generic(self, client, monkeypatch, caplog):
+        secret = "registry-register-secret"
+
         async def boom(self, **kwargs):
-            raise RuntimeError("registry exploded")
+            raise RuntimeError(f"registry exploded {secret}")
 
         monkeypatch.setattr(ma.AgentRegistryService, "register_agent", boom)
-        resp = client.post(
-            "/api/multi-agent/agents/register",
-            json={"name": "X", "agent_type": "custom"},
-        )
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                "/api/multi-agent/agents/register",
+                json={"name": "X", "agent_type": "custom"},
+            )
+
         assert resp.status_code == 500
-        assert "registry exploded" in resp.json()["detail"]
+        assert resp.json()["detail"] == "Failed to register agent"
+        assert secret not in resp.text
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
 
 
 # =========================================================================== #
@@ -872,18 +907,26 @@ class TestRuntimeRun:
         )
         assert resp.status_code == 200
 
-    def test_run_runner_failure_maps_500(self, client, db_session, monkeypatch):
+    def test_run_runner_failure_is_generic(self, client, db_session, monkeypatch, caplog):
+        secret = "runtime-run-secret"
         agent = _add_agent(db_session)
 
         class _BoomRunner(_FakeRunner):
             async def run_once(self, **kwargs):
-                raise RuntimeError("runner boom")
+                raise RuntimeError(f"runner boom {secret}")
 
         _patch_runner(monkeypatch, _BoomRunner())
-        resp = client.post(
-            f"/api/multi-agent/agents/{agent.id}/runtime/run", json={"input": "hi"}
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                f"/api/multi-agent/agents/{agent.id}/runtime/run", json={"input": "hi"}
+            )
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="ADK run failed",
+            secret=secret,
         )
-        assert resp.status_code == 500
 
 
 class TestRuntimeSessions:
@@ -899,6 +942,27 @@ class TestRuntimeSessions:
     def test_list_sessions_agent_not_found(self, client):
         resp = client.get("/api/multi-agent/agents/missing/runtime/sessions")
         assert resp.status_code == 404
+
+    def test_list_sessions_runner_failure_is_generic(
+        self, client, db_session, monkeypatch, caplog
+    ):
+        secret = "runtime-list-sessions-secret"
+        agent = _add_agent(db_session)
+
+        class _BoomRunner(_FakeRunner):
+            async def list_sessions(self, *, user_id):
+                raise RuntimeError(f"session list boom {secret}")
+
+        _patch_runner(monkeypatch, _BoomRunner())
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.get(f"/api/multi-agent/agents/{agent.id}/runtime/sessions")
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="Failed to list ADK sessions",
+            secret=secret,
+        )
 
     def test_get_session_found(self, client, db_session, monkeypatch):
         agent = _add_agent(db_session)
@@ -916,6 +980,29 @@ class TestRuntimeSessions:
             f"/api/multi-agent/agents/{agent.id}/runtime/sessions/missing"
         )
         assert resp.status_code == 404
+
+    def test_get_session_runner_failure_is_generic(
+        self, client, db_session, monkeypatch, caplog
+    ):
+        secret = "runtime-get-session-secret"
+        agent = _add_agent(db_session)
+
+        class _BoomRunner(_FakeRunner):
+            async def get_session_snapshot(self, *, user_id, session_id):
+                raise RuntimeError(f"session get boom {secret}")
+
+        _patch_runner(monkeypatch, _BoomRunner())
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.get(
+                f"/api/multi-agent/agents/{agent.id}/runtime/sessions/snap"
+            )
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="Failed to get ADK session",
+            secret=secret,
+        )
 
     def test_rewind_session(self, client, db_session, monkeypatch):
         agent = _add_agent(db_session)
@@ -936,6 +1023,28 @@ class TestRuntimeSessions:
             json={},
         )
         assert resp.status_code == 422  # pydantic required field
+
+    def test_rewind_runner_failure_is_generic(self, client, db_session, monkeypatch, caplog):
+        secret = "runtime-rewind-secret"
+        agent = _add_agent(db_session)
+
+        class _BoomRunner(_FakeRunner):
+            async def rewind(self, **kwargs):
+                raise RuntimeError(f"rewind boom {secret}")
+
+        _patch_runner(monkeypatch, _BoomRunner())
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                f"/api/multi-agent/agents/{agent.id}/runtime/sessions/s1/rewind",
+                json={"rewindBeforeInvocationId": "inv-9"},
+            )
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="ADK rewind failed",
+            secret=secret,
+        )
 
 
 class TestConfirmToolEndpoint:
@@ -987,6 +1096,46 @@ class TestConfirmToolEndpoint:
         assert resp.status_code == 200, resp.text
         assert resp.json()["status"] == "completed"
 
+    def test_confirm_runner_failure_is_generic(
+        self, client, db_session, monkeypatch, caplog
+    ):
+        secret = "runtime-confirm-secret"
+        agent = _add_agent(db_session)
+
+        class _BoomRunner(_FakeRunner):
+            async def run_once(self, **kwargs):
+                raise RuntimeError(f"confirm boom {secret}")
+
+        _patch_runner(monkeypatch, _BoomRunner())
+        now_ms = int(time.time() * 1000)
+        ticket = {
+            "session_id": "s1",
+            "function_call_id": "fc-1",
+            "invocation_id": "inv-1",
+            "tenant_id": USER_ID,
+            "nonce": "nonce-boom",
+            "timestamp_ms": now_ms,
+            "ttl_seconds": 600,
+        }
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                f"/api/multi-agent/agents/{agent.id}/runtime/sessions/s1/confirm-tool",
+                json={
+                    "functionCallId": "fc-1",
+                    "confirmed": True,
+                    "invocationId": "inv-1",
+                    "nonce": "nonce-boom",
+                    "approvalTicket": ticket,
+                },
+            )
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="ADK tool confirmation failed",
+            secret=secret,
+        )
+
 
 class TestMemoryEndpoints:
     def test_memory_search_requires_query(self, client, db_session, monkeypatch):
@@ -1015,6 +1164,28 @@ class TestMemoryEndpoints:
         assert body["count"] == 1
         assert body["query"] == "find"
 
+    def test_memory_search_failure_is_generic(self, client, db_session, monkeypatch, caplog):
+        secret = "runtime-memory-search-secret"
+        agent = _add_agent(db_session)
+
+        class _FakeMemoryManager:
+            async def search_memories(self, **kwargs):
+                raise RuntimeError(f"memory search boom {secret}")
+
+        monkeypatch.setattr(ma, "_build_memory_manager", lambda **k: _FakeMemoryManager())
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                f"/api/multi-agent/agents/{agent.id}/runtime/memory/search",
+                json={"query": "find", "limit": 3},
+            )
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="ADK memory search failed",
+            secret=secret,
+        )
+
     def test_memory_index_happy_path(self, client, db_session, monkeypatch):
         agent = _add_agent(db_session)
 
@@ -1038,6 +1209,28 @@ class TestMemoryEndpoints:
             json={},
         )
         assert resp.status_code == 404
+
+    def test_memory_index_failure_is_generic(self, client, db_session, monkeypatch, caplog):
+        secret = "runtime-memory-index-secret"
+        agent = _add_agent(db_session)
+
+        class _FakeMemoryManager:
+            async def add_session_to_memory(self, **kwargs):
+                raise RuntimeError(f"memory index boom {secret}")
+
+        monkeypatch.setattr(ma, "_build_memory_manager", lambda **k: _FakeMemoryManager())
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                f"/api/multi-agent/agents/{agent.id}/runtime/sessions/s1/memory/index",
+                json={},
+            )
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="ADK memory index failed",
+            secret=secret,
+        )
 
 
 # =========================================================================== #
@@ -1112,21 +1305,54 @@ class TestOrchestrate:
         assert body["output"] == "done"
         assert body["route_meta"]["mode"] == "default"
 
+    def test_orchestrate_google_service_failure_log_is_summarized(
+        self, client, monkeypatch, caplog
+    ):
+        secret = "google-service-secret"
+
+        async def _fake_creds(*a, **k):
+            raise RuntimeError(f"credential failure {secret}")
+
+        async def _fake_orchestrate(self, **kwargs):
+            return {"output": "done without google service", "subtasks": []}
+
+        monkeypatch.setattr(ma, "get_provider_credentials", _fake_creds)
+        monkeypatch.setattr(ma.Orchestrator, "orchestrate", _fake_orchestrate)
+
+        with caplog.at_level(logging.WARNING, logger=ma.logger.name):
+            resp = client.post("/api/multi-agent/orchestrate", json={"task": "do"})
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["output"] == "done without google service"
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
+        assert all(record.exc_info is None for record in caplog.records)
+
 
 # =========================================================================== #
 # HTTP endpoints — workflows (image-edit / excel) + adk-samples
 # =========================================================================== #
 class TestWorkflowEndpoints:
-    def test_image_edit_credential_failure_maps_500(self, client, monkeypatch):
+    def test_image_edit_credential_failure_is_generic(self, client, monkeypatch, caplog):
+        secret = "workflow-image-secret"
+
         async def _boom_creds(*a, **k):
-            raise RuntimeError("no google key")
+            raise RuntimeError(f"no google key {secret}")
 
         monkeypatch.setattr(ma, "get_provider_credentials", _boom_creds)
-        resp = client.post(
-            "/api/multi-agent/workflows/image-edit",
-            json={"image_url": "https://x/a.png", "edit_prompt": "make it blue"},
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                "/api/multi-agent/workflows/image-edit",
+                json={"image_url": "https://x/a.png", "edit_prompt": "make it blue"},
+            )
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="Image edit workflow failed",
+            secret=secret,
         )
-        assert resp.status_code == 500
 
     def test_excel_analysis_requires_reference(self, client, monkeypatch):
         async def _fake_creds(*a, **k):
@@ -1139,6 +1365,53 @@ class TestWorkflowEndpoints:
         )
         # No attachment_id/file_url/file_path → 400 from reference resolver
         assert resp.status_code == 400
+
+    def test_excel_analysis_internal_error_is_generic(self, client, monkeypatch, caplog):
+        secret = "workflow-excel-secret"
+
+        async def _fake_creds(*a, **k):
+            return ("key", "")
+
+        def _boom_reference(**kwargs):
+            raise RuntimeError(f"resolver failed {secret}")
+
+        monkeypatch.setattr(ma, "get_provider_credentials", _fake_creds)
+        monkeypatch.setattr(ma, "_resolve_excel_file_reference", _boom_reference)
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                "/api/multi-agent/workflows/excel-analysis",
+                json={"analysis_type": "comprehensive", "file_url": "https://x/data.xlsx"},
+            )
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="Excel analysis workflow failed",
+            secret=secret,
+        )
+
+    def test_adk_samples_list_failure_is_generic(self, client, monkeypatch, caplog):
+        secret = "workflow-adk-list-secret"
+
+        class _FakeImporter:
+            def __init__(self, **kwargs):
+                pass
+
+            async def list_available_templates(self):
+                raise RuntimeError(f"list templates failed {secret}")
+
+        import app.services.gemini.agent.adk_samples_importer as importer_mod
+
+        monkeypatch.setattr(importer_mod, "ADKSamplesImporter", _FakeImporter)
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.get("/api/multi-agent/workflows/adk-samples/templates")
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="Failed to list ADK sample templates",
+            secret=secret,
+        )
 
     def test_adk_samples_import_bad_template_400(self, client, monkeypatch):
         class _FakeImporter:
@@ -1175,6 +1448,32 @@ class TestWorkflowEndpoints:
         assert resp.status_code == 200, resp.text
         assert resp.json()["name"] == "Imported"
 
+    def test_adk_samples_import_failure_is_generic(self, client, monkeypatch, caplog):
+        secret = "workflow-adk-import-secret"
+
+        class _FakeImporter:
+            def __init__(self, **kwargs):
+                pass
+
+            async def import_template(self, **kwargs):
+                raise RuntimeError(f"import template failed {secret}")
+
+        import app.services.gemini.agent.adk_samples_importer as importer_mod
+
+        monkeypatch.setattr(importer_mod, "ADKSamplesImporter", _FakeImporter)
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                "/api/multi-agent/workflows/adk-samples/import",
+                json={"template_id": "marketing-agency"},
+            )
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="Failed to import ADK sample template",
+            secret=secret,
+        )
+
     def test_adk_samples_import_all(self, client, monkeypatch):
         class _FakeImporter:
             def __init__(self, **kwargs):
@@ -1189,6 +1488,31 @@ class TestWorkflowEndpoints:
         resp = client.post("/api/multi-agent/workflows/adk-samples/import-all")
         assert resp.status_code == 200, resp.text
         assert resp.json()["count"] == 2
+
+    def test_adk_samples_import_all_failure_is_generic(
+        self, client, monkeypatch, caplog
+    ):
+        secret = "workflow-adk-import-all-secret"
+
+        class _FakeImporter:
+            def __init__(self, **kwargs):
+                pass
+
+            async def import_all_templates(self, **kwargs):
+                raise RuntimeError(f"import all failed {secret}")
+
+        import app.services.gemini.agent.adk_samples_importer as importer_mod
+
+        monkeypatch.setattr(importer_mod, "ADKSamplesImporter", _FakeImporter)
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post("/api/multi-agent/workflows/adk-samples/import-all")
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="Failed to import ADK sample templates",
+            secret=secret,
+        )
 
 
 # =========================================================================== #
@@ -1238,15 +1562,25 @@ class TestRuntimeRunLive:
         )
         assert resp.status_code == 400
 
-    def test_run_live_runtime_error_event_500(self, client, db_session, monkeypatch):
+    def test_run_live_runtime_error_event_is_generic(
+        self, client, db_session, monkeypatch, caplog
+    ):
+        secret = "runtime-live-secret"
         agent = _add_agent(db_session)
-        events = [{"type": "error", "error": "engine fault"}]
+        events = [{"type": "error", "error": f"engine fault {secret}"}]
         _patch_runner(monkeypatch, _FakeRunner(live_events=events))
-        resp = client.post(
-            f"/api/multi-agent/agents/{agent.id}/runtime/run-live",
-            json={"input": "hi"},
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                f"/api/multi-agent/agents/{agent.id}/runtime/run-live",
+                json={"input": "hi"},
+            )
+
+        _assert_generic_error_response(
+            resp,
+            caplog,
+            detail="ADK live run failed",
+            secret=secret,
         )
-        assert resp.status_code == 500
 
     def test_run_live_chunk_only_fallback_output(self, client, db_session, monkeypatch):
         # No final event → output joins the chunk contents.
@@ -1320,6 +1654,17 @@ class TestSheetIngestKwargs:
         req = self._request(file_url="https://x/data.csv")
         kwargs = ma._build_sheet_ingest_kwargs(request_body=req, db=db_session, user_id=USER_ID)
         assert kwargs["file_url"] == "https://x/data.csv"
+
+    def test_ingest_kwargs_rejects_local_file_url(self, db_session, tmp_path):
+        secret = tmp_path / "secret.csv"
+        secret.write_text("do,not,read", encoding="utf-8")
+        req = self._request(file_url=str(secret))
+
+        with pytest.raises(HTTPException) as exc_info:
+            ma._build_sheet_ingest_kwargs(request_body=req, db=db_session, user_id=USER_ID)
+
+        assert exc_info.value.status_code == 400
+        assert "file_url only supports http/https/data URL" in str(exc_info.value.detail)
 
 
 class TestOfficialOrchestrationEarlyReturns:
@@ -1395,17 +1740,29 @@ class TestSheetStageEndpoints:
         assert resp.status_code == 403
         assert resp.json()["detail"]["error"]["code"] == "SHEET_STAGE_FORBIDDEN"
 
-    def test_sheet_stage_protocol_unexpected_error_500(self, client, monkeypatch):
+    def test_sheet_stage_protocol_unexpected_error_is_generic(
+        self, client, monkeypatch, caplog
+    ):
+        secret = "sheet-stage-protocol-secret"
+
         async def _boom(**kwargs):
-            raise RuntimeError("kaboom")
+            raise RuntimeError(f"kaboom {secret}")
 
         monkeypatch.setattr(ma, "execute_sheet_stage_protocol_request", _boom)
-        resp = client.post(
-            "/api/multi-agent/workflows/excel-analysis/stage",
-            json={"stage": "ingest", "content": "x"},
-        )
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post(
+                "/api/multi-agent/workflows/excel-analysis/stage",
+                json={"stage": "ingest", "content": "x"},
+            )
+
         assert resp.status_code == 500
-        assert resp.json()["detail"]["error"]["code"] == "SHEET_STAGE_INTERNAL_ERROR"
+        error = resp.json()["detail"]["error"]
+        assert error["code"] == "SHEET_STAGE_INTERNAL_ERROR"
+        assert error["message"] == "Sheet stage protocol failed"
+        assert secret not in resp.text
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
 
     def test_lineage_unsupported_protocol_version_400(self, client):
         resp = client.get(
@@ -1461,6 +1818,36 @@ class TestSheetStageEndpoints:
         )
         assert resp.status_code == 404
         assert resp.json()["detail"]["error"]["code"] == "SHEET_STAGE_SESSION_NOT_FOUND"
+
+    def test_lineage_unexpected_error_is_generic(self, client, monkeypatch, caplog):
+        secret = "sheet-stage-lineage-secret"
+
+        async def _boom(**kwargs):
+            raise RuntimeError(f"lineage failed {secret}")
+
+        monkeypatch.setattr(
+            ma._sheet_stage_artifact_service,
+            "query_sheet_artifact_lineage",
+            _boom,
+        )
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.get(
+                "/api/multi-agent/workflows/excel-analysis/stage/lineage",
+                params={
+                    "sessionId": "sess-1",
+                    "artifactKey": "sheet/profile",
+                    "artifactVersion": 1,
+                },
+            )
+
+        assert resp.status_code == 500
+        error = resp.json()["detail"]["error"]
+        assert error["code"] == "SHEET_STAGE_INTERNAL_ERROR"
+        assert error["message"] == "Sheet stage lineage query failed"
+        assert secret not in resp.text
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
 
 
 # =========================================================================== #
@@ -1755,7 +2142,11 @@ class TestOrchestrationRuntimeContract:
 # Orchestrate endpoint — strict-mode default branch
 # =========================================================================== #
 class TestOrchestrateStrict:
-    def test_default_mode_orchestrator_runtime_error_propagates(self, client, monkeypatch):
+    def test_default_mode_orchestrator_runtime_error_is_generic(
+        self, client, monkeypatch, caplog
+    ):
+        secret = "orchestrator-runtime-secret"
+
         async def _fake_creds(*a, **k):
             return ("key", "")
 
@@ -1764,13 +2155,21 @@ class TestOrchestrateStrict:
 
         async def _raise(self, **kwargs):
             # Non-degrade marker absent + non-strict → RuntimeError re-raised → 500.
-            raise RuntimeError("orchestrator failed hard")
+            raise RuntimeError(f"orchestrator failed hard {secret}")
 
         monkeypatch.setattr(ma.Orchestrator, "orchestrate", _raise)
-        resp = client.post("/api/multi-agent/orchestrate", json={"task": "do"})
-        assert resp.status_code == 500
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post("/api/multi-agent/orchestrate", json={"task": "do"})
 
-    def test_orchestrate_unexpected_exception_maps_500(self, client, monkeypatch):
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Failed to orchestrate task"
+        assert secret not in resp.text
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
+
+    def test_orchestrate_unexpected_exception_is_generic(self, client, monkeypatch, caplog):
+        secret = "orchestrator-unexpected-secret"
         # GoogleService creation failure is swallowed; force orchestrate to raise non-HTTP.
         async def _fake_creds(*a, **k):
             raise RuntimeError("creds boom")  # swallowed → google_service stays None
@@ -1778,11 +2177,18 @@ class TestOrchestrateStrict:
         monkeypatch.setattr(ma, "get_provider_credentials", _fake_creds)
 
         async def _raise(self, **kwargs):
-            raise ValueError("unexpected")
+            raise ValueError(f"unexpected {secret}")
 
         monkeypatch.setattr(ma.Orchestrator, "orchestrate", _raise)
-        resp = client.post("/api/multi-agent/orchestrate", json={"task": "do"})
+        with caplog.at_level(logging.ERROR, logger=ma.logger.name):
+            resp = client.post("/api/multi-agent/orchestrate", json={"task": "do"})
+
         assert resp.status_code == 500
+        assert resp.json()["detail"] == "Failed to orchestrate task"
+        assert secret not in resp.text
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
 
 
 # =========================================================================== #
@@ -1798,6 +2204,25 @@ class TestRuntimeContractHelpers:
         out = ma._classify_orchestration_http_error(HTTPException(status_code=500, detail="boom"))
         assert out["status_code"] == 500
         assert out["error_code"] == ma.ADKRuntimeErrorCode.ADK_RUNTIME_UNAVAILABLE
+
+    def test_classify_orchestration_classifier_failure_logs_summary(
+        self, monkeypatch, caplog
+    ):
+        secret = "orchestration-classifier-secret"
+
+        def _boom(exc):
+            raise RuntimeError(f"classifier failed {secret}")
+
+        monkeypatch.setattr(ma, "_classify_orchestration_http_exception", _boom)
+        with caplog.at_level(logging.WARNING, logger=ma.logger.name):
+            out = ma._classify_orchestration_http_error(
+                HTTPException(status_code=400, detail="bad")
+            )
+
+        assert out["status_code"] == 400
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
 
     def test_resolve_runtime_contract_default(self):
         contract = ma._resolve_adk_orchestration_runtime_contract()

@@ -17,7 +17,10 @@ vi.mock('../../common/CachedImage', () => ({
   ),
 }));
 
-import { InlineReferenceImagePreview } from './InlineReferenceImagePreview';
+import {
+  InlineReferenceImagePreview,
+  isPreviewableReferenceImageUrl,
+} from './InlineReferenceImagePreview';
 
 describe('InlineReferenceImagePreview', () => {
   afterEach(() => {
@@ -29,7 +32,7 @@ describe('InlineReferenceImagePreview', () => {
 
     render(
       <InlineReferenceImagePreview
-        imageUrl="data:image/png;base64,abc"
+        imageUrl="data:image/png;base64,YWJj"
         borderClassName="border-purple-500/30"
         onClear={onClear}
       />
@@ -37,7 +40,7 @@ describe('InlineReferenceImagePreview', () => {
 
     expect(screen.getByAltText('参考图片')).toHaveAttribute(
       'src',
-      'cached:data:image/png;base64,abc'
+      'cached:data:image/png;base64,YWJj'
     );
     fireEvent.click(screen.getByRole('button', { name: '清除参考图片' }));
     expect(onClear).toHaveBeenCalledTimes(1);
@@ -56,6 +59,43 @@ describe('InlineReferenceImagePreview', () => {
       'data-source-url',
       '/api/storage/local-files/workflow/reference.png'
     );
+  });
+
+  it('renders same-origin blob reference images through CachedImage', () => {
+    const blobUrl = `blob:${window.location.origin}/reference-preview`;
+
+    render(
+      <InlineReferenceImagePreview
+        imageUrl={blobUrl}
+        borderClassName="border-indigo-500/30"
+        onClear={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('cached-reference-image')).toHaveAttribute(
+      'data-source-url',
+      blobUrl
+    );
+  });
+
+  it.each([
+    ['cross-origin blob', 'blob:https://evil.example/reference-preview'],
+    ['inline svg', 'data:image/svg+xml;base64,PHN2Zy8+'],
+    ['non-base64 data image', 'data:image/png,<svg onload=alert(1)>'],
+  ])('does not render unsafe %s URLs', (_label, imageUrl) => {
+    const { container } = render(
+      <InlineReferenceImagePreview
+        imageUrl={imageUrl}
+        borderClassName="border-purple-500/30"
+        onClear={vi.fn()}
+      />
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('does not render inline images over the upload size cap', () => {
+    expect(isPreviewableReferenceImageUrl('data:image/png;base64,YWJjZA==', 3)).toBe(false);
   });
 
   it('does not render workflow template expressions as image URLs', () => {

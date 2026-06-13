@@ -12,6 +12,14 @@ from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 
 from ..client_pool import get_client_pool
+from .message_converter import is_allowed_provider_file_uri
+
+
+def _normalize_file_api_name(file_name: str) -> str:
+    normalized = str(file_name or "").strip()
+    if not normalized.startswith("files/"):
+        raise ValueError("Gemini file name must use the files/... provider format")
+    return normalized
 
 
 class FileHandler:
@@ -116,6 +124,7 @@ class FileHandler:
         Returns:
             文件信息字典
         """
+        file_name = _normalize_file_api_name(file_name)
         try:
             client = get_client_pool().get_client(
                 api_key=self._api_key,
@@ -154,6 +163,7 @@ class FileHandler:
         Returns:
             文件字节数据
         """
+        file_name = _normalize_file_api_name(file_name)
         try:
             client = get_client_pool().get_client(
                 api_key=self._api_key,
@@ -189,6 +199,7 @@ class FileHandler:
         Returns:
             删除是否成功
         """
+        file_name = _normalize_file_api_name(file_name)
         try:
             client = get_client_pool().get_client(
                 api_key=self._api_key,
@@ -255,6 +266,10 @@ class FileHandler:
         Returns:
             文件部分字典，可用于消息内容
         """
+        file_name = str(file_name or "").strip()
+        if not is_allowed_provider_file_uri(file_name):
+            raise ValueError("Unsupported Gemini file URI")
+
         part = {
             'file_data': {
                 'file_uri': file_name

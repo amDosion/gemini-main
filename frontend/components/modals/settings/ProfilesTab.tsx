@@ -24,6 +24,7 @@ import {
 import { ConfigProfile } from '../../../services/db';
 import { ModelConfig } from '../../../types/types';
 import { getAuthHeaders } from '../../../services/apiClient';
+import { parseHttpError } from '../../../services/http';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfirmDialog } from '../../common/ConfirmDialog';
 import { getErrorMessage } from '../../../utils/errorMessage';
@@ -146,8 +147,11 @@ export const ProfilesTab: React.FC<ProfilesTabProps> = ({
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Failed to get models: ${response.statusText}`);
+        const parsedError = await parseHttpError(
+          response,
+          `Failed to get models: ${response.statusText}`
+        );
+        throw new Error(parsedError.message);
       }
 
       const data = await response.json();

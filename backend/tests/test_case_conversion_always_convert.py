@@ -72,6 +72,93 @@ def test_undecodable_json_response_passes_through_and_logs(caplog):
     ), "undecodable JSON body should log a warning, not be skipped silently"
 
 
+def test_query_conversion_error_log_is_summarized(monkeypatch, caplog):
+    secret = "secret-query-token"
+
+    def raise_for_key(_key):
+        raise RuntimeError(f"cannot convert {secret}")
+
+    monkeypatch.setattr(ccm, "camel_to_snake", raise_for_key)
+
+    app = FastAPI()
+    app.add_middleware(CaseConversionMiddleware)
+
+    @app.get("/query-fails")
+    async def query_fails():
+        return Response(content="ok", media_type="text/plain")
+
+    client = TestClient(app)
+    with caplog.at_level(logging.ERROR, logger="app.middleware.case_conversion_middleware"):
+        resp = client.get(f"/query-fails?apiKey={secret}")
+
+    assert resp.status_code == 200
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "[CaseConversion] Query String conversion failed" in log_text
+    assert "<redacted error; length=" in log_text
+    assert secret not in log_text
+    assert "apiKey=" not in log_text
+    assert "Traceback" not in log_text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+def test_request_conversion_error_log_is_summarized(monkeypatch, caplog):
+    secret = "secret-request-token"
+
+    def raise_for_body(_data):
+        raise RuntimeError(f"cannot convert {secret}")
+
+    monkeypatch.setattr(ccm, "to_snake_case", raise_for_body)
+
+    app = FastAPI()
+    app.add_middleware(CaseConversionMiddleware)
+
+    @app.post("/request-fails")
+    async def request_fails():
+        return Response(content="ok", media_type="text/plain")
+
+    client = TestClient(app)
+    with caplog.at_level(logging.ERROR, logger="app.middleware.case_conversion_middleware"):
+        resp = client.post("/request-fails", json={"apiKey": secret})
+
+    assert resp.status_code == 200
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "[CaseConversion] Request conversion failed" in log_text
+    assert "<redacted error; length=" in log_text
+    assert secret not in log_text
+    assert "apiKey" not in log_text
+    assert "Traceback" not in log_text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+def test_response_conversion_error_log_is_summarized(monkeypatch, caplog):
+    secret = "secret-response-token"
+
+    def raise_for_body(_data):
+        raise RuntimeError(f"cannot convert {secret}")
+
+    monkeypatch.setattr(ccm, "to_camel_case", raise_for_body)
+
+    app = FastAPI()
+    app.add_middleware(CaseConversionMiddleware)
+
+    @app.get("/response-fails")
+    async def response_fails():
+        return {"api_key": secret}
+
+    client = TestClient(app)
+    with caplog.at_level(logging.ERROR, logger="app.middleware.case_conversion_middleware"):
+        resp = client.get("/response-fails")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"api_key": secret}
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "[CaseConversion] Response conversion failed" in log_text
+    assert "<redacted error; length=" in log_text
+    assert secret not in log_text
+    assert "Traceback" not in log_text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
 def test_default_endpoint_passes_through_oversized_as_snake(monkeypatch):
     monkeypatch.setattr(ccm, "MAX_RESPONSE_CONVERSION_BYTES", 50)
     client = TestClient(_make_app())

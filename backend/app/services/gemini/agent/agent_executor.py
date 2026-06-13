@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 from .a2a_protocol import A2AProtocolHandler
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,11 @@ class AgentExecutor:
             return result
             
         except Exception as e:
-            logger.error(f"[AgentExecutor] Error executing task {task_id}: {e}", exc_info=True)
+            logger.error(
+                "[AgentExecutor] Error executing task %s: %s",
+                task_id,
+                summarize_text_for_log(e, label="task_error"),
+            )
             
             # 更新任务状态为 failed
             await self.a2a_handler.update_task_status(

@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_GZIP_MINIMUM_SIZE = 1024
 GZIP_MINIMUM_SIZE_ENV_VAR = "GZIP_MINIMUM_SIZE"
+DEFAULT_CORS_ORIGINS = "http://localhost:21573,http://127.0.0.1:21573"
 
 # Content-Security-Policy: applied to every HTTP response unless downstream
 # already set one. The default is intentionally conservative for an app that
@@ -88,6 +89,23 @@ def _resolve_gzip_minimum_size() -> int:
         )
         return DEFAULT_GZIP_MINIMUM_SIZE
     return max(0, value)
+
+
+def resolve_cors_origins(raw_origins: Optional[str] = None) -> list[str]:
+    """Resolve credentialed CORS origins while rejecting wildcard origins."""
+    raw = raw_origins if raw_origins is not None else os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+
+    if "*" in origins:
+        logger.warning(
+            "CORS_ORIGINS contains wildcard '*', which is unsafe with credentialed CORS; ignoring wildcard"
+        )
+        origins = [o for o in origins if o != "*"]
+
+    if not origins:
+        origins = [o.strip() for o in DEFAULT_CORS_ORIGINS.split(",")]
+
+    return origins
 
 
 class SecurityHeadersMiddleware:
@@ -190,20 +208,7 @@ def configure_middlewares(
 
     # 2. CORS 中间件（跨域资源共享）
     # 注意：使用 httpOnly Cookie 时，allow_origins 不能为 "*"
-    _default_cors = "http://localhost:21573,http://127.0.0.1:21573"
-    cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", _default_cors).split(",") if o.strip()]
-
-    # core-2: a wildcard origin is invalid and unsafe together with
-    # allow_credentials=True (cookie auth). Refuse "*" rather than silently
-    # shipping a credentialed wildcard CORS policy; fall back to safe defaults
-    # if the operator supplied only "*".
-    if "*" in cors_origins:
-        logger.warning(
-            f"{prefixes.get('warning', '⚠️')} CORS_ORIGINS 含通配符 '*'，与 allow_credentials=True 不兼容且不安全，已忽略通配符"
-        )
-        cors_origins = [o for o in cors_origins if o != "*"]
-    if not cors_origins:
-        cors_origins = [o.strip() for o in _default_cors.split(",")]
+    cors_origins = resolve_cors_origins()
 
     app.add_middleware(
         CORSMiddleware,

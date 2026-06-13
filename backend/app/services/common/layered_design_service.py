@@ -26,6 +26,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 import logging
 from ...utils.attachment_handler import is_base64_url, is_http_url
+from ...utils.log_sanitization import summarize_url_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -562,7 +563,10 @@ class LayeredDesignService:
                 return base64.b64decode(base64_str)
             elif is_http_url(raw):
                 # HTTP URL - 需要下载图片
-                logger.warning(f"[LayeredDesignService] _extract_image_data: HTTP URL not supported yet: {raw[:100]}...")
+                logger.warning(
+                    "[LayeredDesignService] _extract_image_data: HTTP URL not supported yet: %s",
+                    summarize_url_for_log(raw),
+                )
                 return None
             else:
                 # 可能是纯 base64 字符串

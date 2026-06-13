@@ -10,8 +10,98 @@ Image Tools - 图像编辑工具
 import logging
 from typing import Dict, Any, Optional
 import json
+import re
+import base64
+import binascii
+
+from .....utils.attachment_handler import is_base64_image_url, is_http_url
+from .....utils.log_sanitization import (
+    summarize_text_for_log,
+    summarize_url_for_log,
+)
 
 logger = logging.getLogger(__name__)
+
+
+_WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"^[a-zA-Z]:[\\/]")
+_MAX_INLINE_EDIT_IMAGE_BYTES = 20 * 1024 * 1024
+_IMAGE_SIGNATURES = (
+    b"\x89PNG\r\n\x1a\n",
+    b"\xff\xd8\xff",
+    b"GIF87a",
+    b"GIF89a",
+    b"RIFF",
+)
+
+
+def _is_local_file_reference(value: str) -> bool:
+    normalized = str(value or "").strip()
+    lowered = normalized.lower()
+    return (
+        lowered.startswith("file:")
+        or normalized.startswith(("/", "\\", "~"))
+        or _WINDOWS_ABSOLUTE_PATH_RE.match(normalized) is not None
+    )
+
+
+def _validate_image_tool_reference(image_url: str) -> str:
+    normalized = str(image_url or "").strip()
+    if not normalized:
+        raise ValueError("image_url is required")
+
+    if _is_local_file_reference(normalized):
+        raise ValueError(
+            "unsupported image reference; use http(s), data:image, gs://, or files/ provider URI"
+        )
+
+    if is_base64_image_url(normalized) or is_http_url(normalized):
+        return normalized
+
+    lowered = normalized.lower()
+    if lowered.startswith("gs://") or normalized.startswith("files/"):
+        return normalized
+
+    raise ValueError(
+        "unsupported image reference; use http(s), data:image, gs://, or files/ provider URI"
+    )
+
+
+def _is_plain_base64_image_reference(value: str) -> bool:
+    normalized = str(value or "").strip()
+    max_base64_chars = ((_MAX_INLINE_EDIT_IMAGE_BYTES + 2) // 3) * 4 + 16
+    if not normalized or len(normalized) > max_base64_chars:
+        return False
+    try:
+        payload = base64.b64decode(normalized, validate=True)
+    except (ValueError, binascii.Error):
+        return False
+    if len(payload) > _MAX_INLINE_EDIT_IMAGE_BYTES:
+        return False
+    return payload.startswith(_IMAGE_SIGNATURES)
+
+
+def _validate_edit_image_reference(image_ref: str, *, field_name: str) -> str:
+    normalized = str(image_ref or "").strip()
+    if not normalized:
+        raise ValueError(f"{field_name} is required")
+    if _is_local_file_reference(normalized):
+        raise ValueError(
+            f"unsupported {field_name}; local file references are not allowed"
+        )
+
+    lowered = normalized.lower()
+    if (
+        is_http_url(normalized)
+        or is_base64_image_url(normalized)
+        or lowered.startswith("gs://")
+        or normalized.startswith("files/")
+        or _is_plain_base64_image_reference(normalized)
+    ):
+        return normalized
+
+    raise ValueError(
+        f"unsupported {field_name}; use http(s), data:image, gs://, files/, or inline image data"
+    )
 
 
 async def analyze_image(
@@ -23,15 +113,17 @@ async def analyze_image(
     使用 Gemini Vision 分析图像
     
     Args:
-        image_url: 图像 URL（支持 https://, data:image/..., file URI）
+        image_url: 图像引用（支持 http(s), data:image/..., gs://, files/...）
         google_service: GoogleService 实例
         model: 使用的模型
         
     Returns:
         分析结果（包含内容、风格、质量等信息）
     """
+    log_image_url = summarize_url_for_log(image_url)
     try:
-        logger.info(f"[ImageTools] Analyzing image: {image_url[:60]}...")
+        safe_image_url = _validate_image_tool_reference(image_url)
+        logger.info("[ImageTools] Analyzing image: %s", log_image_url)
         
         # 构建分析提示
         analysis_prompt = """请详细分析这张图像，并提供以下信息：
@@ -61,7 +153,7 @@ async def analyze_image(
                 {"text": analysis_prompt},
                 {
                     "file_data": {
-                        "file_uri": image_url,
+                        "file_uri": safe_image_url,
                         "mime_type": "image/jpeg"  # 可以根据实际类型调整
                     }
                 }
@@ -115,7 +207,11 @@ async def analyze_image(
         return analysis_result
         
     except Exception as e:
-        logger.error(f"[ImageTools] Error analyzing image: {e}", exc_info=True)
+        logger.error(
+            "[ImageTools] Error analyzing image: image=%s error=%s",
+            log_image_url,
+            summarize_text_for_log(e, label="analysis_error"),
+        )
         return {
             "error": str(e),
             "image_url": image_url
@@ -144,16 +240,28 @@ async def edit_image_with_imagen(
     Returns:
         编辑结果（包含编辑后的图像 URL）
     """
+    log_reference_image = summarize_url_for_log(reference_image)
+    log_prompt = summarize_text_for_log(prompt, label="prompt")
+    log_mask = summarize_url_for_log(mask) if str(mask or "").strip() else None
     try:
+        safe_reference_image = _validate_edit_image_reference(
+            reference_image,
+            field_name="reference_image",
+        )
+        safe_mask = (
+            _validate_edit_image_reference(mask, field_name="mask")
+            if str(mask or "").strip()
+            else None
+        )
         logger.info(f"[ImageTools] Editing image with mode: {edit_mode}")
         
         # 准备 reference_images 字典
         reference_images: Dict[str, Any] = {
-            "raw": reference_image
+            "raw": safe_reference_image
         }
         
-        if mask:
-            reference_images["mask"] = mask
+        if safe_mask:
+            reference_images["mask"] = safe_mask
         
         # 调用 GoogleService.edit_image
         result = await google_service.edit_image(
@@ -173,7 +281,13 @@ async def edit_image_with_imagen(
         }
         
     except Exception as e:
-        logger.error(f"[ImageTools] Error editing image: {e}", exc_info=True)
+        logger.error(
+            "[ImageTools] Error editing image: reference=%s prompt=%s mask=%s error=%s",
+            log_reference_image,
+            log_prompt,
+            log_mask or "None",
+            summarize_text_for_log(e, label="edit_error"),
+        )
         return {
             "success": False,
             "error": str(e),
@@ -201,8 +315,15 @@ async def generate_mask(
     Returns:
         掩码图像 URL 或 Base64（如果生成成功）
     """
+    log_image_url = summarize_url_for_log(image_url)
+    log_mask_prompt = summarize_text_for_log(mask_prompt, label="mask_prompt")
     try:
-        logger.info(f"[ImageTools] Generating mask for: {mask_prompt}")
+        safe_image_url = _validate_image_tool_reference(image_url)
+        logger.info(
+            "[ImageTools] Generating mask for: %s image=%s",
+            log_mask_prompt,
+            log_image_url,
+        )
         
         # 使用 Gemini Vision 分析图像并生成掩码描述
         prompt = f"""根据以下描述，为图像生成编辑掩码区域：
@@ -217,7 +338,7 @@ async def generate_mask(
                 {"text": prompt},
                 {
                     "file_data": {
-                        "file_uri": image_url,
+                        "file_uri": safe_image_url,
                         "mime_type": "image/jpeg"
                     }
                 }
@@ -239,5 +360,10 @@ async def generate_mask(
         return None  # 实际应该返回掩码图像 URL
         
     except Exception as e:
-        logger.error(f"[ImageTools] Error generating mask: {e}", exc_info=True)
+        logger.error(
+            "[ImageTools] Error generating mask: image=%s prompt=%s error=%s",
+            log_image_url,
+            log_mask_prompt,
+            summarize_text_for_log(e, label="mask_error"),
+        )
         return None

@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional, AsyncGenerator
 from dataclasses import dataclass
 
 from .tool_registry import ToolRegistry, Tool
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +184,11 @@ class AgentWithTools:
                     })
                     
                 except Exception as e:
-                    logger.error(f"[AgentWithTools] Tool execution failed: {e}", exc_info=True)
+                    logger.error(
+                        "[AgentWithTools] Tool execution failed: tool=%s error=%s",
+                        tool_call.name,
+                        summarize_text_for_log(e, label="tool_error"),
+                    )
                     tool_result = ToolCallResult(
                         call_id=tool_call.call_id,
                         name=tool_call.name,

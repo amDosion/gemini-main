@@ -5,8 +5,8 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
-from typing import List, Optional
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from typing import Annotated, Dict, List, Optional
 
 from ...core.database import SessionLocal, get_db
 from ...models.db_models import ConfigProfile as DBConfigProfile, UserSettings
@@ -15,10 +15,19 @@ from ...core.user_scoped_query import UserScopedQuery
 from ...core.encryption import encrypt_data, is_encrypted, decrypt_api_key
 from ...middleware.case_conversion_middleware import case_conversion_options
 from ...services.gemini.coordinators._config_cache import clear_config_cache
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["profiles"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+FREE_TEXT_PATTERN = r"^[\s\S]*$"
+PROFILE_TIMESTAMP_MAX = 4_102_444_800_000
+ProfileIdText = Annotated[str, Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)]
+ProfileNameText = Annotated[str, Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)]
+ProfileUrlText = Annotated[str, Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)]
+ProfileApiKeyText = Annotated[str, Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)]
+ProfileProtocolText = Annotated[str, Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)]
 
 
 def _encrypt_api_key(api_key: str) -> str:
@@ -42,29 +51,86 @@ def _encrypt_api_key(api_key: str) -> str:
     try:
         return encrypt_data(api_key)
     except Exception as e:
-        logger.error(f"[Profiles] Failed to encrypt API key: {e}")
+        logger.error(
+            "[Profiles] Failed to encrypt API key: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise
 
 
+def _clear_config_cache_best_effort(user_id: str) -> None:
+    try:
+        clear_config_cache(user_id=user_id)
+    except Exception as e:  # pragma: no cover - cache invalidation is best-effort
+        logger.debug(
+            "[Profiles] clear_config_cache failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+
+
 class ConfigProfilePayload(BaseModel):
-    id: str
-    name: Optional[str] = None
-    provider_id: Optional[str] = None
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    protocol: Optional[str] = None
+    id: ProfileIdText
+    name: Optional[ProfileNameText] = None
+    provider_id: Optional[ProfileNameText] = None
+    api_key: Optional[ProfileApiKeyText] = None
+    base_url: Optional[ProfileUrlText] = None
+    protocol: Optional[ProfileProtocolText] = None
     is_proxy: Optional[bool] = None
-    hidden_models: Optional[List[str]] = None
-    cached_model_count: Optional[int] = None
-    saved_models: Optional[List[dict]] = None  # 接收完整的 ModelConfig 对象数组
-    created_at: Optional[int] = None
-    updated_at: Optional[int] = None
+    hidden_models: Optional[List[ProfileIdText]] = Field(default=None, max_length=512)
+    cached_model_count: Optional[int] = Field(default=None, ge=0, le=10_000)
+    saved_models: Optional[List[Dict[str, JsonValue]]] = Field(default=None, max_length=512)
+    created_at: Optional[int] = Field(default=None, ge=0, le=PROFILE_TIMESTAMP_MAX)
+    updated_at: Optional[int] = Field(default=None, ge=0, le=PROFILE_TIMESTAMP_MAX)
 
     model_config = ConfigDict(extra="ignore")
 
+
+class ConfigProfileResponse(BaseModel):
+    id: ProfileIdText
+    user_id: ProfileIdText
+    name: ProfileNameText
+    provider_id: ProfileNameText
+    api_key: ProfileApiKeyText
+    base_url: ProfileUrlText = ""
+    protocol: ProfileProtocolText
+    is_proxy: bool
+    hidden_models: List[ProfileIdText] = Field(default_factory=list, max_length=512)
+    cached_model_count: int = Field(default=0, ge=0, le=10_000)
+    saved_models: List[Dict[str, JsonValue]] = Field(default_factory=list, max_length=512)
+    created_at: int = Field(ge=0, le=PROFILE_TIMESTAMP_MAX)
+    updated_at: int = Field(ge=0, le=PROFILE_TIMESTAMP_MAX)
+
+
+ConfigProfileListResponse = Annotated[List[ConfigProfileResponse], Field(max_length=10_000)]
+
+
+class FullSettingsResponse(BaseModel):
+    profiles: List[ConfigProfileResponse] = Field(max_length=10_000)
+    active_profile_id: Optional[ProfileIdText] = None
+    active_profile: Optional[ConfigProfileResponse] = None
+    dashscope_key: ProfileApiKeyText = ""
+
+
+class ActiveProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class ActiveProfileResponse(BaseModel):
+    id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class SetActiveProfileResponse(ActiveProfileResponse):
+    success: bool
+
+
+class DeleteProfileResponse(BaseModel):
+    success: bool
+
 # ==================== 配置文件管理 ====================
 
-@router.get("/profiles")
+@router.get("/profiles", response_model=ConfigProfileListResponse)
 @case_conversion_options(always_convert_response=True)
 async def get_profiles(
     edit_mode: bool = False,  # 编辑模式：True 时解密返回，False 时返回加密值
@@ -91,7 +157,10 @@ async def get_profiles(
                 profile_dict["api_key"] = decrypt_api_key(profile_dict["api_key"], silent=True)
                 logger.debug(f"[Profiles] Decrypted API key for edit mode (profile={profile.id})")
             except Exception as e:
-                logger.warning(f"[Profiles] Failed to decrypt API key in edit mode: {e}")
+                logger.warning(
+                    "[Profiles] Failed to decrypt API key in edit mode: %s",
+                    summarize_text_for_log(e, label="error"),
+                )
                 # 解密失败时返回加密值（前端可以显示错误）
         # 非编辑模式：返回加密值（或 None）
         
@@ -99,7 +168,7 @@ async def get_profiles(
     return result
 
 
-@router.post("/profiles")
+@router.post("/profiles", response_model=ConfigProfileResponse)
 async def create_or_update_profile(
     profile_data: ConfigProfilePayload,
     user_id: str = Depends(require_current_user),
@@ -162,7 +231,10 @@ async def create_or_update_profile(
                                         logger.info(f"[Profiles] Encrypted and saved API key (migrated from plaintext) (profile={profile.id})")
                                 except Exception as e:
                                     # 解密失败，可能是密钥不匹配，当作新 API Key 处理
-                                    logger.warning(f"[Profiles] Failed to decrypt existing API key for comparison: {e}")
+                                    logger.warning(
+                                        "[Profiles] Failed to decrypt existing API key for comparison: %s",
+                                        summarize_text_for_log(e, label="error"),
+                                    )
                                     profile.api_key = _encrypt_api_key(api_key_to_save)
                                     logger.info(f"[Profiles] Encrypted and saved new API key (decryption failed) (profile={profile.id})")
                             else:
@@ -170,10 +242,13 @@ async def create_or_update_profile(
                                 profile.api_key = _encrypt_api_key(api_key_to_save)
                                 logger.info(f"[Profiles] Encrypted and saved new API key (first time) (profile={profile.id})")
                     except Exception as e:
-                        logger.error(f"[Profiles] Failed to encrypt API key: {e}")
+                        logger.error(
+                            "[Profiles] Failed to encrypt API key: %s",
+                            summarize_text_for_log(e, label="error"),
+                        )
                         raise HTTPException(
                             status_code=500,
-                            detail=f"Failed to encrypt API key: {str(e)}"
+                            detail="Failed to encrypt API key",
                         )
             if "base_url" in update_data:
                 profile.base_url = update_data["base_url"]
@@ -222,17 +297,20 @@ async def create_or_update_profile(
         db.commit()
         db.refresh(profile)
         # Invalidate coordinator config cache so next read sees the write
-        try:
-            clear_config_cache(user_id=user_id)
-        except Exception:  # pragma: no cover - cache invalidation is best-effort
-            logger.debug("[Profiles] clear_config_cache failed", exc_info=True)
+        _clear_config_cache_best_effort(user_id=user_id)
         return profile.to_dict()
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
+        logger.error(
+            "[Profiles] Failed to save profile: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to save profile")
 
 
-@router.delete("/profiles/{profile_id}")
+@router.delete("/profiles/{profile_id}", response_model=DeleteProfileResponse)
 async def delete_profile(
     profile_id: str,
     user_id: str = Depends(require_current_user),
@@ -253,17 +331,18 @@ async def delete_profile(
         
         db.delete(profile)
         db.commit()
-        try:
-            clear_config_cache(user_id=user_id)
-        except Exception:  # pragma: no cover - cache invalidation is best-effort
-            logger.debug("[Profiles] clear_config_cache failed", exc_info=True)
+        _clear_config_cache_best_effort(user_id=user_id)
         return {"success": True}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
+        logger.error(
+            "[Profiles] Failed to delete profile: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to delete profile")
 
 
-@router.get("/active-profile")
+@router.get("/active-profile", response_model=ActiveProfileResponse)
 async def get_active_profile(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
@@ -275,15 +354,15 @@ async def get_active_profile(
     return {"id": settings.active_profile_id}
 
 
-@router.post("/active-profile")
+@router.post("/active-profile", response_model=SetActiveProfileResponse)
 async def set_active_profile(
-    data: dict,
+    data: ActiveProfileRequest,
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
     """设置当前激活的配置文件"""
     user_query = UserScopedQuery(db, user_id)
-    profile_id = data.get("id")
+    profile_id = data.id
 
     if not profile_id:
         raise HTTPException(status_code=400, detail="Profile ID is required")
@@ -302,17 +381,18 @@ async def set_active_profile(
             settings.active_profile_id = profile_id
         
         db.commit()
-        try:
-            clear_config_cache(user_id=user_id)
-        except Exception:  # pragma: no cover - cache invalidation is best-effort
-            logger.debug("[Profiles] clear_config_cache failed", exc_info=True)
+        _clear_config_cache_best_effort(user_id=user_id)
         return {"success": True, "id": profile_id}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
+        logger.error(
+            "[Profiles] Failed to set active profile: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to set active profile")
 
 
-@router.get("/settings/full")
+@router.get("/settings/full", response_model=FullSettingsResponse)
 @case_conversion_options(always_convert_response=True)
 async def get_full_settings(
     edit_mode: bool = False,  # 编辑模式：True 时解密返回，False 时返回加密值
@@ -346,7 +426,10 @@ async def get_full_settings(
                 profile_dict["api_key"] = decrypt_api_key(profile_dict["api_key"], silent=True)
                 logger.debug(f"[Profiles] Decrypted API key for edit mode in full settings (profile={profile.id})")
             except Exception as e:
-                logger.warning(f"[Profiles] Failed to decrypt API key in edit mode: {e}")
+                logger.warning(
+                    "[Profiles] Failed to decrypt API key in edit mode: %s",
+                    summarize_text_for_log(e, label="error"),
+                )
                 # 解密失败时返回加密值
         # 非编辑模式：返回加密值（或 None）
         

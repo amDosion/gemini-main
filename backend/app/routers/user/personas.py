@@ -1,9 +1,10 @@
 """
 角色管理路由
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, JsonValue
 from sqlalchemy.orm import Session
-from typing import List
+from typing import Dict, List
 import logging
 
 from ...core.database import SessionLocal, get_db
@@ -12,15 +13,38 @@ from ...core.dependencies import require_current_user
 from ...core.user_scoped_query import UserScopedQuery
 from ...middleware.case_conversion_middleware import case_conversion_options
 from ...services.common.persona_init_service import DEFAULT_PERSONAS, create_default_personas
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["personas"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+
+
+class ResetPersonasResponse(BaseModel):
+    success: bool
+    count: int = Field(ge=0, le=10_000)
+    message: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class SavePersonasResponse(BaseModel):
+    success: bool
+    count: int = Field(ge=0, le=10_000)
+
+
+class PersonaResponse(BaseModel):
+    id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    user_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    name: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    description: str = Field(max_length=4096, pattern=r"^[\s\S]*$")
+    system_prompt: str = Field(max_length=100_000, pattern=r"^[\s\S]*$")
+    icon: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    category: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
 
 
 # ==================== 角色管理 ====================
 
-@router.get("/personas")
+@router.get("/personas", response_model=List[PersonaResponse])
 @case_conversion_options(always_convert_response=True)
 async def get_personas(
     user_id: str = Depends(require_current_user),
@@ -38,9 +62,9 @@ async def get_personas(
     return [persona.to_dict() for persona in personas]
 
 
-@router.post("/personas")
+@router.post("/personas", response_model=SavePersonasResponse)
 async def save_personas(
-    personas_data: List[dict],
+    personas_data: List[Dict[str, JsonValue]] = Body(..., max_length=10_000),
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
 ):
@@ -86,10 +110,14 @@ async def save_personas(
         return {"success": True, "count": len(personas_data)}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"An error occurred: {e}")
+        logger.error(
+            "[Personas] save personas failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to save personas")
 
 
-@router.post("/personas/reset")
+@router.post("/personas/reset", response_model=ResetPersonasResponse)
 async def reset_personas(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
@@ -117,5 +145,8 @@ async def reset_personas(
         }
     except Exception as e:
         db.rollback()
-        logger.error(f"[Personas] ❌ 重置 Personas 失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to reset personas: {e}")
+        logger.error(
+            "[Personas] reset personas failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to reset personas")

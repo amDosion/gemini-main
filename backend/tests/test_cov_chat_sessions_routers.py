@@ -28,8 +28,10 @@ error mapping.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -52,6 +54,8 @@ from app.models.db_models import (
     UserMcpConfig,
 )
 from importlib import import_module
+from app.services.gemini.common import message_converter as mc_mod
+from app.services.gemini.common.chat_session_manager import ChatSessionManager
 
 # NOTE: ``app.routers.core.__init__`` re-exports ``chat`` as the *router* object
 # (``from .chat import router as chat``), which would shadow the module on a
@@ -211,6 +215,25 @@ class TestListSessions:
         assert body[0]["title"] == "First"
         assert len(body[0]["messages"]) == 1
         assert body[0]["messages"][0]["content"] == "hi"
+
+    def test_list_cache_error_log_is_summarized(
+        self, sessions_client, db_session, fake_cache, caplog
+    ):
+        secret = "sessions-cache-secret"
+        _seed_session(db_session, session_id="sess-cache", title="Cached")
+        fake_cache.get_or_set = AsyncMock(
+            side_effect=RuntimeError(f"cache failed {secret}")
+        )
+
+        with caplog.at_level(logging.WARNING, logger=sessions_mod.logger.name):
+            resp = sessions_client.get("/api/sessions")
+
+        assert resp.status_code == 200
+        assert resp.json()[0]["id"] == "sess-cache"
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
+        assert all(record.exc_info is None for record in caplog.records)
 
     def test_list_session_without_messages_has_empty_list(self, sessions_client, db_session):
         _seed_session(db_session, session_id="sess-empty")
@@ -844,6 +867,111 @@ class TestHistoryPreferences:
 
 
 # --------------------------------------------------------------------------- #
+# ChatSessionManager history rebuild
+# --------------------------------------------------------------------------- #
+class TestChatSessionManagerHistoryRebuild:
+    def test_rebuild_keeps_provider_uri_and_safe_inline_data(self, db_session):
+        _seed_session(db_session, session_id="hist-1", mode="chat")
+        _seed_chat_message(db_session, session_id="hist-1", msg_id="hm-1")
+        db_session.add_all(
+            [
+                MessageAttachment(
+                    id="hist-att-file",
+                    message_id="hm-1",
+                    user_id=USER_ID,
+                    session_id="hist-1",
+                    mime_type="image/png",
+                    name="provider.png",
+                    google_file_uri="files/provider-1",
+                    upload_status="completed",
+                ),
+                MessageAttachment(
+                    id="hist-att-inline",
+                    message_id="hm-1",
+                    user_id=USER_ID,
+                    session_id="hist-1",
+                    mime_type="image/jpeg",
+                    name="inline.jpg",
+                    url="data:image/jpeg;base64,QUJD",
+                    upload_status="completed",
+                ),
+            ]
+        )
+        db_session.commit()
+
+        messages = ChatSessionManager(db_session).get_chat_history_for_rebuild(
+            "hist-1",
+            mode="chat",
+        )
+
+        parts = messages[0]["parts"]
+        assert {"text": "hello"} in parts
+        assert {
+            "file_data": {
+                "file_uri": "files/provider-1",
+                "mime_type": "image/png",
+            }
+        } in parts
+        assert {
+            "inline_data": {
+                "mime_type": "image/jpeg",
+                "data": "QUJD",
+            }
+        } in parts
+
+    def test_rebuild_skips_unsafe_provider_uri_and_oversized_inline_data(
+        self,
+        db_session,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(mc_mod, "MAX_INLINE_ATTACHMENT_BYTES", 3)
+        _seed_session(db_session, session_id="hist-2", mode="chat")
+        _seed_chat_message(db_session, session_id="hist-2", msg_id="hm-2")
+        db_session.add_all(
+            [
+                MessageAttachment(
+                    id="hist-att-file-bad",
+                    message_id="hm-2",
+                    user_id=USER_ID,
+                    session_id="hist-2",
+                    mime_type="image/png",
+                    name="secret.png",
+                    google_file_uri="file:///etc/passwd",
+                    upload_status="completed",
+                ),
+                MessageAttachment(
+                    id="hist-att-inline-bad",
+                    message_id="hm-2",
+                    user_id=USER_ID,
+                    session_id="hist-2",
+                    mime_type="image/png",
+                    name="large.png",
+                    url="data:image/png;base64,YWJjZA==",
+                    upload_status="completed",
+                ),
+                MessageAttachment(
+                    id="hist-att-inline-invalid",
+                    message_id="hm-2",
+                    user_id=USER_ID,
+                    session_id="hist-2",
+                    mime_type="image/png",
+                    name="invalid.png",
+                    url="data:image/png;base64,not-valid!",
+                    upload_status="completed",
+                ),
+            ]
+        )
+        db_session.commit()
+
+        messages = ChatSessionManager(db_session).get_chat_history_for_rebuild(
+            "hist-2",
+            mode="chat",
+        )
+
+        assert messages[0]["parts"] == [{"text": "hello"}]
+
+
+# --------------------------------------------------------------------------- #
 # GET /sessions/{id}/attachments/{att_id}
 # --------------------------------------------------------------------------- #
 class TestGetAttachment:
@@ -892,6 +1020,40 @@ class TestGetAttachment:
         body = sessions_client.get("/api/sessions/as-1/attachments/att").json()
         assert body["url"] == "https://cdn.example.com/new.png"
         assert body["task_status"] == "completed"
+
+    def test_get_attachment_logs_url_summary_without_leaking_signed_url(
+        self, sessions_client, db_session, caplog
+    ):
+        _seed_session(db_session, session_id="as-1", mode="chat")
+        self._seed_attachment(
+            db_session, upload_task_id="t-att", url="https://cdn.example.com/old.png"
+        )
+        signed_url = (
+            "https://cdn.example.com/new.png"
+            "?X-Amz-Signature=secret-signature&token=secret-token#private-fragment"
+        )
+        db_session.add(
+            UploadTask(
+                id="t-att",
+                attachment_id="att",
+                filename="a.png",
+                status="completed",
+                target_url=signed_url,
+                created_at=_now_ms(),
+            )
+        )
+        db_session.commit()
+
+        with caplog.at_level(logging.DEBUG, logger=sessions_mod.logger.name):
+            body = sessions_client.get("/api/sessions/as-1/attachments/att").json()
+
+        assert body["url"] == signed_url
+        assert "target_url=http(len=" in caplog.text
+        assert "url=http(len=" in caplog.text
+        assert signed_url not in caplog.text
+        assert "secret-signature" not in caplog.text
+        assert "secret-token" not in caplog.text
+        assert "private-fragment" not in caplog.text
 
     def test_get_attachment_session_not_found(self, sessions_client):
         resp = sessions_client.get("/api/sessions/missing/attachments/att")
@@ -1270,15 +1432,24 @@ class TestChatNonStreaming:
         assert resp.status_code == 404
         assert "not registered" in resp.json()["detail"]
 
-    def test_chat_provider_runtime_error_maps_to_500(self, chat_client, monkeypatch):
+    def test_chat_provider_runtime_error_maps_to_500(self, chat_client, monkeypatch, caplog):
+        error_text = "provider exploded with secret-token"
+
         class _BoomService(_FakeService):
             async def chat(self, *, messages, model, **options):
-                raise RuntimeError("provider exploded")
+                raise RuntimeError(error_text)
 
         _install_provider(monkeypatch, _BoomService())
-        resp = chat_client.post("/api/modes/openai/chat", json=_chat_payload())
+        with caplog.at_level(logging.ERROR, logger=chat_mod.logger.name):
+            resp = chat_client.post("/api/modes/openai/chat", json=_chat_payload())
+
         assert resp.status_code == 500
-        assert "provider exploded" in resp.json()["detail"]
+        assert resp.json()["detail"] == "Chat request failed"
+        log_text = "\n".join(record.getMessage() for record in caplog.records)
+        assert f"<redacted error; length={len(error_text)}>" in log_text
+        assert "secret-token" not in log_text
+        assert "secret-token" not in resp.text
+        assert all(record.exc_info is None for record in caplog.records)
 
     def test_chat_forwards_all_openai_option_fields(self, chat_client, monkeypatch):
         """Exercise every conditional option-forwarding branch for an openai provider."""
@@ -1413,7 +1584,44 @@ class TestChatNonStreaming:
             json=_chat_payload(options={"mcp_server_key": "missing-key"}),
         )
         assert resp.status_code == 400
-        assert "Invalid MCP server config" in resp.json()["detail"]
+        assert resp.json()["detail"] == "Invalid MCP server config"
+
+    def test_chat_google_mcp_tool_listing_error_is_summarized(self, chat_client, db_session, monkeypatch, caplog):
+        db_session.add(
+            UserMcpConfig(
+                user_id=USER_ID,
+                config_json=json.dumps(
+                    {"mcpServers": {"sorftime-secret-token": {"command": "npx", "args": ["x"]}}}
+                ),
+            )
+        )
+        db_session.commit()
+
+        class _FakeMcpManager:
+            async def create_session(self, session_id, config):
+                return None
+
+            async def get_gemini_tools(self, session_id):
+                raise RuntimeError("tool list failed with secret-token")
+
+        monkeypatch.setattr(chat_mod, "get_mcp_manager", lambda: _FakeMcpManager())
+        monkeypatch.setattr(
+            chat_mod, "validate_mcp_stdio_command_policy", lambda *a, **k: None
+        )
+        service = _FakeService(response={"content": "ok"})
+        _install_provider(monkeypatch, service)
+
+        with caplog.at_level(logging.WARNING, logger=chat_mod.logger.name):
+            resp = chat_client.post(
+                "/api/modes/google/chat",
+                json=_chat_payload(options={"mcp_server_key": "sorftime-secret-token"}),
+            )
+
+        assert resp.status_code == 200, resp.text
+        log_text = "\n".join(record.getMessage() for record in caplog.records)
+        assert "<redacted error; length=34>" in log_text
+        assert "secret-token" not in log_text
+        assert all(record.exc_info is None for record in caplog.records)
 
     def test_chat_validation_error_on_missing_field(self, chat_client, monkeypatch):
         _install_provider(monkeypatch, _FakeService())
@@ -1454,18 +1662,24 @@ class TestChatStreaming:
         # done chunk carries usage (camelCased by encoder)
         assert "totalTokens" in text or "total_tokens" in text
 
-    def test_stream_error_emits_safe_error_chunk(self, chat_client, monkeypatch):
+    def test_stream_error_emits_safe_error_chunk(self, chat_client, monkeypatch, caplog):
         service = _FakeService(raise_on_stream=True)
         _install_provider(monkeypatch, service)
-        resp = chat_client.post(
-            "/api/modes/openai/chat", json=_chat_payload(stream=True)
-        )
+        with caplog.at_level(logging.ERROR, logger=chat_mod.logger.name):
+            resp = chat_client.post(
+                "/api/modes/openai/chat", json=_chat_payload(stream=True)
+            )
+
         assert resp.status_code == 200
         text = resp.text
         # The generator catches the provider exception and emits a sanitized
         # error chunk + a terminal done chunk rather than leaking the traceback.
         assert "stream_error" in text
         assert "Stream processing failed" in text
+        assert "provider blew up mid-stream" not in text
+        log_text = "\n".join(record.getMessage() for record in caplog.records)
+        assert "<redacted error; length=27>" in log_text
+        assert all(record.exc_info is None for record in caplog.records)
 
 
 # --------------------------------------------------------------------------- #

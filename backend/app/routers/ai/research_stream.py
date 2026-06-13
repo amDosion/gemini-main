@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Depends, Header
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 import logging
@@ -11,6 +12,7 @@ from ...core.database import get_db
 from ...core.dependencies import require_current_user
 from ...services.llm import ProviderCredentialsResolver
 from ...utils.sse import create_sse_response, encode_sse_data
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,25 @@ DEEP_RESEARCH_CLIENT_POLICY = {
     "idle_timeout_ms": 180000,
     "watchdog_interval_ms": 5000,
     "max_recovery_attempts": 8,
+}
+
+
+def _deep_research_sse_content() -> Dict[str, Any]:
+    return {
+        "text/event-stream": {
+            "schema": {
+                "type": "string",
+                "maxLength": 1_000_000,
+            }
+        }
+    }
+
+
+DEEP_RESEARCH_STREAM_RESPONSE = {
+    200: {
+        "description": "Server-sent Deep Research events",
+        "content": _deep_research_sse_content(),
+    }
 }
 
 
@@ -202,6 +223,15 @@ def _build_error_detail(
     }
 
 
+def _safe_error_details(exc: Exception, **extra: Any) -> Dict[str, Any]:
+    details: Dict[str, Any] = {
+        "error_type": type(exc).__name__,
+        "error": summarize_text_for_log(exc, label="error"),
+    }
+    details.update(extra)
+    return details
+
+
 class StreamStartRequest(BaseModel):
     prompt: str
     agent: str = Field(min_length=1)
@@ -226,7 +256,29 @@ class StreamActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-@router.get("/policy")
+class DeepResearchStreamPolicyResponse(BaseModel):
+    idle_timeout_ms: int = Field(ge=1_000, le=3_600_000)
+    watchdog_interval_ms: int = Field(ge=100, le=300_000)
+    max_recovery_attempts: int = Field(ge=0, le=100)
+
+
+class DeepResearchStreamInteractionResponse(BaseModel):
+    interaction_id: str = Field(min_length=1, max_length=512)
+
+
+class DeepResearchStreamStatusResponse(BaseModel):
+    interaction_id: str = Field(min_length=1, max_length=512)
+    status: Optional[str] = Field(default=None, max_length=64)
+    outputs: List[JsonValue] = Field(default_factory=list, max_length=10_000)
+    error: Optional[JsonValue] = None
+
+
+class DeepResearchStreamCancelResponse(BaseModel):
+    interaction_id: str = Field(min_length=1, max_length=512)
+    status: str = Field(max_length=64)
+
+
+@router.get("/policy", response_model=DeepResearchStreamPolicyResponse)
 async def get_deep_research_stream_policy(
     user_id: str = Depends(require_current_user),
 ):
@@ -235,7 +287,16 @@ async def get_deep_research_stream_policy(
     return dict(DEEP_RESEARCH_CLIENT_POLICY)
 
 
-@router.post("/start")
+@router.post(
+    "/start",
+    responses={
+        200: {
+            "model": DeepResearchStreamInteractionResponse,
+            "description": "Created Deep Research interaction id or server-sent events",
+            "content": _deep_research_sse_content(),
+        }
+    },
+)
 async def start_streaming_research(
     request_body: StreamStartRequest,
     user_id: str = Depends(require_current_user),
@@ -253,13 +314,16 @@ async def start_streaming_research(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Research Stream] Failed to get provider credentials: {e}")
+        logger.error(
+            "[Research Stream] Failed to get provider credentials: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
                 "CREDENTIALS_RESOLVE_FAILED",
                 "Failed to get provider credentials",
-                details={"error": str(e), "operation": "start"},
+                details=_safe_error_details(e, operation="start"),
                 retryable=True,
             ),
         )
@@ -333,7 +397,10 @@ async def start_streaming_research(
                         )
                 except GoogleRateLimitError as e:
                     error_message = str(e)
-                    logger.warning(f"[Research Stream] Quota limit exceeded during streaming: {error_message}")
+                    logger.warning(
+                        "[Research Stream] Quota limit exceeded during streaming: %s",
+                        summarize_text_for_log(error_message, label="provider_error"),
+                    )
 
                     detail_message = "API 配额已用尽"
                     if "quota_limit_value" in error_message and "'0'" in error_message:
@@ -350,17 +417,21 @@ async def start_streaming_research(
                                 "等待配额重置后重试",
                                 "参考: https://cloud.google.com/docs/quotas/help/request_increase"
                             ],
-                            "raw_error": error_message[:500],
+                            "raw_error": summarize_text_for_log(error_message, label="provider_error"),
                         }
                     }
                     yield encode_sse_data(error_event, camel_case=True)
                 except Exception as e:
-                    logger.error(f"[Research Stream] Stream error: {e}", exc_info=True)
+                    logger.error(
+                        "[Research Stream] Stream error: %s",
+                        summarize_text_for_log(e, label="error"),
+                    )
                     error_event = {
                         "event_type": "error",
                         "error": {
                             "type": type(e).__name__,
-                            "message": str(e)
+                            "message": "Stream failed",
+                            "details": _safe_error_details(e),
                         }
                     }
                     yield encode_sse_data(error_event, camel_case=True)
@@ -400,7 +471,10 @@ async def start_streaming_research(
     except GoogleRateLimitError as e:
         # 处理配额限制错误（429）
         error_message = str(e)
-        logger.warning(f"[Research Stream] Quota limit exceeded: {error_message}")
+        logger.warning(
+            "[Research Stream] Quota limit exceeded: %s",
+            summarize_text_for_log(error_message, label="provider_error"),
+        )
         
         # 提取配额信息
         detail_message = "API 配额已用尽"
@@ -419,25 +493,36 @@ async def start_streaming_research(
                         "等待配额重置后重试",
                         "参考: https://cloud.google.com/docs/quotas/help/request_increase"
                     ],
-                    "raw_error": error_message[:500],
+                    "raw_error": summarize_text_for_log(error_message, label="provider_error"),
                 },
                 retryable=True,
             ),
         )
     except Exception as e:
-        logger.error(f"[Research Stream] Failed to create interaction: {type(e).__name__}: {str(e)}", exc_info=True)
+        logger.error(
+            "[Research Stream] Failed to create interaction: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
                 "INTERACTION_CREATE_FAILED",
                 "Failed to create interaction",
-                details={"error_type": type(e).__name__, "error": str(e)},
+                details=_safe_error_details(e),
                 retryable=True,
             ),
         )
 
 
-@router.post("/action")
+@router.post(
+    "/action",
+    responses={
+        200: {
+            "model": DeepResearchStreamInteractionResponse,
+            "description": "Created Deep Research continuation interaction id",
+        }
+    },
+)
 async def submit_required_action(
     request_body: StreamActionRequest,
     user_id: str = Depends(require_current_user),
@@ -453,13 +538,16 @@ async def submit_required_action(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Research Stream] Failed to get provider credentials for action: {e}")
+        logger.error(
+            "[Research Stream] Failed to get provider credentials for action: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
                 "CREDENTIALS_RESOLVE_FAILED",
                 "Failed to get provider credentials",
-                details={"error": str(e), "operation": "action"},
+                details=_safe_error_details(e, operation="action"),
                 retryable=True,
             ),
         )
@@ -514,20 +602,27 @@ async def submit_required_action(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("[Research Stream] Failed to submit required action: %s", e, exc_info=True)
+        logger.error(
+            "[Research Stream] Failed to submit required action: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
                 "REQUIRED_ACTION_SUBMIT_FAILED",
                 "Failed to submit required action",
-                details={"error_type": type(e).__name__, "error": str(e)},
+                details=_safe_error_details(e),
                 retryable=True,
             ),
         )
 
 
 
-@router.get("/{interaction_id}")
+@router.get(
+    "/{interaction_id}",
+    response_class=StreamingResponse,
+    responses=DEEP_RESEARCH_STREAM_RESPONSE,
+)
 async def stream_research_events(
     interaction_id: str,
     last_event_id_header: Optional[str] = Header(default=None, alias="Last-Event-ID"),
@@ -558,13 +653,16 @@ async def stream_research_events(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[SSE] Failed to get provider credentials: {e}")
+        logger.error(
+            "[SSE] Failed to get provider credentials: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
                 "CREDENTIALS_RESOLVE_FAILED",
                 "Failed to get provider credentials",
-                details={"error": str(e), "operation": "stream"},
+                details=_safe_error_details(e, operation="stream"),
                 retryable=True,
             ),
         )
@@ -609,7 +707,10 @@ async def stream_research_events(
         except GoogleRateLimitError as e:
             # 处理配额限制错误（429）
             error_message = str(e)
-            logger.warning(f"[SSE] Quota limit exceeded during streaming: {error_message}")
+            logger.warning(
+                "[SSE] Quota limit exceeded during streaming: %s",
+                summarize_text_for_log(error_message, label="provider_error"),
+            )
             
             detail_message = "API 配额已用尽"
             if "quota_limit_value" in error_message and "'0'" in error_message:
@@ -630,13 +731,16 @@ async def stream_research_events(
             }
             yield encode_sse_data(error_data, camel_case=True)
         except Exception as e:
-            logger.error(f"[SSE] 流式传输错误: {type(e).__name__}: {str(e)}", exc_info=True)
+            logger.error(
+                "[SSE] 流式传输错误: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             error_data = {
                 "event_type": "error",
                 "error": _build_error_detail(
                     "INTERACTION_STREAM_FAILED",
                     "Stream failed",
-                    details={"error_type": type(e).__name__, "error": str(e)},
+                    details=_safe_error_details(e),
                     retryable=True,
                 ),
             }
@@ -645,7 +749,15 @@ async def stream_research_events(
     return create_sse_response(event_generator(), heartbeat_interval=15.0)
 
 
-@router.get("/status/{interaction_id}")
+@router.get(
+    "/status/{interaction_id}",
+    responses={
+        200: {
+            "model": DeepResearchStreamStatusResponse,
+            "description": "Deep Research interaction status",
+        }
+    },
+)
 async def get_streaming_research_status(
     interaction_id: str,
     user_id: str = Depends(require_current_user),
@@ -661,13 +773,16 @@ async def get_streaming_research_status(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Research Stream] Failed to get provider credentials for status: {e}")
+        logger.error(
+            "[Research Stream] Failed to get provider credentials for status: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
                 "CREDENTIALS_RESOLVE_FAILED",
                 "Failed to get provider credentials",
-                details={"error": str(e), "operation": "status"},
+                details=_safe_error_details(e, operation="status"),
                 retryable=True,
             ),
         )
@@ -688,21 +803,33 @@ async def get_streaming_research_status(
         }
     except Exception as e:
         logger.error(
-            f"[Research Stream] Failed to get interaction status {interaction_id}: {e}",
-            exc_info=True,
+            "[Research Stream] Failed to get interaction status %s: %s",
+            summarize_text_for_log(interaction_id, label="interaction_id"),
+            summarize_text_for_log(e, label="error"),
         )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
                 "INTERACTION_STATUS_FAILED",
                 "Failed to get interaction status",
-                details={"interaction_id": interaction_id, "error_type": type(e).__name__, "error": str(e)},
+                details=_safe_error_details(
+                    e,
+                    interaction_id=summarize_text_for_log(interaction_id, label="interaction_id"),
+                ),
                 retryable=True,
             ),
         )
 
 
-@router.post("/cancel/{interaction_id}")
+@router.post(
+    "/cancel/{interaction_id}",
+    responses={
+        200: {
+            "model": DeepResearchStreamCancelResponse,
+            "description": "Cancelled Deep Research interaction status",
+        }
+    },
+)
 async def cancel_streaming_research(
     interaction_id: str,
     user_id: str = Depends(require_current_user),
@@ -718,13 +845,16 @@ async def cancel_streaming_research(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Research Stream] Failed to get provider credentials for cancel: {e}")
+        logger.error(
+            "[Research Stream] Failed to get provider credentials for cancel: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
                 "CREDENTIALS_RESOLVE_FAILED",
                 "Failed to get provider credentials",
-                details={"error": str(e), "operation": "cancel"},
+                details=_safe_error_details(e, operation="cancel"),
                 retryable=True,
             ),
         )
@@ -741,13 +871,20 @@ async def cancel_streaming_research(
             "status": result.get("status", "cancelled"),
         }
     except Exception as e:
-        logger.error(f"[Research Stream] Failed to cancel interaction {interaction_id}: {e}", exc_info=True)
+        logger.error(
+            "[Research Stream] Failed to cancel interaction %s: %s",
+            summarize_text_for_log(interaction_id, label="interaction_id"),
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
                 "INTERACTION_CANCEL_FAILED",
                 "Failed to cancel interaction",
-                details={"interaction_id": interaction_id, "error_type": type(e).__name__, "error": str(e)},
+                details=_safe_error_details(
+                    e,
+                    interaction_id=summarize_text_for_log(interaction_id, label="interaction_id"),
+                ),
                 retryable=True,
             ),
         )

@@ -30,6 +30,7 @@ deterministic helper branches.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Dict, List, Optional
 
@@ -941,16 +942,23 @@ def test_get_available_models_verify_path(models_client, db_session, monkeypatch
     assert "gpt-4o" in ids
 
 
-def test_get_available_models_internal_error_500(models_client, db_session, monkeypatch):
+def test_get_available_models_internal_error_500(models_client, db_session, monkeypatch, caplog):
     _seed_profile(db_session, provider="openai")
+    secret = "models-secret-token"
 
     def _boom(*a, **k):
-        raise RuntimeError("scope build failed")
+        raise RuntimeError(f"scope build failed {secret}")
 
     # Force an unexpected error inside the handler -> mapped to 500.
     monkeypatch.setattr(mr, "_get_profile_cache_scope", _boom)
-    resp = models_client.get("/api/models/openai?use_cache=false")
+    with caplog.at_level(logging.ERROR, logger=mr.logger.name):
+        resp = models_client.get("/api/models/openai?use_cache=false")
     assert resp.status_code == 500
+    assert resp.json()["detail"] == "Failed to get models"
+    assert secret not in resp.text
+    assert secret not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "<redacted error; length=" in caplog.text
 
 
 def test_clear_model_cache_endpoint(models_client):

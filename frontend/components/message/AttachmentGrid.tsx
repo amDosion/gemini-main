@@ -3,7 +3,8 @@ import { Attachment } from '../../types/types';
 import { Download, Maximize2, FileText, Music, Video as VideoIcon, Edit, File } from 'lucide-react';
 import { CachedImage } from '../common/CachedImage';
 import { RetainedAudio, RetainedVideo } from '../common/RetainedMedia';
-import { getRenderableAttachmentUrl } from '../../utils/attachmentUrl';
+import { getPreferredAttachmentUrl, getRenderableAttachmentUrl } from '../../utils/attachmentUrl';
+import { downloadSourceUrlInBrowser } from '../../services/downloadService';
 
 interface AttachmentGridProps {
   attachments: Attachment[];
@@ -33,17 +34,22 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({
   if (!attachments || attachments.length === 0) return null;
 
   const handleDownload = (e: React.MouseEvent, url: string, name: string) => {
+    e.preventDefault();
     e.stopPropagation();
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = name || `gemini-file-${Date.now()}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    void downloadSourceUrlInBrowser({
+      sourceUrl: url,
+      fileName: name || `gemini-file-${Date.now()}`,
+    }).catch((error) => {
+      console.warn('[AttachmentGrid] Download blocked or failed:', error);
+    });
   };
 
   const getDisplayUrl = (attachment: Attachment): string | null => {
     return getRenderableAttachmentUrl(attachment);
+  };
+
+  const getDownloadUrl = (attachment: Attachment): string | null => {
+    return getPreferredAttachmentUrl(attachment);
   };
 
   const handleEdit = (e: React.MouseEvent, url: string, attachment?: Attachment) => {
@@ -121,11 +127,10 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({
         const isVideo = att.mimeType.startsWith('video/');
         const isAudio = att.mimeType.startsWith('audio/');
         const isPdf = att.mimeType.includes('pdf');
-        const url = getDisplayUrl(att);
-
-        if (!url) return null;
-
         if (isImage) {
+          const url = getDisplayUrl(att);
+          if (!url) return null;
+
           return (
             <div
               key={attachmentKey}
@@ -185,6 +190,9 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({
             </div>
           );
         } else if (isVideo) {
+          const url = getDisplayUrl(att);
+          if (!url) return null;
+
           return (
             <div
               key={attachmentKey}
@@ -196,6 +204,9 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({
             </div>
           );
         } else if (isAudio) {
+          const url = getDisplayUrl(att);
+          if (!url) return null;
+
           return (
             <div
               key={attachmentKey}
@@ -213,11 +224,14 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({
           );
         } else {
           // PDF & Generic Files
+          const url = getDownloadUrl(att);
+          if (!url) return null;
+
           return (
-            <a
+            <button
+              type="button"
               key={attachmentKey}
-              href={url}
-              download={att.name}
+              onClick={(e) => handleDownload(e, url, att.name)}
               className="flex flex-col rounded-lg overflow-hidden border border-slate-700/60 shadow-md bg-slate-900/80 hover:bg-slate-800 transition-all hover:border-slate-500 w-[96px]"
             >
               <div
@@ -228,7 +242,7 @@ export const AttachmentGrid: React.FC<AttachmentGridProps> = ({
                   {att.mimeType.split('/')[1] || 'FILE'}
                 </span>
               </div>
-            </a>
+            </button>
           );
         }
       })}

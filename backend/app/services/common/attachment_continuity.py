@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from ...models.db_models import MessageAttachment
 from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
+from ...utils.log_sanitization import summarize_url_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ async def resolve_continuity_attachment(
     if is_base64_url(attachment.url):
         logger.info(f"[AttachmentService]     - url: Base64 Data URL (长度: {len(attachment.url)} 字符)")
     else:
-        logger.info(f"[AttachmentService]     - url: {attachment.url[:80] + '...' if attachment.url and len(attachment.url) > 80 else attachment.url or 'None'}")
+        logger.info(f"[AttachmentService]     - url: {summarize_url_for_log(attachment.url)}")
     logger.info(f"[AttachmentService]     - temp_url: {'存在' if attachment.temp_url else 'None'}")
     if is_base64_url(attachment.temp_url):
         logger.info(f"[AttachmentService]     - temp_url类型: Base64 (长度: {len(attachment.temp_url)} 字符)")
@@ -100,7 +101,7 @@ async def resolve_continuity_attachment(
         if is_base64_url(attachment.url):
             logger.info(f"[AttachmentService]     - 返回云URL: Base64 Data URL (长度: {len(attachment.url)} 字符)")
         else:
-            logger.info(f"[AttachmentService]     - 返回云URL: {attachment.url[:80] + '...' if len(attachment.url) > 80 else attachment.url}")
+            logger.info(f"[AttachmentService]     - 返回云URL: {summarize_url_for_log(attachment.url)}")
         return {
             'attachment_id': attachment_id,
             'url': attachment.url,
@@ -175,7 +176,10 @@ async def resolve_continuity_attachment(
             source_url = active_image_url
             logger.info(f"[AttachmentService]     - active_image_url类型: HTTP")
         else:
-            logger.warning(f"[AttachmentService]     - ⚠️ active_image_url类型未知: {active_image_url[:50]}...")
+            logger.warning(
+                "[AttachmentService]     - ⚠️ active_image_url类型未知: %s",
+                summarize_url_for_log(active_image_url),
+            )
     else:
         logger.warning(f"[AttachmentService]     - ⚠️ 没有可用的源URL或文件路径")
 

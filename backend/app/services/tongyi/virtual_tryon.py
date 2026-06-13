@@ -6,14 +6,15 @@ import asyncio
 import logging
 import mimetypes
 import time
+from typing import Any, Dict
 from urllib.parse import unquote
-from typing import Any, Dict, Optional
 
 import httpx
 
+from ...utils.log_sanitization import summarize_url_for_log
+from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path
 from .base import DASHSCOPE_BASE_URL
 from .file_upload import upload_bytes_to_dashscope_async, upload_to_dashscope_async
-from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +117,10 @@ class TongyiVirtualTryOnService:
         if url.startswith(f"{DEFAULT_LOCAL_URL_PREFIX}/"):
             local_path = resolve_local_public_file_path(url) or resolve_local_public_file_path(unquote(url))
             if not local_path or not local_path.exists() or not local_path.is_file():
-                raise RuntimeError(f"Tongyi virtual try-on local image file not found: {url[:80]}")
+                raise RuntimeError(
+                    "Tongyi virtual try-on local image file not found: "
+                    f"{summarize_url_for_log(url)}"
+                )
             mime_type = mimetypes.guess_type(local_path.name)[0] or "image/png"
             extension = mimetypes.guess_extension(mime_type) or ".png"
             upload = await upload_bytes_to_dashscope_async(

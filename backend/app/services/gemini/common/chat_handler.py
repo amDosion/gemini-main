@@ -12,7 +12,12 @@ import hashlib
 
 from ..client_pool import get_client_pool
 from ....core.sdk_executor import run_in_sdk_thread
-from .message_converter import MessageConverter
+from .message_converter import (
+    MessageConverter,
+    decode_inline_attachment_bytes,
+    extract_inline_data_url_payload,
+    is_allowed_provider_file_uri,
+)
 from .response_parser import ResponseParser
 from .config_builder import ConfigBuilder
 from ...common.errors import (
@@ -24,7 +29,7 @@ from ...common.errors import (
     ErrorContext
 )
 from ...common.progress_tracker import progress_tracker
-from ....utils.attachment_handler import is_base64_url
+from ....utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +244,11 @@ class ChatHandler:
                 http_options=self._http_options,
             )
 
-            logger.info(f"[Chat Handler] Chat request: model={model}, messages={len(messages)}")
+            logger.info(
+                "[Chat Handler] Chat request: model=%s, messages=%s",
+                summarize_text_for_log(model, label="model"),
+                len(messages),
+            )
 
             # 转换消息格式
             contents = MessageConverter.build_contents(messages)
@@ -267,7 +276,10 @@ class ChatHandler:
             return result
         
         except Exception as e:
-            logger.error(f"[Chat Handler] Chat error: {e}", exc_info=True)
+            logger.error(
+                "[Chat Handler] Chat error: %s",
+                summarize_text_for_log(e, label="chat_error"),
+            )
             # Convert Google SDK errors to ProviderError
             converted_error = self._convert_error(e, model, "chat")
             raise converted_error
@@ -372,7 +384,11 @@ class ChatHandler:
                 http_options=self._http_options,
             )
 
-            logger.info(f"[Chat Handler] SSE Stream chat: model={model}, messages={len(messages)}")
+            logger.info(
+                "[Chat Handler] SSE Stream chat: model=%s, messages=%s",
+                summarize_text_for_log(model, label="model"),
+                len(messages),
+            )
 
             # 转换消息格式为官方 SDK 格式
             contents = MessageConverter.build_contents(messages)
@@ -408,7 +424,10 @@ class ChatHandler:
                                     if hasattr(part, 'text') and part.text:
                                         chunk_text += part.text
                 except Exception as e:
-                    logger.warning(f"[Chat Handler] Failed to extract text from SSE chunk: {e}")
+                    logger.warning(
+                        "[Chat Handler] Failed to extract text from SSE chunk: %s",
+                        summarize_text_for_log(e, label="sse_chunk_error"),
+                    )
                 
                 # 发送文本块
                 if chunk_text:
@@ -429,7 +448,10 @@ class ChatHandler:
                         if hasattr(metadata, 'total_token_count'):
                             usage["total_tokens"] = metadata.total_token_count
                 except Exception as e:
-                    logger.warning(f"[Chat Handler] Failed to extract usage from SSE chunk: {e}")
+                    logger.warning(
+                        "[Chat Handler] Failed to extract usage from SSE chunk: %s",
+                        summarize_text_for_log(e, label="sse_usage_error"),
+                    )
                 
                 # 提取完成原因
                 try:
@@ -438,7 +460,10 @@ class ChatHandler:
                         if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
                             finish_reason = candidate.finish_reason.lower()
                 except Exception as e:
-                    logger.warning(f"[Chat Handler] Failed to extract finish_reason from SSE chunk: {e}")
+                    logger.warning(
+                        "[Chat Handler] Failed to extract finish_reason from SSE chunk: %s",
+                        summarize_text_for_log(e, label="sse_finish_reason_error"),
+                    )
             
             # 发送完成块
             yield {
@@ -450,10 +475,13 @@ class ChatHandler:
                 "finish_reason": finish_reason
             }
             
-            logger.info(f"[Chat Handler] SSE Stream completed: length={len(total_text)}")
+            logger.info("[Chat Handler] SSE Stream completed: length=%s", len(total_text))
         
         except Exception as e:
-            logger.error(f"[Chat Handler] SSE Stream error: {e}", exc_info=True)
+            logger.error(
+                "[Chat Handler] SSE Stream error: %s",
+                summarize_text_for_log(e, label="sse_stream_error"),
+            )
             yield {
                 "content": "",
                 "chunk_type": "error",
@@ -506,7 +534,10 @@ class ChatHandler:
             }
             
         except Exception as e:
-            logger.error(f"[Chat Handler] Typewriter effect error: {e}", exc_info=True)
+            logger.error(
+                "[Chat Handler] Typewriter effect error: %s",
+                summarize_text_for_log(e, label="typewriter_error"),
+            )
             yield {
                 "content": "",
                 "chunk_type": "error",
@@ -587,7 +618,8 @@ class ChatHandler:
                         }
                     )
                 logger.info(
-                    f"[Chat Handler] Reusing preloaded MCP tools: count={len(mcp_function_declarations)}"
+                    "[Chat Handler] Reusing preloaded MCP tools: count=%s",
+                    len(mcp_function_declarations),
                 )
                 if mcp_session_id:
                     try:
@@ -595,7 +627,10 @@ class ChatHandler:
 
                         mcp_manager = get_mcp_manager()
                     except Exception as e:
-                        logger.warning(f"[Chat Handler] Failed to get MCP manager for preloaded tools: {e}")
+                        logger.warning(
+                            "[Chat Handler] Failed to get MCP manager for preloaded tools: %s",
+                            summarize_text_for_log(e, label="mcp_manager_error"),
+                        )
 
             elif mcp_session_id:
                 try:
@@ -621,11 +656,16 @@ class ChatHandler:
                                 }
                             )
                     logger.info(
-                        f"[Chat Handler] MCP tools loaded: session={mcp_session_id}, "
-                        f"tool_count={len(mcp_tool_names)}"
+                        "[Chat Handler] MCP tools loaded: session=%s, tool_count=%s",
+                        summarize_text_for_log(mcp_session_id, label="mcp_session_id"),
+                        len(mcp_tool_names),
                     )
                 except Exception as e:
-                    logger.warning(f"[Chat Handler] Failed to load MCP tools for session={mcp_session_id}: {e}")
+                    logger.warning(
+                        "[Chat Handler] Failed to load MCP tools for session=%s: %s",
+                        summarize_text_for_log(mcp_session_id, label="mcp_session_id"),
+                        summarize_text_for_log(e, label="mcp_tools_error"),
+                    )
                     mcp_manager = None
                     mcp_tool_names = set()
                     mcp_function_declarations = []
@@ -644,7 +684,10 @@ class ChatHandler:
                 **config_kwargs
             )
             
-            logger.info(f"[Chat Handler] Async SDK config: {config}")
+            logger.info(
+                "[Chat Handler] Async SDK config: %s",
+                summarize_text_for_log(config, label="async_sdk_config"),
+            )
             
             # 分离历史消息和当前消息
             if len(messages) == 0:
@@ -717,7 +760,11 @@ class ChatHandler:
             max_iterations = 5
 
             for iteration in range(max_iterations):
-                logger.info(f"[Chat Handler] Function call loop iteration {iteration + 1}/{max_iterations}")
+                logger.info(
+                    "[Chat Handler] Function call loop iteration %s/%s",
+                    iteration + 1,
+                    max_iterations,
+                )
 
                 response_stream = await async_chat.send_message_stream(message=current_message_content)
                 function_calls: List[Dict[str, Any]] = []
@@ -767,7 +814,11 @@ class ChatHandler:
                                                     "args": call_args,
                                                 }
                                             )
-                                            logger.info(f"[Chat Handler] Detected function_call: {call_name} (call_id={normalized_call_id})")
+                                            logger.info(
+                                                "[Chat Handler] Detected function_call: name=%s call_id=%s",
+                                                summarize_text_for_log(call_name, label="function_name"),
+                                                summarize_text_for_log(normalized_call_id, label="function_call_id"),
+                                            )
 
                         # 直接检查 chunk.function_calls（某些 SDK 响应路径）
                         if hasattr(chunk, 'function_calls') and chunk.function_calls:
@@ -793,9 +844,16 @@ class ChatHandler:
                                         "args": call_args,
                                     }
                                 )
-                                logger.info(f"[Chat Handler] Detected function_call (direct): {call_name} (call_id={normalized_call_id})")
+                                logger.info(
+                                    "[Chat Handler] Detected function_call (direct): name=%s call_id=%s",
+                                    summarize_text_for_log(call_name, label="function_name"),
+                                    summarize_text_for_log(normalized_call_id, label="function_call_id"),
+                                )
                     except Exception as e:
-                        logger.warning(f"[Chat Handler] Failed to extract from chunk: {e}")
+                        logger.warning(
+                            "[Chat Handler] Failed to extract from chunk: %s",
+                            summarize_text_for_log(e, label="chunk_error"),
+                        )
 
                     # ✅ 先 yield thinking chunk，再 yield content chunk
                     if thinking_text:
@@ -822,7 +880,10 @@ class ChatHandler:
                             if hasattr(metadata, 'total_token_count'):
                                 usage["total_tokens"] = metadata.total_token_count
                     except Exception as e:
-                        logger.warning(f"[Chat Handler] Failed to extract usage: {e}")
+                        logger.warning(
+                            "[Chat Handler] Failed to extract usage: %s",
+                            summarize_text_for_log(e, label="usage_error"),
+                        )
 
                     # 提取 finish_reason
                     try:
@@ -836,15 +897,18 @@ class ChatHandler:
                                 }
                                 finish_reason = reason_map.get(reason, "stop")
                     except Exception as e:
-                        logger.warning(f"[Chat Handler] Failed to extract finish_reason: {e}")
+                        logger.warning(
+                            "[Chat Handler] Failed to extract finish_reason: %s",
+                            summarize_text_for_log(e, label="finish_reason_error"),
+                        )
 
                 # 如果没有函数调用，退出循环
                 if not function_calls:
-                    logger.info(f"[Chat Handler] No function calls detected, exiting loop")
+                    logger.info("[Chat Handler] No function calls detected, exiting loop")
                     break
 
                 # 执行函数调用并发送响应
-                logger.info(f"[Chat Handler] Detected {len(function_calls)} function call(s)")
+                logger.info("[Chat Handler] Detected %s function call(s)", len(function_calls))
 
                 # 导入浏览器工具
                 try:
@@ -869,7 +933,11 @@ class ChatHandler:
                         else None
                     )
 
-                    logger.info(f"[Chat Handler] Executing function: {func_name} with args: {func_args}")
+                    logger.info(
+                        "[Chat Handler] Executing function: name=%s args=%s",
+                        summarize_text_for_log(func_name, label="function_name"),
+                        summarize_text_for_log(func_args, label="function_args"),
+                    )
 
                     # 通知前端正在执行工具
                     tool_call_chunk = {
@@ -896,7 +964,7 @@ class ChatHandler:
                     if func_name in AVAILABLE_TOOLS:
                         tool_func = AVAILABLE_TOOLS[func_name]
                         try:
-                            import asyncio
+                            import inspect
                             # 对于 selenium_browse，传递 user_id 以实现会话隔离
                             if func_name == "selenium_browse" and user_id:
                                 func_args["user_id"] = user_id
@@ -914,7 +982,7 @@ class ChatHandler:
                                     progress=30 if func_name != "selenium_browse" else 20,
                                 )
 
-                            if asyncio.iscoroutinefunction(tool_func):
+                            if inspect.iscoroutinefunction(tool_func):
                                 result = await tool_func(**func_args)
                             else:
                                 result = tool_func(**func_args)
@@ -932,7 +1000,10 @@ class ChatHandler:
                                 # 其他工具返回字符串
                                 response_data = {"output": result}
 
-                            logger.info(f"[Chat Handler] Function {func_name} executed successfully")
+                            logger.info(
+                                "[Chat Handler] Function executed successfully: name=%s",
+                                summarize_text_for_log(func_name, label="function_name"),
+                            )
 
                             # 通知前端工具执行结果（包含截图 URL）
                             tool_result_chunk = {
@@ -971,17 +1042,29 @@ class ChatHandler:
                                                 step="Uploading Screenshot",
                                                 details="浏览截图已生成，正在上传",
                                                 progress=85,
-                                            )
+                                        )
                                         screenshot_url = upload_result.get("url")
                                         tool_result_chunk["screenshot_url"] = screenshot_url
-                                        logger.info(f"[Chat Handler] Screenshot uploaded: {screenshot_url[:60]}...")
+                                        logger.info(
+                                            "[Chat Handler] Screenshot uploaded: %s",
+                                            summarize_url_for_log(screenshot_url),
+                                        )
                                     else:
-                                        logger.warning(f"[Chat Handler] Screenshot upload failed: {upload_result.get('error')}")
+                                        logger.warning(
+                                            "[Chat Handler] Screenshot upload failed: %s",
+                                            summarize_text_for_log(
+                                                upload_result.get("error"),
+                                                label="screenshot_upload_error",
+                                            ),
+                                        )
                                         # 上传失败时回退到 base64（但仅在截图较小时）
                                         if len(screenshot_base64) < 500000:  # < 500KB
                                             tool_result_chunk["screenshot"] = screenshot_base64
                                 except Exception as e:
-                                    logger.warning(f"[Chat Handler] Screenshot upload error: {e}")
+                                    logger.warning(
+                                        "[Chat Handler] Screenshot upload error: %s",
+                                        summarize_text_for_log(e, label="screenshot_upload_error"),
+                                    )
                             elif screenshot_base64:
                                 # 没有 user_id 时使用 base64（仅在截图较小时）
                                 if len(screenshot_base64) < 500000:
@@ -1000,7 +1083,11 @@ class ChatHandler:
                         except Exception as e:
                             response_data = {"error": str(e)}
                             screenshot_base64 = None
-                            logger.error(f"[Chat Handler] Function {func_name} failed: {e}")
+                            logger.error(
+                                "[Chat Handler] Function failed: name=%s error=%s",
+                                summarize_text_for_log(func_name, label="function_name"),
+                                summarize_text_for_log(e, label="function_error"),
+                            )
                             if browser_operation_id:
                                 await self._fail_browser_progress(browser_operation_id, str(e))
                             yield {
@@ -1042,10 +1129,17 @@ class ChatHandler:
                             if response_data.get("error"):
                                 tool_result_chunk["tool_error"] = response_data.get("error")
                             yield tool_result_chunk
-                            logger.info(f"[Chat Handler] MCP function {func_name} executed")
+                            logger.info(
+                                "[Chat Handler] MCP function executed: name=%s",
+                                summarize_text_for_log(func_name, label="function_name"),
+                            )
                         except Exception as e:
                             response_data = {"error": str(e)}
-                            logger.error(f"[Chat Handler] MCP function {func_name} failed: {e}")
+                            logger.error(
+                                "[Chat Handler] MCP function failed: name=%s error=%s",
+                                summarize_text_for_log(func_name, label="function_name"),
+                                summarize_text_for_log(e, label="mcp_function_error"),
+                            )
                             yield {
                                 "content": "",
                                 "chunk_type": "tool_result",
@@ -1057,7 +1151,10 @@ class ChatHandler:
                     else:
                         response_data = {"error": f"Unknown function: {func_name}"}
                         screenshot_base64 = None
-                        logger.warning(f"[Chat Handler] Unknown function: {func_name}")
+                        logger.warning(
+                            "[Chat Handler] Unknown function: %s",
+                            summarize_text_for_log(func_name, label="function_name"),
+                        )
                         yield {
                             "content": "",
                             "chunk_type": "tool_result",
@@ -1085,13 +1182,19 @@ class ChatHandler:
                                 mime_type="image/png"
                             )
                             function_response_parts.append(image_part)
-                            logger.info(f"[Chat Handler] Added screenshot image to response")
+                            logger.info("[Chat Handler] Added screenshot image to response")
                         except Exception as e:
-                            logger.warning(f"[Chat Handler] Failed to add screenshot: {e}")
+                            logger.warning(
+                                "[Chat Handler] Failed to add screenshot: %s",
+                                summarize_text_for_log(e, label="screenshot_error"),
+                            )
 
                 # 将函数响应作为下一条消息发送
                 current_message_content = function_response_parts
-                logger.info(f"[Chat Handler] Sending {len(function_response_parts)} function response(s) back to model")
+                logger.info(
+                    "[Chat Handler] Sending %s function response(s) back to model",
+                    len(function_response_parts),
+                )
 
             # Done 块
             yield {
@@ -1103,10 +1206,13 @@ class ChatHandler:
                 "finish_reason": finish_reason
             }
 
-            logger.info(f"[Chat Handler] Stream completed (Async SDK): length={len(total_text)}")
+            logger.info("[Chat Handler] Stream completed (Async SDK): length=%s", len(total_text))
         
         except Exception as e:
-            logger.error(f"[Chat Handler] Stream error (Async SDK): {e}", exc_info=True)
+            logger.error(
+                "[Chat Handler] Stream error (Async SDK): %s",
+                summarize_text_for_log(e, label="stream_error"),
+            )
             yield {
                 "content": "",
                 "chunk_type": "error",
@@ -1129,9 +1235,6 @@ class ChatHandler:
         Returns:
             genai_types.Part 或 None（如果无法构建）
         """
-        import base64 as b64
-        import re
-
         if not GENAI_TYPES_AVAILABLE:
             logger.warning("[Chat Handler] genai_types not available, cannot build attachment part")
             return None
@@ -1141,7 +1244,13 @@ class ChatHandler:
         # Priority 1: fileUri (Google Files API)
         file_uri = attachment.get('fileUri')
         if file_uri:
-            logger.info(f"[Chat Handler] Attachment: file_data (uri={file_uri[:50]}...)")
+            if not is_allowed_provider_file_uri(file_uri):
+                logger.warning("[Chat Handler] Attachment: rejected unsupported fileUri")
+                return None
+            logger.info(
+                "[Chat Handler] Attachment: file_data uri=%s",
+                summarize_url_for_log(str(file_uri)),
+            )
             return genai_types.Part(
                 file_data=genai_types.FileData(
                     file_uri=file_uri,
@@ -1151,14 +1260,27 @@ class ChatHandler:
 
         # Priority 2: url or tempUrl with Base64 Data URL
         url = attachment.get('url') or attachment.get('tempUrl')
-        if url and is_base64_url(url):
-            match = re.match(r'^data:(.*?);base64,(.*)$', url)
-            if match:
-                actual_mime = match.group(1) or mime_type
-                base64_str = match.group(2)
-                image_bytes = b64.b64decode(base64_str)
-                logger.info(f"[Chat Handler] Attachment: inline_data from data URL "
-                          f"(mime={actual_mime}, size={len(image_bytes)} bytes)")
+        if url:
+            try:
+                data_url_payload = extract_inline_data_url_payload(
+                    url,
+                    fallback_mime_type=mime_type,
+                    source="attachment data URL",
+                )
+            except ValueError as exc:
+                logger.warning("[Chat Handler] Attachment: rejected data URL: %s", exc)
+                return None
+            if data_url_payload:
+                actual_mime, base64_str = data_url_payload
+                image_bytes = decode_inline_attachment_bytes(
+                    base64_str,
+                    source="attachment data URL",
+                )
+                logger.info(
+                    "[Chat Handler] Attachment: inline_data from data URL (mime=%s, size=%s bytes)",
+                    actual_mime,
+                    len(image_bytes),
+                )
                 return genai_types.Part.from_bytes(
                     data=image_bytes,
                     mime_type=actual_mime
@@ -1167,28 +1289,48 @@ class ChatHandler:
         # Priority 3: base64Data field (pure Base64 string or data URL)
         base64_data = attachment.get('base64Data')
         if base64_data:
-            if is_base64_url(base64_data):
-                match = re.match(r'^data:(.*?);base64,(.*)$', base64_data)
-                if match:
-                    actual_mime = match.group(1) or mime_type
-                    base64_str = match.group(2)
-                    image_bytes = b64.b64decode(base64_str)
-                    logger.info(f"[Chat Handler] Attachment: inline_data from base64Data "
-                              f"(mime={actual_mime}, size={len(image_bytes)} bytes)")
+            try:
+                data_url_payload = extract_inline_data_url_payload(
+                    base64_data,
+                    fallback_mime_type=mime_type,
+                    source="attachment base64Data",
+                )
+                if data_url_payload:
+                    actual_mime, base64_str = data_url_payload
+                    image_bytes = decode_inline_attachment_bytes(
+                        base64_str,
+                        source="attachment base64Data",
+                    )
+                    logger.info(
+                        "[Chat Handler] Attachment: inline_data from base64Data (mime=%s, size=%s bytes)",
+                        actual_mime,
+                        len(image_bytes),
+                    )
                     return genai_types.Part.from_bytes(
                         data=image_bytes,
                         mime_type=actual_mime
                     )
-            else:
-                # Pure base64 string without data: prefix
-                image_bytes = b64.b64decode(base64_data)
-                logger.info(f"[Chat Handler] Attachment: inline_data from raw base64 "
-                          f"(mime={mime_type}, size={len(image_bytes)} bytes)")
+                image_bytes = decode_inline_attachment_bytes(
+                    base64_data,
+                    source="attachment base64Data",
+                )
+                logger.info(
+                    "[Chat Handler] Attachment: inline_data from raw base64 (mime=%s, size=%s bytes)",
+                    mime_type,
+                    len(image_bytes),
+                )
                 return genai_types.Part.from_bytes(
                     data=image_bytes,
                     mime_type=mime_type
                 )
+            except ValueError as exc:
+                logger.warning("[Chat Handler] Attachment: rejected base64Data: %s", exc)
+                return None
 
-        logger.warning(f"[Chat Handler] Attachment: no usable data found "
-                      f"(mimeType={mime_type}, hasUrl={bool(url)}, hasBase64={bool(base64_data)})")
+        logger.warning(
+            "[Chat Handler] Attachment: no usable data found (mimeType=%s, hasUrl=%s, hasBase64=%s)",
+            mime_type,
+            bool(url),
+            bool(base64_data),
+        )
         return None

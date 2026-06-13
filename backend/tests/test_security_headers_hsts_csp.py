@@ -18,7 +18,11 @@ from fastapi.responses import JSONResponse
 from starlette.testclient import TestClient
 
 from app.core import middleware_config
-from app.core.middleware_config import SecurityHeadersMiddleware
+from app.core.middleware_config import (
+    SecurityHeadersMiddleware,
+    configure_middlewares,
+    resolve_cors_origins,
+)
 
 
 def _build_app() -> FastAPI:
@@ -40,6 +44,17 @@ def _build_app() -> FastAPI:
             },
         )
 
+    return app
+
+
+def _build_configured_app() -> FastAPI:
+    app = FastAPI()
+
+    @app.get("/ping")
+    async def ping() -> dict:
+        return {"ok": True}
+
+    configure_middlewares(app)
     return app
 
 
@@ -116,3 +131,41 @@ def test_downstream_headers_not_overwritten(prod_env: None) -> None:
     resp = client.get("/preset")
     assert resp.headers.get("Content-Security-Policy") == "default-src 'none'"
     assert resp.headers.get("Strict-Transport-Security") == "max-age=1"
+
+
+def test_resolve_cors_origins_rejects_wildcard_with_credentials() -> None:
+    assert resolve_cors_origins("*") == [
+        "http://localhost:21573",
+        "http://127.0.0.1:21573",
+    ]
+    assert resolve_cors_origins("*, https://app.example.com") == [
+        "https://app.example.com"
+    ]
+
+
+def test_configured_cors_does_not_emit_wildcard_when_env_is_wildcard(
+    monkeypatch: pytest.MonkeyPatch, dev_env: None
+) -> None:
+    monkeypatch.setenv("CORS_ORIGINS", "*")
+    client = TestClient(_build_configured_app(), base_url="http://localhost")
+
+    allowed = client.options(
+        "/ping",
+        headers={
+            "Origin": "http://localhost:21573",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert allowed.status_code == 200
+    assert allowed.headers.get("Access-Control-Allow-Origin") == "http://localhost:21573"
+    assert allowed.headers.get("Access-Control-Allow-Credentials") == "true"
+
+    disallowed = client.options(
+        "/ping",
+        headers={
+            "Origin": "https://evil.example.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert disallowed.status_code == 400
+    assert disallowed.headers.get("Access-Control-Allow-Origin") is None

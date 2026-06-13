@@ -209,4 +209,51 @@ describe('WorkflowTemplateSaveDialog', () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('redacts sensitive credentials from failed save responses', async () => {
+    fetchMock.mockImplementation(async (input: string, init?: RequestInit) => {
+      if (typeof input === 'string' && input === '/api/workflows/templates') {
+        return new Response(
+          'save failed for https://files.example.com/template.json?token=secret-save-token&safe=1 with Bearer secret-save-bearer and api_key=secret-save-key',
+          {
+            status: 500,
+            headers: { 'content-type': 'text/plain' },
+          },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${input} ${init?.method || 'GET'}`);
+    });
+
+    render(
+      <WorkflowTemplateSaveDialog
+        isOpen
+        onClose={vi.fn()}
+        nodes={validNodes}
+        edges={validEdges}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('保存为模板')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('例如：客户服务工作流'), {
+      target: { value: 'Sensitive Failure Flow' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('描述这个工作流模板的用途和功能...'), {
+      target: { value: 'save failure should be redacted' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /保存模板/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/token=REDACTED/)).toBeInTheDocument();
+    });
+
+    expect(document.body.textContent).not.toContain('secret-save-token');
+    expect(document.body.textContent).not.toContain('secret-save-bearer');
+    expect(document.body.textContent).not.toContain('secret-save-key');
+    expect(document.body.textContent).toContain('safe=1');
+    expect(document.body.textContent).toContain('Bearer REDACTED');
+    expect(document.body.textContent).toContain('api_key=REDACTED');
+  });
 });

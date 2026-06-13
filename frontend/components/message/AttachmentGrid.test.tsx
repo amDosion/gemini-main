@@ -1,13 +1,20 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CachedImageProps } from '../common/CachedImage';
 import { AttachmentGrid } from './AttachmentGrid';
 import type { Attachment } from '../../types/types';
 
 const cachedImageProps: CachedImageProps[] = [];
+const { downloadSourceUrlInBrowserMock } = vi.hoisted(() => ({
+  downloadSourceUrlInBrowserMock: vi.fn(),
+}));
+
+vi.mock('../../services/downloadService', () => ({
+  downloadSourceUrlInBrowser: downloadSourceUrlInBrowserMock,
+}));
 
 vi.mock('../common/CachedImage', () => ({
   CachedImage: (props: CachedImageProps) => {
@@ -28,6 +35,8 @@ vi.mock('../common/RetainedMedia', () => ({
 describe('AttachmentGrid', () => {
   beforeEach(() => {
     cachedImageProps.length = 0;
+    downloadSourceUrlInBrowserMock.mockReset();
+    downloadSourceUrlInBrowserMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -146,5 +155,43 @@ describe('AttachmentGrid', () => {
     expect(screen.getByTestId('retained-audio').getAttribute('src')).toBe(
       'blob:https://gemini.dicry.cn:18443/live-audio'
     );
+  });
+
+  it('routes generic file downloads through the shared guarded download service', () => {
+    const attachments: Attachment[] = [
+      {
+        id: 'att-file',
+        name: 'unsafe.txt',
+        mimeType: 'text/plain',
+        url: 'javascript:alert(1)',
+      },
+    ];
+
+    const { container } = render(<AttachmentGrid attachments={attachments} />);
+
+    expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button'));
+
+    expect(downloadSourceUrlInBrowserMock).toHaveBeenCalledWith({
+      sourceUrl: 'javascript:alert(1)',
+      fileName: 'unsafe.txt',
+    });
+  });
+
+  it('does not render unsafe image source schemes into media elements', () => {
+    const attachments: Attachment[] = [
+      {
+        id: 'att-unsafe-image',
+        name: 'unsafe.png',
+        mimeType: 'image/png',
+        url: 'javascript:alert(1)',
+      },
+    ];
+
+    render(<AttachmentGrid attachments={attachments} />);
+
+    expect(screen.queryByTestId('cached-image')).toBeNull();
+    expect(cachedImageProps).toHaveLength(0);
   });
 });

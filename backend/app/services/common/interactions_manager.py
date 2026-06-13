@@ -29,6 +29,8 @@ from .interactions_event_utils import (
 
 logger = logging.getLogger(__name__)
 
+from ...utils.log_sanitization import summarize_text_for_log
+
 
 def _is_retryable_stream_exception(error: Exception) -> bool:
     """Determine whether an interactions stream error is safe to resume."""
@@ -117,7 +119,10 @@ class InteractionsManager:
         self._db = db
         self._default_vertexai = default_vertexai
         self._vertexai_interactions_service = None  # 延迟初始化
-        logger.info(f"InteractionsManager initialized (using unified client pool, default_vertexai={default_vertexai})")
+        logger.info(
+            "InteractionsManager initialized (using unified client pool, default_vertexai=%s)",
+            default_vertexai,
+        )
 
     def get_client(
         self,
@@ -269,9 +274,12 @@ class InteractionsManager:
                     if tools is None:
                         tools = []
                     tools.extend(mcp_tools)
-                    logger.info(f"Added {len(mcp_tools)} MCP tools to interaction")
+                    logger.info("Added %d MCP tools to interaction", len(mcp_tools))
             except Exception as e:
-                logger.warning(f"Failed to get MCP tools: {e}")
+                logger.warning(
+                    "Failed to get MCP tools: error=%s",
+                    summarize_text_for_log(e, label="mcp_tools_error"),
+                )
 
         # 集成 Code Execution 工具（如果启用）
         # 检查工具列表中是否包含 code_execution
@@ -282,12 +290,24 @@ class InteractionsManager:
         
         # 创建交互（使用官方 SDK）
         try:
-            logger.info(f"[create_interaction] Creating interaction with agent: {agent}, vertexai={use_vertexai}, project={project}, location={location}")
-            logger.debug(f"[create_interaction] Input: {input[:100] if isinstance(input, str) else str(input)[:100]}...")
+            logger.info(
+                "[create_interaction] Creating interaction: agent=%s vertexai=%s project=%s location=%s",
+                summarize_text_for_log(agent, label="agent"),
+                use_vertexai,
+                summarize_text_for_log(project, label="project"),
+                summarize_text_for_log(location, label="location"),
+            )
+            logger.debug(
+                "[create_interaction] Input: %s",
+                summarize_text_for_log(input, label="input"),
+            )
             if agent_config:
-                logger.debug(f"[create_interaction] Agent config: {agent_config}")
+                logger.debug(
+                    "[create_interaction] Agent config: %s",
+                    summarize_text_for_log(agent_config, label="agent_config"),
+                )
             if tools:
-                logger.debug(f"[create_interaction] Tools count: {len(tools)}")
+                logger.debug("[create_interaction] Tools count: %d", len(tools))
 
             # Official Interactions contract:
             # background=True requires store=True.
@@ -312,10 +332,18 @@ class InteractionsManager:
 
             interaction = await run_in_sdk_thread(client.interactions.create, **create_params)
 
-            logger.info(f"[create_interaction] Successfully created interaction: id={interaction.id}, status={interaction.status}")
+            logger.info(
+                "[create_interaction] Successfully created interaction: id=%s status=%s",
+                summarize_text_for_log(interaction.id, label="interaction_id"),
+                summarize_text_for_log(interaction.status, label="interaction_status"),
+            )
             
         except Exception as e:
-            logger.error(f"[create_interaction] Failed to create interaction: {type(e).__name__}: {str(e)}", exc_info=True)
+            logger.error(
+                "[create_interaction] Failed to create interaction: error_type=%s error=%s",
+                type(e).__name__,
+                summarize_text_for_log(e, label="create_interaction_error"),
+            )
             raise
 
         return {
@@ -434,9 +462,12 @@ class InteractionsManager:
                     if tools is None:
                         tools = []
                     tools.extend(mcp_tools)
-                    logger.info(f"Added {len(mcp_tools)} MCP tools to interaction")
+                    logger.info("Added %d MCP tools to interaction", len(mcp_tools))
             except Exception as e:
-                logger.warning(f"Failed to get MCP tools: {e}")
+                logger.warning(
+                    "Failed to get MCP tools: error=%s",
+                    summarize_text_for_log(e, label="mcp_tools_error"),
+                )
 
         # Official Interactions contract:
         # background=True requires store=True.
@@ -709,9 +740,12 @@ class InteractionsManager:
                     if tools is None:
                         tools = []
                     tools.extend(mcp_tools)
-                    logger.info(f"Added {len(mcp_tools)} MCP tools to stream interaction")
+                    logger.info("Added %d MCP tools to stream interaction", len(mcp_tools))
             except Exception as e:
-                logger.warning(f"Failed to get MCP tools: {e}")
+                logger.warning(
+                    "Failed to get MCP tools: error=%s",
+                    summarize_text_for_log(e, label="mcp_tools_error"),
+                )
 
         # 集成 Code Execution 工具（如果启用）
         code_execution_enabled = any(
@@ -724,10 +758,16 @@ class InteractionsManager:
             logger.info("[InteractionsManager] Code execution enabled for stream interaction")
         
         # 创建流式交互（流式模式下也需要 background=True）
-        logger.info(f"Starting stream interaction with agent: {agent}")
-        logger.info(f"Input: {input[:100] if isinstance(input, str) else str(input)[:100]}...")
+        logger.info(
+            "Starting stream interaction with agent: %s",
+            summarize_text_for_log(agent, label="agent"),
+        )
+        logger.info("Input: %s", summarize_text_for_log(input, label="input"))
         if agent_config:
-            logger.info(f"Agent config: {agent_config}")
+            logger.info(
+                "Agent config: %s",
+                summarize_text_for_log(agent_config, label="agent_config"),
+            )
         
         # ✅ 根据模式调用 interactions.create()
         # Gemini API 模式: client.interactions.create() 是同步方法，返回 Stream 对象
@@ -853,11 +893,11 @@ class InteractionsManager:
                         content_type = getattr(content, 'type', 'unknown')
                         event_dict['content_type'] = content_type
                         
-                        # 记录内容事件
-                        text_preview = text[:100] if text else ""
                         logger.debug("[Stream Event #%d] %s - Type: %s, Length: %d chars", event_count, event_type, content_type, len(text))
-                        if text_preview:
-                            logger.debug(f"Content preview: {text_preview}...")
+                        logger.debug(
+                            "Content preview: %s",
+                            summarize_text_for_log(text, label="content_text"),
+                        )
                 elif hasattr(content, 'type'):
                     # 即使没有文本，也记录内容类型
                     content_type = getattr(content, 'type', 'unknown')
@@ -894,10 +934,10 @@ class InteractionsManager:
 
                     # 记录增量内容（研究过程的实时输出）
                     logger.debug("[Stream Event #%d] ContentDelta - Type: %s, Length: %d chars, Total: %d chars", event_count, delta_type or 'text', len(delta_text), total_delta_length)
-                    # 记录增量内容的前100个字符
-                    if len(delta_text) > 0:
-                        preview = delta_text[:100].replace('\n', '\\n')
-                        logger.debug(f"Delta preview: {preview}...")
+                    logger.debug(
+                        "Delta preview: %s",
+                        summarize_text_for_log(delta_text, label="delta_text"),
+                    )
                 else:
                     event_dict['delta'] = None
             
@@ -925,7 +965,12 @@ class InteractionsManager:
                         'message': error_str
                     }
                 if error_str:
-                    logger.error(f"[Stream Event #{event_count}] {event_type} - Error: {error_str}")
+                    logger.error(
+                        "[Stream Event #%d] %s - Error: %s",
+                        event_count,
+                        event_type,
+                        summarize_text_for_log(error_str, label="stream_event_error"),
+                    )
             
             # ✅ 提取 usage（如果存在）
             if hasattr(event, 'usage'):
@@ -939,9 +984,16 @@ class InteractionsManager:
             yield event_dict
         
         # 流式结束日志
-        logger.info(f"Stream interaction completed - Total events: {event_count}, Total delta length: {total_delta_length} chars")
+        logger.info(
+            "Stream interaction completed - Total events: %d, Total delta length: %d chars",
+            event_count,
+            total_delta_length,
+        )
         if interaction_id:
-            logger.info(f"Final interaction ID: {interaction_id}")
+            logger.info(
+                "Final interaction ID: %s",
+                summarize_text_for_log(interaction_id, label="interaction_id"),
+            )
 
     async def stream_existing_interaction(
         self,
@@ -1002,8 +1054,8 @@ class InteractionsManager:
         try:
             logger.info(
                 "Streaming existing interaction: %s, last_event_id=%s, include_input=%s",
-                interaction_id,
-                last_event_id,
+                summarize_text_for_log(interaction_id, label="interaction_id"),
+                summarize_text_for_log(last_event_id, label="last_event_id"),
                 include_input,
             )
 
@@ -1063,12 +1115,15 @@ class InteractionsManager:
                             event_type = event_data.get("event_type")
                             if event_type in {"interaction.complete", "error"}:
                                 if event_type == "interaction.complete":
-                                    logger.info(f"Stream completed for interaction: {interaction_id}")
+                                    logger.info(
+                                        "Stream completed for interaction: %s",
+                                        summarize_text_for_log(interaction_id, label="interaction_id"),
+                                    )
                                 else:
                                     logger.warning(
                                         "Stream returned error event for interaction %s: %s",
-                                        interaction_id,
-                                        event_data.get("error"),
+                                        summarize_text_for_log(interaction_id, label="interaction_id"),
+                                        summarize_text_for_log(event_data.get("error"), label="stream_event_error"),
                                     )
                                 queue.put(("done", None))
                                 return
@@ -1090,8 +1145,8 @@ class InteractionsManager:
                             "Interaction stream ended unexpectedly, resuming (%s/%s), interaction=%s, last_event_id=%s",
                             resume_attempt,
                             max_resume,
-                            interaction_id,
-                            current_last_event_id,
+                            summarize_text_for_log(interaction_id, label="interaction_id"),
+                            summarize_text_for_log(current_last_event_id, label="last_event_id"),
                         )
                         # Interruptible backoff: if _stop_event is set the wait returns immediately.
                         _stop_event.wait(timeout=backoff_sec * resume_attempt)
@@ -1103,15 +1158,19 @@ class InteractionsManager:
                                 "Retryable stream error, resuming (%s/%s), interaction=%s, last_event_id=%s, error=%s",
                                 resume_attempt,
                                 max_resume,
-                                interaction_id,
-                                current_last_event_id,
-                                e,
+                                summarize_text_for_log(interaction_id, label="interaction_id"),
+                                summarize_text_for_log(current_last_event_id, label="last_event_id"),
+                                summarize_text_for_log(e, label="stream_interaction_error"),
                             )
                             # Interruptible backoff: if _stop_event is set the wait returns immediately.
                             _stop_event.wait(timeout=backoff_sec * resume_attempt)
                             continue
 
-                        logger.error(f"Failed to stream interaction {interaction_id}: {e}")
+                        logger.error(
+                            "Failed to stream interaction: interaction=%s error=%s",
+                            summarize_text_for_log(interaction_id, label="interaction_id"),
+                            summarize_text_for_log(e, label="stream_interaction_error"),
+                        )
                         queue.put(("data", {
                             "event_type": "error",
                             "error": str(e)
@@ -1133,7 +1192,11 @@ class InteractionsManager:
                     yield data
                     
         except Exception as e:
-            logger.error(f"Failed to stream interaction {interaction_id}: {e}")
+            logger.error(
+                "Failed to stream interaction: interaction=%s error=%s",
+                summarize_text_for_log(interaction_id, label="interaction_id"),
+                summarize_text_for_log(e, label="stream_interaction_error"),
+            )
             yield {
                 "event_type": "error",
                 "error": str(e)
@@ -1167,7 +1230,10 @@ class InteractionsManager:
 
         # 删除交互
         client.interactions.delete(id=interaction_id)
-        logger.info(f"Deleted interaction: {interaction_id}")
+        logger.info(
+            "Deleted interaction: %s",
+            summarize_text_for_log(interaction_id, label="interaction_id"),
+        )
 
     async def cancel_interaction(
         self,
@@ -1201,7 +1267,11 @@ class InteractionsManager:
 
         # 取消交互（使用原生 SDK）
         interaction = await async_client.interactions.cancel(id=interaction_id)
-        logger.info(f"Cancelled interaction: {interaction_id}, status: {interaction.status}")
+        logger.info(
+            "Cancelled interaction: %s, status: %s",
+            summarize_text_for_log(interaction_id, label="interaction_id"),
+            summarize_text_for_log(interaction.status, label="interaction_status"),
+        )
 
         return {
             'id': interaction.id,

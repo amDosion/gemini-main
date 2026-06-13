@@ -10,6 +10,7 @@ import {
   isBlobAttachmentUrl,
   isDataAttachmentUrl,
   isHttpAttachmentUrl,
+  isRenderableAttachmentUrl,
   revokeAttachmentObjectUrls,
   isTemporaryAttachmentUrl,
 } from './attachmentUrl';
@@ -85,6 +86,37 @@ describe('attachmentUrl', () => {
         file: new File(['video'], 'live.mp4', { type: 'video/mp4' }),
       } as Attachment)
     ).toBe('blob:https://gemini.dicry.cn:18443/live-video');
+  });
+
+  it('rejects non-renderable schemes and mismatched data media for rendered attachments', () => {
+    expect(
+      getRenderableAttachmentUrl({
+        id: 'att-unsafe-image',
+        name: 'unsafe.png',
+        mimeType: 'image/png',
+        url: 'javascript:alert(1)',
+      } as Attachment)
+    ).toBeNull();
+
+    expect(
+      getRenderableAttachmentUrl({
+        id: 'att-data-html',
+        name: 'unsafe.png',
+        mimeType: 'image/png',
+        url: 'data:text/html,<script>alert(1)</script>',
+      } as Attachment)
+    ).toBeNull();
+
+    expect(
+      isRenderableAttachmentUrl('data:audio/wav;base64,AAAA', {
+        mimeType: 'image/png',
+      })
+    ).toBe(false);
+    expect(
+      isRenderableAttachmentUrl('data:image/png;base64,AAAA', {
+        mimeType: 'image/png',
+      })
+    ).toBe(true);
   });
 
   it('prefers local storage fileUri over remote temporary provider urls', () => {

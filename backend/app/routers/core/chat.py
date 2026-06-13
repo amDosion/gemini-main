@@ -7,8 +7,8 @@ ProviderFactory to create appropriate service instances.
 """
 
 from fastapi import APIRouter, HTTPException, Request, Depends
-from pydantic import BaseModel, ConfigDict
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from typing import Annotated, List, Optional, Dict, Any, Union
 from sqlalchemy.orm import Session
 import logging
 import hashlib
@@ -31,70 +31,108 @@ from ...services.mcp.types import (
 )
 from ...services.mcp.mcp_manager import get_mcp_manager
 from ...utils.sse import build_safe_error_chunk, create_sse_response, encode_sse_data
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/modes", tags=["chat"])
 GOOGLE_PROVIDERS = {"google", "google-custom"}
+FREE_TEXT_PATTERN = r"^[\s\S]*$"
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+CHAT_MAX_MESSAGES = 128
+CHAT_MAX_ATTACHMENTS = 32
+CHAT_MAX_CONTENT_LENGTH = 200_000
+CHAT_MAX_INLINE_BASE64_LENGTH = 28_000_000
+CHAT_MAX_STOP_SEQUENCES = 8
+
+StopSequence = Annotated[
+    str,
+    Field(max_length=512, pattern=FREE_TEXT_PATTERN),
+]
+StopSequences = Annotated[
+    List[StopSequence],
+    Field(max_length=CHAT_MAX_STOP_SEQUENCES),
+]
 
 
 # ==================== Request Models ====================
 
 class Attachment(BaseModel):
     """Attachment model (images, files, etc.)"""
-    id: str
-    mime_type: str
-    name: str
-    url: Optional[str] = None
-    temp_url: Optional[str] = None
-    file_uri: Optional[str] = None
-    base64_data: Optional[str] = None  # 直接 Base64 数据（不含 data: 前缀）
-    google_file_uri: Optional[str] = None  # Google Files API URI
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    mime_type: str = Field(max_length=255, pattern=NO_CONTROL_CHARS_PATTERN)
+    name: str = Field(min_length=1, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    url: Optional[str] = Field(default=None, max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    temp_url: Optional[str] = Field(default=None, max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    file_uri: Optional[str] = Field(default=None, max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    base64_data: Optional[str] = Field(default=None, max_length=CHAT_MAX_INLINE_BASE64_LENGTH)  # 直接 Base64 数据（不含 data: 前缀）
+    google_file_uri: Optional[str] = Field(default=None, max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)  # Google Files API URI
 
 
 class Message(BaseModel):
     """Message model"""
-    role: str  # "user" | "assistant" | "system"
-    content: str
+    model_config = ConfigDict(extra="forbid")
+
+    role: str = Field(pattern=r"^(user|assistant|system|model)$")  # "user" | "assistant" | "system" | "model"
+    content: str = Field(max_length=CHAT_MAX_CONTENT_LENGTH, pattern=FREE_TEXT_PATTERN)
     is_error: Optional[bool] = False
-    attachments: Optional[List[Attachment]] = None
+    attachments: Optional[List[Attachment]] = Field(default=None, max_length=CHAT_MAX_ATTACHMENTS)
 
 
 class ChatOptions(BaseModel):
     """Chat options"""
-    temperature: Optional[float] = 1.0
-    max_tokens: Optional[int] = None
-    top_p: Optional[float] = None
-    top_k: Optional[int] = None
-    frequency_penalty: Optional[float] = None
-    presence_penalty: Optional[float] = None
-    seed: Optional[int] = None
-    stop: Optional[Any] = None
-    response_format: Optional[Any] = None
+    temperature: Optional[float] = Field(default=1.0, ge=0, le=2)
+    max_tokens: Optional[int] = Field(default=None, ge=1, le=1_000_000)
+    top_p: Optional[float] = Field(default=None, ge=0, le=1)
+    top_k: Optional[int] = Field(default=None, ge=1, le=10_000)
+    frequency_penalty: Optional[float] = Field(default=None, ge=-2, le=2)
+    presence_penalty: Optional[float] = Field(default=None, ge=-2, le=2)
+    seed: Optional[int] = Field(default=None, ge=0, le=2_147_483_647)
+    stop: Optional[Union[StopSequence, StopSequences]] = None
+    response_format: Optional[Dict[str, Any]] = None
     logit_bias: Optional[Dict[str, Any]] = None
-    n: Optional[int] = None
-    user: Optional[str] = None
+    n: Optional[int] = Field(default=None, ge=1, le=16)
+    user: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
     enable_search: Optional[bool] = False
     enable_thinking: Optional[bool] = False
     enable_code_execution: Optional[bool] = False
     enable_browser: Optional[bool] = False
     enable_grounding: Optional[bool] = False
-    persona_id: Optional[str] = None
-    mcp_server_key: Optional[str] = None
-    base_url: Optional[str] = None  # Custom API URL
+    persona_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    mcp_server_key: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    base_url: Optional[str] = Field(default=None, max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)  # Custom API URL
 
     model_config = ConfigDict(extra="allow")
 
 
 class ChatRequest(BaseModel):
     """Chat request"""
-    model_id: str
-    messages: List[Message]
-    message: str
-    attachments: Optional[List[Attachment]] = None
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str = Field(min_length=1, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    messages: List[Message] = Field(max_length=CHAT_MAX_MESSAGES)
+    message: str = Field(max_length=CHAT_MAX_CONTENT_LENGTH, pattern=FREE_TEXT_PATTERN)
+    attachments: Optional[List[Attachment]] = Field(default=None, max_length=CHAT_MAX_ATTACHMENTS)
     options: Optional[ChatOptions] = None
-    api_key: Optional[str] = None  # Optional, will try to get from database/env
+    api_key: Optional[str] = Field(
+        default=None,
+        max_length=4096,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )  # Optional, will try to get from database/env
     stream: Optional[bool] = True  # Default to streaming
+
+
+class ChatResponse(BaseModel):
+    text: Optional[str] = Field(default=None, max_length=1_000_000)
+    output: Optional[str] = Field(default=None, max_length=1_000_000)
+    content: Optional[str] = Field(default=None, max_length=1_000_000)
+    usage: Optional[Dict[str, JsonValue]] = None
+    model: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    finish_reason: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+
+    model_config = ConfigDict(extra="allow")
 
 
 # ==================== Helper Functions ====================
@@ -388,7 +426,23 @@ async def resolve_mcp_session_id(
 
 # ==================== API Endpoints ====================
 
-@router.post("/{provider}/chat")
+@router.post(
+    "/{provider}/chat",
+    response_model=ChatResponse,
+    responses={
+        200: {
+            "description": "Chat response or server-sent chat events",
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "type": "string",
+                        "maxLength": 1_000_000,
+                    }
+                }
+            },
+        }
+    },
+)
 async def chat_with_provider(
     provider: str,
     request: ChatRequest,
@@ -404,12 +458,13 @@ async def chat_with_provider(
     try:
         attachment_count = len(request.attachments) if request.attachments else 0
         logger.info(
-            f"[Chat] provider={provider}, "
-            f"model={request.model_id}, "
-            f"stream={request.stream}, "
-            f"messages={len(request.messages)}, "
-            f"attachments={attachment_count}, "
-            f"user_id={user_id}"
+            "[Chat] provider=%s, model=%s, stream=%s, messages=%s, attachments=%s, user_id=%s",
+            provider,
+            request.model_id,
+            request.stream,
+            len(request.messages),
+            attachment_count,
+            summarize_text_for_log(user_id, label="user_id"),
         )
 
         if request.options:
@@ -483,28 +538,38 @@ async def chat_with_provider(
                             )
                 except Exception as tool_err:
                     logger.warning(
-                        f"[Chat] Failed to list MCP tools for session={mcp_session_id}: {tool_err}"
+                        "[Chat] Failed to list MCP tools for session=%s: %s",
+                        summarize_text_for_log(mcp_session_id, label="mcp_session_id"),
+                        summarize_text_for_log(tool_err, label="error"),
                     )
                 logger.info(
-                    f"[Chat] MCP session ready for user_id={user_id}, "
-                    f"mcp_server_key={request.options.mcp_server_key}, "
-                    f"session_id={mcp_session_id}"
+                    "[Chat] MCP session ready for user_id=%s, mcp_server_key=%s, session_id=%s",
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(request.options.mcp_server_key, label="mcp_server_key"),
+                    summarize_text_for_log(mcp_session_id, label="mcp_session_id"),
                 )
             except MCPStdioPolicyError as exc:
                 logger.warning(
-                    f"[Chat] MCP stdio policy rejected for user_id={user_id}, "
-                    f"mcp_server_key={request.options.mcp_server_key}: {exc}"
+                    "[Chat] MCP stdio policy rejected for user_id=%s, mcp_server_key=%s: %s",
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(request.options.mcp_server_key, label="mcp_server_key"),
+                    summarize_text_for_log(exc, label="error"),
                 )
-                raise HTTPException(status_code=400, detail=f"MCP stdio policy violation: {exc}") from exc
+                raise HTTPException(status_code=400, detail="MCP stdio policy violation") from exc
             except ValueError as exc:
                 logger.warning(
-                    f"[Chat] Invalid MCP config for user_id={user_id}, "
-                    f"mcp_server_key={request.options.mcp_server_key}: {exc}"
+                    "[Chat] Invalid MCP config for user_id=%s, mcp_server_key=%s: %s",
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(request.options.mcp_server_key, label="mcp_server_key"),
+                    summarize_text_for_log(exc, label="error"),
                 )
-                raise HTTPException(status_code=400, detail=f"Invalid MCP server config: {exc}") from exc
+                raise HTTPException(status_code=400, detail="Invalid MCP server config") from exc
             except Exception as exc:
-                logger.error(f"[Chat] Failed to initialize MCP session: {exc}", exc_info=True)
-                raise HTTPException(status_code=400, detail=f"Failed to initialize MCP server: {exc}") from exc
+                logger.error(
+                    "[Chat] Failed to initialize MCP session: %s",
+                    summarize_text_for_log(exc, label="error"),
+                )
+                raise HTTPException(status_code=400, detail="Failed to initialize MCP server") from exc
 
         persona_system_prompt = resolve_persona_system_prompt(
             db=db,
@@ -633,7 +698,10 @@ async def chat_with_provider(
                         yield encode_sse_data(frontend_chunk, camel_case=True)
                 
                 except Exception as e:
-                    logger.error(f"[Chat] Stream error: {e}", exc_info=True)
+                    logger.error(
+                        "[Chat] Stream error: %s",
+                        summarize_text_for_log(e, label="error"),
+                    )
                     error_chunk = build_safe_error_chunk(
                         code="stream_error",
                         message="Stream processing failed",
@@ -669,5 +737,5 @@ async def chat_with_provider(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Chat] Request error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("[Chat] Request error: %s", summarize_text_for_log(e, label="error"))
+        raise HTTPException(status_code=500, detail="Chat request failed")

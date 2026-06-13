@@ -15,6 +15,8 @@ from typing import Dict, Any, List, Optional, Callable, Set
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from ....utils.log_sanitization import summarize_text_for_log
+
 logger = logging.getLogger(__name__)
 
 
@@ -133,7 +135,11 @@ class MCPToolExecutor(ToolExecutor):
                 "result": result.result
             }
         except Exception as e:
-            logger.error(f"[MCPToolExecutor] Error executing tool {name}: {e}", exc_info=True)
+            logger.error(
+                "[MCPToolExecutor] Error executing tool %s: %s",
+                name,
+                summarize_text_for_log(e, label="tool_error"),
+            )
             return {
                 "success": False,
                 "error": str(e)
@@ -458,7 +464,10 @@ class ToolRegistry:
             return tools
             
         except Exception as e:
-            logger.error(f"[ToolRegistry] Failed to load MCP tools: {e}", exc_info=True)
+            logger.error(
+                "[ToolRegistry] Failed to load MCP tools: %s",
+                summarize_text_for_log(e, label="mcp_tools_error"),
+            )
             return []
     
     async def execute_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -492,7 +501,11 @@ class ToolRegistry:
             logger.info(f"[ToolRegistry] Tool {name} executed successfully")
             return result
         except Exception as e:
-            logger.error(f"[ToolRegistry] Tool execution failed: {name}, error: {e}", exc_info=True)
+            logger.error(
+                "[ToolRegistry] Tool execution failed: %s, error=%s",
+                name,
+                summarize_text_for_log(e, label="tool_error"),
+            )
             return {
                 "success": False,
                 "error": str(e)
@@ -518,7 +531,11 @@ class ToolRegistry:
                 "results": [],
             }
 
-        logger.info(f"[ToolRegistry] Google Search: {clean_query} (num_results={num_results})")
+        logger.info(
+            "[ToolRegistry] Google Search: %s (num_results=%s)",
+            summarize_text_for_log(clean_query, label="query"),
+            num_results,
+        )
         try:
             from ..common.browser import web_search
 
@@ -538,7 +555,11 @@ class ToolRegistry:
                 "results": all_results[:limit],
             }
         except Exception as e:
-            logger.error(f"[ToolRegistry] Google Search failed: {e}", exc_info=True)
+            logger.error(
+                "[ToolRegistry] Google Search failed: query=%s error=%s",
+                summarize_text_for_log(clean_query, label="query"),
+                summarize_text_for_log(e, label="search_error"),
+            )
             return {
                 "success": False,
                 "query": clean_query,

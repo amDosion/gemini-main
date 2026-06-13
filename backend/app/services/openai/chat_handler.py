@@ -3,11 +3,17 @@ OpenAI 聊天处理器
 
 处理 OpenAI 的聊天相关操作（流式和非流式）。
 """
-from typing import Dict, Any, List, Optional, AsyncGenerator
 import logging
-from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletion, ChatCompletionChunk
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
+from openai.types.chat import ChatCompletion
+
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
+from ..common.openai_compatible_multimodal import (
+    is_image_attachment,
+    normalize_multimodal_content,
+    resolve_attachment_url,
+)
 from ._shared import CHAT_ALLOWED_OPTION_KEYS, build_async_client, filter_allowed_kwargs
 
 logger = logging.getLogger(__name__)
@@ -39,7 +45,10 @@ class ChatHandler:
             client=kwargs.get("client"),
         )
         
-        logger.info(f"[OpenAI ChatHandler] Initialized with base_url={self.base_url}")
+        logger.info(
+            "[OpenAI ChatHandler] Initialized with base_url=%s",
+            summarize_url_for_log(self.base_url),
+        )
 
     @staticmethod
     def _normalize_usage(usage: Any) -> Dict[str, int]:
@@ -92,38 +101,11 @@ class ChatHandler:
 
     @staticmethod
     def _resolve_attachment_url(attachment: Any) -> str:
-        if not isinstance(attachment, dict):
-            return ""
-        for key in (
-            "url",
-            "temp_url",
-            "tempUrl",
-            "file_uri",
-            "fileUri",
-            "base64_data",
-            "base64Data",
-        ):
-            value = attachment.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return ""
+        return resolve_attachment_url(attachment)
 
     @staticmethod
     def _is_image_attachment(attachment: Any, url: str) -> bool:
-        mime_type = ""
-        if isinstance(attachment, dict):
-            mime_type = str(
-                attachment.get("mime_type")
-                or attachment.get("mimeType")
-                or ""
-            ).strip().lower()
-        if mime_type.startswith("image/"):
-            return True
-        lowered_url = str(url or "").strip().lower()
-        if lowered_url.startswith("data:image/"):
-            return True
-        clean_url = lowered_url.split("?", 1)[0].split("#", 1)[0]
-        return clean_url.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"))
+        return is_image_attachment(attachment, url)
 
     @classmethod
     def _normalize_multimodal_content(
@@ -131,46 +113,7 @@ class ChatHandler:
         content: Any,
         attachments: List[Any],
     ) -> Any:
-        parts: List[Dict[str, Any]] = []
-
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict):
-                    item_type = str(item.get("type") or "").strip().lower()
-                    if item_type == "text":
-                        text_value = str(item.get("text") or "").strip()
-                        if text_value:
-                            parts.append({"type": "text", "text": text_value})
-                        continue
-                    if item_type == "image_url" and isinstance(item.get("image_url"), dict):
-                        image_url = str(item["image_url"].get("url") or "").strip()
-                        if image_url:
-                            parts.append({"type": "image_url", "image_url": {"url": image_url}})
-                        continue
-                item_text = str(item or "").strip()
-                if item_text:
-                    parts.append({"type": "text", "text": item_text})
-        else:
-            text_value = str(content or "").strip()
-            if text_value:
-                parts.append({"type": "text", "text": text_value})
-
-        for attachment in attachments:
-            url = cls._resolve_attachment_url(attachment)
-            if not url or not cls._is_image_attachment(attachment, url):
-                continue
-            parts.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": url,
-                },
-            })
-
-        if not attachments:
-            return content
-        if len(parts) == 0:
-            return str(content or "").strip()
-        return parts
+        return normalize_multimodal_content(content, attachments)
 
     @classmethod
     def _prepare_messages(cls, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -206,7 +149,7 @@ class ChatHandler:
             聊天响应字典
         """
         try:
-            logger.info(f"[OpenAI ChatHandler] Chat request: model={model}, messages={len(messages)}")
+            logger.info("[OpenAI ChatHandler] Chat request: model=%s, messages=%s", model, len(messages))
 
             supported_params = filter_allowed_kwargs(
                 kwargs,
@@ -233,15 +176,18 @@ class ChatHandler:
             }
             
             logger.info(
-                f"[OpenAI ChatHandler] Chat response: "
-                f"tokens={result['usage']['total_tokens']}, "
-                f"finish_reason={result['finish_reason']}"
+                "[OpenAI ChatHandler] Chat response: tokens=%s, finish_reason=%s",
+                result["usage"]["total_tokens"],
+                result["finish_reason"],
             )
             
             return result
         
         except Exception as e:
-            logger.error(f"[OpenAI ChatHandler] Chat error: {e}", exc_info=True)
+            logger.error(
+                "[OpenAI ChatHandler] Chat error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise
     
     async def stream_chat(
@@ -263,8 +209,13 @@ class ChatHandler:
         """
         try:
             # ✅ 记录 max_tokens 以便调试
-            max_tokens_info = f", max_tokens={kwargs.get('max_tokens', 'default')}" if 'max_tokens' in kwargs else ""
-            logger.info(f"[OpenAI ChatHandler] Stream chat request: model={model}, messages={len(messages)}{max_tokens_info}")
+            max_tokens = kwargs.get("max_tokens") if "max_tokens" in kwargs else "default"
+            logger.info(
+                "[OpenAI ChatHandler] Stream chat request: model=%s, messages=%s, max_tokens=%s",
+                model,
+                len(messages),
+                max_tokens,
+            )
 
             supported_params = filter_allowed_kwargs(
                 kwargs,
@@ -350,9 +301,10 @@ class ChatHandler:
                             requested = int(requested_match.group(1)) if requested_match else None
                             
                             logger.error(
-                                f"[OpenAI ChatHandler] Credit limit exceeded: "
-                                f"requested={requested} tokens, affordable={affordable} tokens. "
-                                f"Please reduce max_tokens or add credits to your account."
+                                "[OpenAI ChatHandler] Credit limit exceeded: requested=%s tokens, "
+                                "affordable=%s tokens. Please reduce max_tokens or add credits to your account.",
+                                requested,
+                                affordable,
                             )
                             # 抛出更友好的错误
                             error_msg = (
@@ -369,11 +321,14 @@ class ChatHandler:
                     except Exception:
                         pass
             
-            logger.error(f"[OpenAI ChatHandler] Stream error: {e}", exc_info=True)
+            logger.error(
+                "[OpenAI ChatHandler] Stream error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             # Yield error chunk
             yield {
                 "content": "",
                 "chunk_type": "error",
-                "error": str(e)
+                "error": "OpenAI stream chat failed"
             }
             yield self._build_error_done_chunk()

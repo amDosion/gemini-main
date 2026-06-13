@@ -7,18 +7,16 @@ Ollama Provider 协调者服务
 
 使用委托模式，将所有请求分发到对应的子服务处理器。
 """
-from typing import List, Dict, Any, Optional, AsyncGenerator
 import logging
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 from ..common.base_provider import BaseProviderService
+from ..common.errors import (
+    RequestIDManager,
+)
 from ..common.model_capabilities import ModelConfig
 from .ollama_types import OllamaModelInfo
-from ..common.errors import (
-    ProviderError,
-    OperationError,
-    ErrorContext,
-    ExecutionTimer,
-    RequestIDManager
-)
 
 logger = logging.getLogger(__name__)
 
@@ -67,20 +65,23 @@ class OllamaService(BaseProviderService):
         native_base_url = native_base_url.rstrip("/")
         
         # 初始化子服务处理器（协调者模式）
-        from .handlers.openai_compat_handler import OpenAICompatibleHandler
         from .handlers.native_handler import NativeOllamaHandler
+        from .handlers.openai_compat_handler import OpenAICompatibleHandler
         
         self.openai_handler = OpenAICompatibleHandler(api_key, openai_base_url, **kwargs)
         self.native_handler = NativeOllamaHandler(api_key, native_base_url, **kwargs)
         
         if self.client_selector:
             logger.info(
-                f"[OllamaService] Initialized with ClientSelector: {self.client_selector.__class__.__name__}",
+                "[OllamaService] Initialized with ClientSelector: %s",
+                self.client_selector.__class__.__name__,
                 extra={'request_id': self.request_id, 'operation': 'initialization'}
             )
         
         logger.info(
-            f"[OllamaService] Coordinator initialized: OpenAI URL={openai_base_url}, Native URL={native_base_url}",
+            "[OllamaService] Coordinator initialized: OpenAI URL=%s, Native URL=%s",
+            summarize_url_for_log(openai_base_url),
+            summarize_url_for_log(native_base_url),
             extra={'request_id': self.request_id, 'operation': 'initialization'}
         )
 
@@ -135,7 +136,7 @@ class OllamaService(BaseProviderService):
         Returns:
             ModelConfig 对象列表
         """
-        from ..common.model_capabilities import ModelConfig, Capabilities
+        from ..common.model_capabilities import Capabilities, ModelConfig
         
         try:
             models_data = await self.native_handler.get_available_models_detailed()
@@ -182,7 +183,10 @@ class OllamaService(BaseProviderService):
             return result
             
         except Exception as e:
-            logger.warning(f"[OllamaService] Failed to get models: {e}")
+            logger.warning(
+                "[OllamaService] Failed to get models: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             # 返回空列表而不是抛出异常
             return []
 
@@ -290,7 +294,11 @@ class OllamaService(BaseProviderService):
             model_info = await self.native_handler.get_model_info(model)
             return model_info.capabilities.supports_tools if model_info.capabilities else False
         except Exception as e:
-            logger.warning(f"[OllamaService] Failed to detect function calling support for {model}: {e}")
+            logger.warning(
+                "[OllamaService] Failed to detect function calling support for model=%s: %s",
+                model,
+                summarize_text_for_log(e, label="error"),
+            )
             return False
     
     async def supports_vision(self, model: str) -> bool:
@@ -307,7 +315,11 @@ class OllamaService(BaseProviderService):
             model_info = await self.native_handler.get_model_info(model)
             return model_info.capabilities.supports_vision if model_info.capabilities else False
         except Exception as e:
-            logger.warning(f"[OllamaService] Failed to detect vision support for {model}: {e}")
+            logger.warning(
+                "[OllamaService] Failed to detect vision support for model=%s: %s",
+                model,
+                summarize_text_for_log(e, label="error"),
+            )
             return False
     
     async def get_max_context_tokens(self, model: str) -> int:
@@ -324,7 +336,11 @@ class OllamaService(BaseProviderService):
             model_info = await self.native_handler.get_model_info(model)
             return model_info.capabilities.context_length if model_info.capabilities else 4096
         except Exception as e:
-            logger.warning(f"[OllamaService] Failed to get context length for {model}: {e}")
+            logger.warning(
+                "[OllamaService] Failed to get context length for model=%s: %s",
+                model,
+                summarize_text_for_log(e, label="error"),
+            )
             return 4096
     
     def calculate_cost(self, prompt_tokens: int, completion_tokens: int, model: str) -> float:
@@ -387,7 +403,11 @@ class OllamaService(BaseProviderService):
             model_info = await self.native_handler.get_model_info(model)
             return model_info.capabilities.supports_thinking if model_info.capabilities else False
         except Exception as e:
-            logger.warning(f"[OllamaService] Failed to detect thinking support for {model}: {e}")
+            logger.warning(
+                "[OllamaService] Failed to detect thinking support for model=%s: %s",
+                model,
+                summarize_text_for_log(e, label="error"),
+            )
             return False
     
     # ==================== 高级功能（委托给 NativeOllamaHandler） ====================

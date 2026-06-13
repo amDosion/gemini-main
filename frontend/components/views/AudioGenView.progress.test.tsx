@@ -7,6 +7,14 @@ import '@testing-library/jest-dom/vitest';
 import { Role } from '../../types/types';
 import { AudioGenView } from './AudioGenView';
 
+const { downloadSourceUrlInBrowserMock } = vi.hoisted(() => ({
+  downloadSourceUrlInBrowserMock: vi.fn(),
+}));
+
+vi.mock('../../services/downloadService', () => ({
+  downloadSourceUrlInBrowser: downloadSourceUrlInBrowserMock,
+}));
+
 // Render layout slots inline so we can query the main stage directly.
 vi.mock('../common/GenViewLayout', () => ({
   GenViewLayout: ({ sidebar, main }: { sidebar: React.ReactNode; main: React.ReactNode }) => (
@@ -74,6 +82,8 @@ const buildMessages = () =>
 describe('AudioGenView progress isolation', () => {
   beforeEach(() => {
     useControlsStateMock.mockReturnValue({ voice: 'Puck', setVoice: vi.fn() });
+    downloadSourceUrlInBrowserMock.mockReset();
+    downloadSourceUrlInBrowserMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -127,5 +137,16 @@ describe('AudioGenView progress isolation', () => {
       fireEvent.ended(audio);
     });
     expect(screen.getByText('0s / 8s')).toBeInTheDocument();
+  });
+
+  it('routes audio downloads through the shared guarded download service', () => {
+    renderView();
+
+    fireEvent.click(screen.getByTitle('Download'));
+
+    expect(downloadSourceUrlInBrowserMock).toHaveBeenCalledWith({
+      sourceUrl: 'blob:audio-1',
+      fileName: expect.stringMatching(/^gemini-audio-\d+\.wav$/),
+    });
   });
 });

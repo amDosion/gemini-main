@@ -15,8 +15,14 @@ from urllib.parse import unquote_to_bytes, urlparse
 
 import httpx
 
-from ...utils.url_security import UnsafeURLError, resolve_safe_redirect_url, validate_outbound_http_url
 from ...utils.attachment_handler import is_base64_url
+from ...utils.log_sanitization import summarize_text_for_log
+from ...utils.url_security import (
+    UnsafeURLError,
+    pin_sync_client_for_outbound_guard,
+    resolve_safe_redirect_url,
+    validate_outbound_http_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +118,32 @@ def _guess_file_format(*, file_name: str, explicit_file_format: Optional[str], m
     return None
 
 
+def _raise_payload_too_large(source: str) -> None:
+    raise ValueError(f"{source} too large (> {_MAX_DOWNLOAD_BYTES} bytes)")
+
+
+def _ensure_payload_size(payload: bytes, *, source: str) -> bytes:
+    if len(payload) > _MAX_DOWNLOAD_BYTES:
+        _raise_payload_too_large(source)
+    return payload
+
+
+def _ensure_base64_payload_size(encoded_payload: str, *, source: str) -> None:
+    max_base64_payload_chars = ((_MAX_DOWNLOAD_BYTES + 2) // 3) * 4 + 16
+    if len(str(encoded_payload or "").strip()) > max_base64_payload_chars:
+        _raise_payload_too_large(source)
+
+
+def _decode_base64_payload(encoded_payload: str, *, source: str) -> bytes:
+    normalized = str(encoded_payload or "").strip()
+    _ensure_base64_payload_size(normalized, source=source)
+    try:
+        payload = base64.b64decode(normalized, validate=False)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError(f"invalid base64 {source} payload") from exc
+    return _ensure_payload_size(payload, source=source)
+
+
 def _decode_data_url(data_url: str) -> Tuple[bytes, str]:
     raw = str(data_url or "").strip()
     if not is_base64_url(raw) or "," not in raw:
@@ -119,11 +151,8 @@ def _decode_data_url(data_url: str) -> Tuple[bytes, str]:
     header, payload = raw.split(",", 1)
     mime_type = str(header[5:].split(";", 1)[0] or "").strip().lower()
     if ";base64" in header.lower():
-        try:
-            return base64.b64decode(payload, validate=False), mime_type
-        except (ValueError, binascii.Error) as exc:
-            raise ValueError("invalid base64 data URL payload") from exc
-    return unquote_to_bytes(payload), mime_type
+        return _decode_base64_payload(payload, source="data URL"), mime_type
+    return _ensure_payload_size(unquote_to_bytes(payload), source="data URL"), mime_type
 
 
 def _resolve_allowed_sheet_hosts() -> List[str]:
@@ -412,27 +441,43 @@ def _download_remote_file(file_url: str) -> Tuple[bytes, str, str]:
     _validate_sheet_file_url_allowlist(current_url, allowed_hosts)
     redirect_count = 0
     with httpx.Client(timeout=_REQUEST_TIMEOUT_SECONDS, follow_redirects=False) as client:
+        pin_sync_client_for_outbound_guard(client)
         while True:
-            response = client.get(
+            with client.stream(
+                "GET",
                 current_url,
                 headers={
                     "User-Agent": "ADKSheetAnalyzeTool/1.0",
                     "Accept": "text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*",
                 },
-            )
-            if response.status_code in _REDIRECT_STATUS_CODES:
-                if redirect_count >= _MAX_REDIRECTS:
-                    raise ValueError(f"redirects exceeded limit ({_MAX_REDIRECTS})")
-                current_url = resolve_safe_redirect_url(current_url, response.headers.get("location", ""))
-                _validate_sheet_file_url_allowlist(current_url, allowed_hosts)
-                redirect_count += 1
-                continue
-            response.raise_for_status()
-            payload = response.content
-            if len(payload) > _MAX_DOWNLOAD_BYTES:
-                raise ValueError(f"remote file too large (> {_MAX_DOWNLOAD_BYTES} bytes)")
-            content_type = str(response.headers.get("content-type") or "application/octet-stream")
-            return payload, current_url, content_type
+            ) as response:
+                if response.status_code in _REDIRECT_STATUS_CODES:
+                    if redirect_count >= _MAX_REDIRECTS:
+                        raise ValueError(f"redirects exceeded limit ({_MAX_REDIRECTS})")
+                    current_url = resolve_safe_redirect_url(current_url, response.headers.get("location", ""))
+                    _validate_sheet_file_url_allowlist(current_url, allowed_hosts)
+                    redirect_count += 1
+                    continue
+                response.raise_for_status()
+
+                raw_content_length = str(response.headers.get("content-length") or "").strip()
+                if raw_content_length:
+                    try:
+                        if int(raw_content_length) > _MAX_DOWNLOAD_BYTES:
+                            _raise_payload_too_large("remote file")
+                    except ValueError:
+                        if raw_content_length.isdigit():
+                            raise
+
+                chunks = bytearray()
+                for chunk in response.iter_bytes():
+                    if not chunk:
+                        continue
+                    chunks.extend(chunk)
+                    if len(chunks) > _MAX_DOWNLOAD_BYTES:
+                        _raise_payload_too_large("remote file")
+                content_type = str(response.headers.get("content-type") or "application/octet-stream")
+                return bytes(chunks), current_url, content_type
 
 
 def build_adk_builtin_tools() -> List[Callable[..., Dict[str, Any]]]:
@@ -491,9 +536,12 @@ def build_adk_builtin_tools() -> List[Callable[..., Dict[str, Any]]]:
                 source_type = "inline"
                 source_ref = "content"
                 if normalized_content_encoding == "base64":
-                    payload_bytes = base64.b64decode(str(content).strip(), validate=False)
+                    payload_bytes = _decode_base64_payload(str(content), source="inline content")
                 else:
-                    payload_bytes = str(content).encode(str(csv_encoding or "utf-8"))
+                    payload_bytes = _ensure_payload_size(
+                        str(content).encode(str(csv_encoding or "utf-8")),
+                        source="inline content",
+                    )
             elif str(data_url or "").strip():
                 source_type = "data_url"
                 source_ref = "data_url"
@@ -583,7 +631,13 @@ def build_adk_builtin_tools() -> List[Callable[..., Dict[str, Any]]]:
                 "error": str(exc),
             }
         except Exception as exc:
-            logger.warning("[ADKBuiltInTools] sheet_analyze failed: %s", exc, exc_info=True)
+            logger.warning(
+                "[ADKBuiltInTools] sheet_analyze failed: source_type=%s source=%s file=%s error=%s",
+                summarize_text_for_log(source_type, label="source_type"),
+                summarize_text_for_log(source_ref, label="source_ref"),
+                summarize_text_for_log(normalized_file_name, label="file_name"),
+                summarize_text_for_log(exc, label="sheet_analyze_error"),
+            )
             return {
                 "status": "failed",
                 "tool": "sheet_analyze",

@@ -11,6 +11,7 @@ download sinks share the same one-line guard and are tracked as a follow-up.)
 
 import pytest
 
+from app.services.grok import image_editor as grok_image_editor_mod
 from app.services.grok.image_editor import ImageEditor
 from app.services.tongyi import image_expand as image_expand_mod
 from app.utils.url_security import UnsafeURLError
@@ -44,6 +45,29 @@ async def test_grok_load_image_bytes_blocks_metadata_ip():
 
 
 @pytest.mark.asyncio
+async def test_grok_load_image_bytes_uses_redirect_guard(monkeypatch):
+    # Regression: this path validated the initial URL and then used a plain
+    # client.get(), so a public URL could still redirect into loopback/metadata.
+    editor = ImageEditor(api_key="k", base_url="https://api.example.com")
+    calls = []
+
+    async def _passthrough(url):
+        return url
+
+    async def _blocked_redirect(_client, url, *, max_redirects):
+        calls.append((url, max_redirects))
+        raise UnsafeURLError("redirect target blocked")
+
+    monkeypatch.setattr(grok_image_editor_mod, "validate_outbound_http_url_async", _passthrough)
+    monkeypatch.setattr(grok_image_editor_mod, "get_with_redirect_guard", _blocked_redirect)
+
+    with pytest.raises(UnsafeURLError, match="redirect target blocked"):
+        await editor._load_image_bytes("https://public.example/image.png")
+
+    assert calls == [("https://public.example/image.png", 5)]
+
+
+@pytest.mark.asyncio
 async def test_openai_pdf_extractor_blocks_loopback_pdf_url():
     # CANON-010: pdf_url is attachment/user-controlled and fetched server-side.
     from app.services.openai.pdf_extractor import OpenAIPDFExtractor
@@ -51,6 +75,30 @@ async def test_openai_pdf_extractor_blocks_loopback_pdf_url():
     extractor = OpenAIPDFExtractor(api_key="k")
     with pytest.raises(UnsafeURLError):
         await extractor._resolve_pdf_bytes({"pdf_url": "http://127.0.0.1:9/x.pdf"}, {})
+
+
+@pytest.mark.asyncio
+async def test_openai_pdf_extractor_uses_redirect_guard(monkeypatch):
+    from app.services.openai import pdf_extractor as openai_pdf_mod
+    from app.services.openai.pdf_extractor import OpenAIPDFExtractor
+
+    calls = []
+
+    async def _passthrough(url):
+        return url
+
+    async def _blocked_redirect(_client, url, *, max_redirects):
+        calls.append((url, max_redirects))
+        raise UnsafeURLError("redirect target blocked")
+
+    monkeypatch.setattr(openai_pdf_mod, "validate_outbound_http_url_async", _passthrough)
+    monkeypatch.setattr(openai_pdf_mod, "get_with_redirect_guard", _blocked_redirect)
+
+    extractor = OpenAIPDFExtractor(api_key="k")
+    with pytest.raises(UnsafeURLError, match="redirect target blocked"):
+        await extractor._resolve_pdf_bytes({"pdf_url": "https://public.example/file.pdf"}, {})
+
+    assert calls == [("https://public.example/file.pdf", 5)]
 
 
 @pytest.mark.asyncio
@@ -65,6 +113,34 @@ async def test_gemini_pdf_extractor_blocks_loopback_pdf_url():
             model="gemini-2.0-flash",
             reference_images={"pdf_url": "http://127.0.0.1:9/x.pdf"},
         )
+
+
+@pytest.mark.asyncio
+async def test_gemini_pdf_extractor_uses_redirect_guard(monkeypatch):
+    from app.services.gemini.common import pdf_extractor as gemini_pdf_mod
+    from app.services.gemini.common.pdf_extractor import PDFExtractorService
+
+    calls = []
+
+    async def _passthrough(url):
+        return url
+
+    async def _blocked_redirect(_client, url, *, max_redirects):
+        calls.append((url, max_redirects))
+        raise UnsafeURLError("redirect target blocked")
+
+    monkeypatch.setattr(gemini_pdf_mod, "validate_outbound_http_url_async", _passthrough)
+    monkeypatch.setattr(gemini_pdf_mod, "get_with_redirect_guard", _blocked_redirect)
+
+    extractor = PDFExtractorService()
+    with pytest.raises(UnsafeURLError, match="redirect target blocked"):
+        await extractor.extract_pdf_data(
+            prompt="x",
+            model="gemini-2.0-flash",
+            reference_images={"pdf_url": "https://public.example/file.pdf"},
+        )
+
+    assert calls == [("https://public.example/file.pdf", 5)]
 
 
 def test_tongyi_upload_to_dashscope_blocks_loopback_image_url(monkeypatch):

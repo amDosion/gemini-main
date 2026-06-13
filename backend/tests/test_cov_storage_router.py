@@ -7,6 +7,7 @@ real behaviour: status codes, response shapes, permission / fail-closed
 branches and error mapping.
 """
 import importlib
+import logging
 import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -41,6 +42,7 @@ def client(fake_db):
     app.include_router(storage_mod.router)
 
     app.dependency_overrides[require_current_user] = lambda: TEST_USER
+    app.dependency_overrides[storage_mod.require_admin_user] = lambda: TEST_USER
     app.dependency_overrides[get_db] = lambda: fake_db
     # Default: cache unavailable (router gracefully degrades)
     app.dependency_overrides[storage_mod._get_cache_optional] = lambda: None
@@ -49,6 +51,14 @@ def client(fake_db):
         yield test_client
 
     app.dependency_overrides.clear()
+
+
+def _storage_log_text(caplog) -> str:
+    return "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name == storage_mod.logger.name
+    )
 
 
 # ===========================================================================
@@ -923,18 +933,25 @@ def test_upload_logs_returns_logs(client, monkeypatch):
     assert body["logs"] == ["line1", "line2"]
 
 
-def test_upload_logs_redis_error_returns_503(client, monkeypatch):
+def test_upload_logs_redis_error_returns_503(client, monkeypatch, caplog):
+    secret = "upload-logs-secret"
     monkeypatch.setattr(storage_mod, "_require_owned_upload_task", lambda db, tid, uid: MagicMock())
     monkeypatch.setattr(storage_mod.redis_queue, "_redis", object(), raising=False)
     monkeypatch.setattr(
         storage_mod.redis_queue,
         "get_task_logs",
-        AsyncMock(side_effect=RuntimeError("redis down")),
+        AsyncMock(side_effect=RuntimeError(f"redis down {secret}")),
     )
 
-    resp = client.get("/api/storage/upload-logs/t1")
+    with caplog.at_level(logging.ERROR, logger=storage_mod.logger.name):
+        resp = client.get("/api/storage/upload-logs/t1")
+
     assert resp.status_code == 503
-    assert "获取任务日志失败" in resp.json()["detail"]
+    assert resp.json()["detail"] == "获取任务日志失败"
+    assert secret not in resp.text
+    assert secret not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "<redacted error; length=" in caplog.text
 
 
 # ===========================================================================
@@ -958,6 +975,25 @@ def test_worker_pool_health_unavailable_import_error(client, monkeypatch):
     assert body["error"] == "Worker pool module not available"
 
 
+def test_storage_diagnostics_require_admin_user(fake_db):
+    app = FastAPI()
+    app.include_router(storage_mod.router)
+
+    fake_user = types.SimpleNamespace(id=TEST_USER, is_admin=False)
+    fake_db.query.return_value.filter.return_value.first.return_value = fake_user
+    app.dependency_overrides[require_current_user] = lambda: TEST_USER
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    with TestClient(app) as test_client:
+        debug_resp = test_client.get("/api/storage/debug")
+        worker_health_resp = test_client.get("/api/storage/worker-pool/health")
+
+    app.dependency_overrides.clear()
+
+    assert debug_resp.status_code == 403
+    assert worker_health_resp.status_code == 403
+
+
 # ===========================================================================
 # debug endpoint
 # ===========================================================================
@@ -969,6 +1005,59 @@ def test_storage_debug_returns_runtime_info(client):
     assert body["features"]["upload_async"] is True
     # database url should be masked (no raw password)
     assert isinstance(body["database_url"], str)
+
+
+def test_worker_status_handles_single_worker_pool(client, monkeypatch):
+    from app.services.common import upload_worker_pool as pool_mod
+
+    class FakeTask:
+        def done(self):
+            return False
+
+    fake_pool = types.SimpleNamespace(
+        _running=True,
+        _worker_task=FakeTask(),
+        _reconcile_interval_s=15.0,
+        _reconcile_limit=500,
+    )
+    fake_redis = types.SimpleNamespace(
+        _redis=object(),
+        connect=AsyncMock(),
+        get_stats=AsyncMock(return_value={"queue_length": 0}),
+    )
+    monkeypatch.setattr(pool_mod, "worker_pool", fake_pool)
+    monkeypatch.setattr(storage_mod, "redis_queue", fake_redis)
+
+    resp = client.get("/api/storage/worker-status")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["worker_pool"]["workers_total"] == 1
+    assert body["worker_pool"]["workers_alive"] == 1
+    assert body["redis"]["stats"] == {"queue_length": 0}
+
+
+def test_worker_status_import_error_is_generic(client, monkeypatch, caplog):
+    import builtins
+
+    secret = "worker-status-secret"
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if "upload_worker_pool" in name:
+            raise ImportError(f"no worker pool {secret}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with caplog.at_level(logging.ERROR, logger=storage_mod.logger.name):
+        resp = client.get("/api/storage/worker-status")
+
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == "WorkerPool 不可用"
+    assert secret not in resp.text
+    assert secret not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "<redacted error; length=" in caplog.text
 
 
 # ===========================================================================
@@ -1181,18 +1270,27 @@ def test_preview_upstream_error_status_propagated(client, monkeypatch):
     fake_client.aclose.assert_awaited()
 
 
-def test_preview_unexpected_exception_maps_to_500(client, monkeypatch):
+def test_preview_unexpected_exception_maps_to_500_without_leak(client, monkeypatch, caplog):
+    secret = "preview-secret-token"
     monkeypatch.setattr(storage_mod, "_collect_storage_preview_host_allowlist", lambda db, u: set())
     monkeypatch.setattr(storage_mod, "_resolve_safe_preview_fetch_url", lambda url, hosts: url)
     _patch_get_revision(monkeypatch, value=0)
 
     async def boom(*args, **kwargs):
-        raise RuntimeError("network exploded")
+        raise RuntimeError(f"network exploded {secret}")
 
     monkeypatch.setattr(storage_mod, "_open_safe_stream_with_redirect_guard", boom)
-    resp = client.get("/api/storage/preview", params={"url": "https://cdn/x.png"})
+
+    with caplog.at_level(logging.ERROR, logger=storage_mod.logger.name):
+        resp = client.get("/api/storage/preview", params={"url": "https://cdn/x.png"})
+
     assert resp.status_code == 500
-    assert "预览失败" in resp.json()["detail"]
+    assert resp.json()["detail"] == "预览失败"
+    log_text = _storage_log_text(caplog)
+    assert "<redacted error; length=" in log_text
+    assert secret not in log_text
+    assert "Traceback" not in log_text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 # ===========================================================================
@@ -1258,6 +1356,29 @@ def test_download_rejected_url_returns_400(client, monkeypatch):
     monkeypatch.setattr(storage_mod, "_resolve_safe_preview_fetch_url", reject)
     resp = client.get("/api/storage/download", params={"url": "x"})
     assert resp.status_code == 400
+
+
+def test_download_unexpected_exception_maps_to_500_without_leak(client, monkeypatch, caplog):
+    secret = "download-secret-token"
+    monkeypatch.setattr(storage_mod, "_collect_storage_preview_host_allowlist", lambda db, u: set())
+    monkeypatch.setattr(storage_mod, "_resolve_safe_preview_fetch_url", lambda url, hosts: url)
+    _patch_get_revision(monkeypatch, value=0)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError(f"download exploded {secret}")
+
+    monkeypatch.setattr(storage_mod, "_open_safe_stream_with_redirect_guard", boom)
+
+    with caplog.at_level(logging.ERROR, logger=storage_mod.logger.name):
+        resp = client.get("/api/storage/download", params={"url": "https://cdn/x.png"})
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "下载失败"
+    log_text = _storage_log_text(caplog)
+    assert "<redacted error; length=" in log_text
+    assert secret not in log_text
+    assert "Traceback" not in log_text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 # ===========================================================================
@@ -1431,6 +1552,50 @@ async def test_attach_total_count_fresh_count_from_manager():
     manager.count_storage_items.assert_awaited_once()
 
 
+async def test_storage_revision_redis_error_log_is_summarized(monkeypatch, caplog):
+    secret = "storage-revision-secret"
+    monkeypatch.setattr(storage_mod.redis_queue, "_redis", None, raising=False)
+    monkeypatch.setattr(
+        storage_mod.redis_queue,
+        "connect",
+        AsyncMock(side_effect=RuntimeError(f"redis failed {secret}")),
+    )
+
+    with caplog.at_level(logging.DEBUG, logger=storage_mod.logger.name):
+        redis_conn = await storage_mod._get_storage_revision_redis()
+
+    log_text = _storage_log_text(caplog)
+    assert redis_conn is None
+    assert secret not in log_text
+    assert "Traceback" not in log_text
+    assert "<redacted error; length=" in log_text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+async def test_attach_total_count_manager_error_log_is_summarized(caplog):
+    secret = "storage-count-secret"
+    manager = MagicMock()
+    manager.count_storage_items = AsyncMock(
+        side_effect=RuntimeError(f"count failed {secret}")
+    )
+
+    with caplog.at_level(logging.WARNING, logger=storage_mod.logger.name):
+        out = await storage_mod._attach_total_count_to_browse_payload(
+            {"supported": True, "storage_id": "sid", "path": f"private/{secret}"},
+            manager=manager,
+            storage_id="sid",
+            user_id="u",
+            cache=None,
+        )
+
+    log_text = _storage_log_text(caplog)
+    assert out["total_count"] is None
+    assert secret not in log_text
+    assert "Traceback" not in log_text
+    assert "<redacted error; length=" in log_text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
 # ===========================================================================
 # preview-url enrichment of browse payload (pure)
 # ===========================================================================
@@ -1602,6 +1767,27 @@ async def test_collect_storage_download_entries_empty_directory(monkeypatch):
     assert skipped[0]["reason"] == "empty directory"
 
 
+def test_cleanup_expired_storage_downloads_scan_error_log_is_summarized(
+    monkeypatch, caplog
+):
+    secret = "storage-temp-secret"
+
+    class FakeDownloadDir:
+        def glob(self, pattern):
+            raise RuntimeError(f"scan failed {secret}")
+
+    monkeypatch.setattr(storage_mod, "_STORAGE_DOWNLOAD_DIR", FakeDownloadDir())
+
+    with caplog.at_level(logging.DEBUG, logger=storage_mod.logger.name):
+        storage_mod._cleanup_expired_storage_downloads()
+
+    log_text = _storage_log_text(caplog)
+    assert secret not in log_text
+    assert "Traceback" not in log_text
+    assert "<redacted error; length=" in log_text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
 # ===========================================================================
 # prepare_storage_download endpoint (single file happy path + guards)
 # ===========================================================================
@@ -1710,6 +1896,50 @@ def test_prepare_download_single_file_too_large(client, monkeypatch):
         json={"storage_id": "sid", "items": [{"path": "a.png", "name": "a.png"}]},
     )
     assert resp.status_code == 413
+
+
+def test_prepare_download_unexpected_exception_maps_to_500_without_leak(
+    client,
+    monkeypatch,
+    caplog,
+):
+    secret = "prepare-download-secret-token"
+    monkeypatch.setattr(storage_mod, "_cleanup_expired_storage_downloads", lambda: None)
+    monkeypatch.setattr(storage_mod, "_cleanup_storage_download_by_id", lambda download_id: None)
+    monkeypatch.setattr(
+        storage_mod,
+        "_resolve_enabled_storage_config",
+        lambda db, user_id, storage_id: ("sid", MagicMock()),
+    )
+    _patch_manager(monkeypatch, MagicMock())
+    monkeypatch.setattr(storage_mod, "_collect_storage_preview_host_allowlist", lambda db, u: set())
+    monkeypatch.setattr(storage_mod, "_resolve_safe_preview_fetch_url", lambda url, hosts: url)
+
+    async def fake_collect(manager, *, storage_id, items, max_total_files=None):
+        return (
+            [{"file_url": "https://cdn/a.png", "name": "a.png", "archive_path": "a.png", "size": 10}],
+            [],
+        )
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError(f"stream failed {secret}")
+
+    monkeypatch.setattr(storage_mod, "_collect_storage_download_entries", fake_collect)
+    monkeypatch.setattr(storage_mod, "_stream_safe_url_to_file", boom)
+
+    with caplog.at_level(logging.ERROR, logger=storage_mod.logger.name):
+        resp = client.post(
+            "/api/storage/items/downloads",
+            json={"storage_id": "sid", "items": [{"path": "a.png", "name": "a.png"}]},
+        )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "准备下载失败"
+    log_text = _storage_log_text(caplog)
+    assert "<redacted error; length=" in log_text
+    assert secret not in log_text
+    assert "Traceback" not in log_text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 # ===========================================================================

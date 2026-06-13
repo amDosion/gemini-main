@@ -7,6 +7,14 @@ import '@testing-library/jest-dom/vitest';
 import { Role } from '../../types/types';
 import { VideoGenView } from './VideoGenView';
 
+const { downloadSourceUrlInBrowserMock } = vi.hoisted(() => ({
+  downloadSourceUrlInBrowserMock: vi.fn(),
+}));
+
+vi.mock('../../services/downloadService', () => ({
+  downloadSourceUrlInBrowser: downloadSourceUrlInBrowserMock,
+}));
+
 vi.mock('../common/GenViewLayout', () => ({
   GenViewLayout: ({ sidebarExtraHeader, sidebar, main }: any) => (
     <div>
@@ -174,6 +182,8 @@ describe('VideoGenView history list', () => {
       value: vi.fn().mockResolvedValue(undefined),
     });
     useControlsStateMock.mockImplementation(() => createMockControls());
+    downloadSourceUrlInBrowserMock.mockReset();
+    downloadSourceUrlInBrowserMock.mockResolvedValue(undefined);
   });
 
   it('renders video history as gen-style list with hover prompt preview and action menu', async () => {
@@ -414,6 +424,48 @@ describe('VideoGenView history list', () => {
 
     fireEvent.click(screen.getByLabelText('全屏播放'));
     expect(HTMLElement.prototype.requestFullscreen).toHaveBeenCalled();
+  });
+
+  it('routes active video downloads through the shared guarded download service', async () => {
+    render(
+      <VideoGenView
+        messages={[
+          {
+            id: 'video-msg-download',
+            role: Role.MODEL,
+            content: '📝 Downloadable test video',
+            timestamp: Date.now(),
+            attachments: [
+              {
+                id: 'video-download',
+                url: 'https://cdn.example.com/downloadable.mp4',
+                mimeType: 'video/mp4',
+                name: 'downloadable.mp4',
+              },
+            ],
+          } as any,
+        ]}
+        setAppMode={vi.fn()}
+        loadingState="idle"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        activeModelConfig={{ id: 'veo-2.0-generate-001', name: 'Veo 2' } as any}
+        providerId="google"
+        sessionId="session-1"
+        onDeleteMessage={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('下载视频')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText('下载视频'));
+
+    expect(downloadSourceUrlInBrowserMock).toHaveBeenCalledWith({
+      sourceUrl: 'https://cdn.example.com/downloadable.mp4',
+      fileName: expect.stringMatching(/^gemini-video-\d+\.mp4$/),
+    });
   });
 
   it('resets video params using backend contract defaults', async () => {

@@ -3,7 +3,8 @@ File Search 路由
 处理文件上传到 Google File Search Store 的逻辑
 """
 from fastapi import APIRouter, HTTPException, Header, UploadFile, File, Form
-from typing import Optional, List
+from pydantic import BaseModel, Field
+from typing import Optional
 import logging
 import asyncio
 import tempfile
@@ -12,9 +13,35 @@ import mimetypes
 
 from ...middleware.case_conversion_middleware import case_conversion_options
 from ...services.gemini.client_pool import get_client_pool
+from ...utils.log_sanitization import summarize_text_for_log
 
 router = APIRouter(prefix="/api/file-search", tags=["file-search"])
 logger = logging.getLogger(__name__)
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+
+
+class FileSearchUploadResponse(BaseModel):
+    file_search_store_name: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    file_name: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    operation: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class FileSearchStoreResponse(BaseModel):
+    name: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    display_name: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    create_time: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    update_time: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class FileSearchStoresResponse(BaseModel):
+    stores: list[FileSearchStoreResponse] = Field(max_length=10_000)
+
+
+def _stringify_optional(value):
+    if value is None:
+        return None
+    return str(value)
 
 
 def get_mime_type(filename: str, content_type: Optional[str]) -> str:
@@ -81,7 +108,7 @@ def _extract_bearer_api_key(authorization: Optional[str]) -> str:
     return api_key
 
 
-@router.post("/upload")
+@router.post("/upload", response_model=FileSearchUploadResponse)
 @case_conversion_options(skip_request_body=True)
 async def upload_to_file_search(
     file: UploadFile = File(...),
@@ -183,10 +210,6 @@ async def upload_to_file_search(
                     detail="File upload timeout - file may still be processing"
                 )
 
-            # 5. 获取上传的文件信息
-            # operation.response 包含上传结果
-            response_data = operation.response
-
             logger.info(f"File uploaded successfully to store: {file_search_store.name}")
 
             return {
@@ -205,17 +228,18 @@ async def upload_to_file_search(
             except Exception as cleanup_error:
                 # 必须记录 temp_file_path：清理失败的累积可能耗尽磁盘，运维需要定位
                 logger.warning(
-                    f"Failed to delete temporary file {temp_file_path!r}: {cleanup_error}",
-                    exc_info=True,
+                    "Failed to delete temporary file %r: %s",
+                    temp_file_path,
+                    summarize_text_for_log(cleanup_error, label="error"),
                 )
 
     except HTTPException:
         raise
     except Exception as e:
-        # 服务端记录完整异常（含 stack）；客户端仅看到通用消息，避免回显 SDK 内部错误
+        # 客户端仅看到通用消息；日志只记录异常摘要，避免回显 SDK 内部错误。
         logger.error(
-            f"Failed to upload file: {type(e).__name__}: {str(e)}",
-            exc_info=True,
+            "Failed to upload file: %s",
+            summarize_text_for_log(e, label="error"),
         )
         raise HTTPException(
             status_code=500,
@@ -223,7 +247,7 @@ async def upload_to_file_search(
         )
 
 
-@router.get("/stores")
+@router.get("/stores", response_model=FileSearchStoresResponse)
 async def list_file_search_stores(
     authorization: str = Header(None),
 ):
@@ -239,8 +263,8 @@ async def list_file_search_stores(
             stores.append({
                 "name": store.name,
                 "display_name": store.display_name,
-                "create_time": store.create_time,
-                "update_time": store.update_time
+                "create_time": _stringify_optional(store.create_time),
+                "update_time": _stringify_optional(store.update_time),
             })
         
         return {"stores": stores}
@@ -248,7 +272,10 @@ async def list_file_search_stores(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list stores: {e}", exc_info=True)
+        logger.error(
+            "Failed to list stores: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
             detail="Failed to list file search stores. Please try again or contact support.",

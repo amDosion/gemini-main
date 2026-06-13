@@ -67,6 +67,47 @@ describe('UnifiedProviderClient stream handling', () => {
     expect(init?.credentials).toBe('include');
   });
 
+  it('redacts sensitive credentials from chat stream HTTP errors', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        'provider failed for https://files.example.com/output.png?token=stream-secret-token&safe=1 with Bearer stream-secret-bearer and api_key=stream-secret-key',
+        {
+          status: 502,
+          headers: { 'content-type': 'text/plain' },
+        }
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new UnifiedProviderClient('google');
+    let message = '';
+
+    try {
+      for await (const _update of client.sendMessageStream(
+        'gemini-3.1-pro-preview',
+        [] as Message[],
+        'stream error',
+        [],
+        defaultOptions,
+        '',
+        ''
+      )) {
+        // drain stream
+      }
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toContain('Chat failed:');
+    expect(message).not.toContain('stream-secret-token');
+    expect(message).not.toContain('stream-secret-bearer');
+    expect(message).not.toContain('stream-secret-key');
+    expect(message).toContain('token=REDACTED');
+    expect(message).toContain('safe=1');
+    expect(message).toContain('Bearer REDACTED');
+    expect(message).toContain('api_key=REDACTED');
+  });
+
   it('parses split SSE payloads with tool events', async () => {
     const encoder = new TextEncoder();
     const sseFrames = [

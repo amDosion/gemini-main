@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from .coordinators.imagen_coordinator import ImagenCoordinator
 from .base.imagen_common import ContentPolicyError
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ class ImageGenerator:
         logger.info(f"[ImageGenerator] ========== 开始图片生成 ==========")
         logger.info(f"[ImageGenerator] 📥 请求参数:")
         logger.info(f"[ImageGenerator]     - model: {model}")
-        logger.info(f"[ImageGenerator]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
+        logger.info(f"[ImageGenerator]     - prompt: {summarize_text_for_log(prompt, label='prompt')}")
         logger.info(f"[ImageGenerator]     - prompt长度: {len(prompt)}")
         logger.info(f"[ImageGenerator]     - user_id: {self._user_id if self._user_id else 'None'}")
         for key, value in kwargs.items():

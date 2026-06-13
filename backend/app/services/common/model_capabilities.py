@@ -6,7 +6,7 @@ It defines the data structures for model capabilities and provides
 functions to infer capabilities based on provider and model ID.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Any, Dict, List, Sequence, Tuple
 import re
 
@@ -28,11 +28,11 @@ class ModelTraits(BaseModel):
 
 class ModelConfig(BaseModel):
     """Complete model configuration"""
-    id: str                           # Model ID
-    name: str                         # Display name
-    description: str                  # Model description
+    id: str = Field(max_length=256)   # Model ID
+    name: str = Field(max_length=512)  # Display name
+    description: str = Field(max_length=10_000)  # Model description
     capabilities: Capabilities        # Capability configuration
-    context_window: Optional[int] = None  # Context window size
+    context_window: Optional[int] = Field(default=None, ge=0, le=10_000_000)  # Context window size
     traits: Optional[ModelTraits] = None  # Optional traits for frontend decision logic
 
 

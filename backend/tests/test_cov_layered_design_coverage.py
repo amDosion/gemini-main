@@ -416,6 +416,23 @@ def test_extract_image_data_http_url_unsupported():
     assert svc._extract_image_data({"raw": "https://example.com/x.png"}) is None
 
 
+def test_extract_image_data_http_url_log_summarizes_signed_url(caplog):
+    svc = LayeredDesignService()
+    signed_url = (
+        "https://files.example.com/private/x.png?"
+        "token=secret-layered-token&api_key=secret-layered-key&safe=1"
+    )
+
+    with caplog.at_level("WARNING", logger=mod.logger.name):
+        assert svc._extract_image_data({"raw": signed_url}) is None
+
+    log_text = caplog.text
+    assert "secret-layered-token" not in log_text
+    assert "secret-layered-key" not in log_text
+    assert "files.example.com" in log_text
+    assert "query_params=3" in log_text
+
+
 def test_extract_image_data_dict_with_url():
     svc = LayeredDesignService()
     payload = base64.b64encode(b"nested").decode()

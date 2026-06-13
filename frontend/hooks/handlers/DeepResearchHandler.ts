@@ -6,6 +6,7 @@ import {
   DEFAULT_DEEP_RESEARCH_STREAM_POLICY,
   fetchDeepResearchStreamPolicy,
 } from '../../services/runtimePolicies';
+import { parseHttpError } from '../../services/http';
 import { uploadFormDataWithXhr } from '../../services/httpProgress';
 import { GroundingMetadata, ResearchRequiredAction, ToolCall, ToolResult } from '../../types/types';
 import { getErrorMessage } from '../../utils/errorMessage';
@@ -137,8 +138,11 @@ export class DeepResearchHandler extends BaseHandler {
     });
 
     if (!startResponse.ok) {
-      const errorText = await startResponse.text();
-      throw new Error(`Failed to start research task: ${startResponse.statusText} - ${errorText}`);
+      const parsedError = await parseHttpError(
+        startResponse,
+        startResponse.statusText || `HTTP ${startResponse.status}`
+      );
+      throw new Error(`Failed to start research task: ${parsedError.message}`);
     }
 
     const startData = await startResponse.json();
@@ -365,9 +369,12 @@ export class DeepResearchHandler extends BaseHandler {
           }
         );
         if (!response.ok) {
-          const errorText = await response.text();
+          const parsedError = await parseHttpError(
+            response,
+            `获取研究状态失败: ${response.status} ${response.statusText}`
+          );
           throw new Error(
-            `获取研究状态失败: ${response.status} ${response.statusText} - ${errorText}`
+            `获取研究状态失败: ${response.status} ${response.statusText} - ${parsedError.message}`
           );
         }
         return response.json();
@@ -540,9 +547,12 @@ export class DeepResearchHandler extends BaseHandler {
           });
 
           if (!actionResponse.ok) {
-            const errorText = await actionResponse.text();
+            const parsedError = await parseHttpError(
+              actionResponse,
+              actionResponse.statusText || `HTTP ${actionResponse.status}`
+            );
             throw new Error(
-              `提交 Deep Research 动作失败: ${actionResponse.statusText} - ${errorText}`
+              `提交 Deep Research 动作失败: ${parsedError.message}`
             );
           }
 

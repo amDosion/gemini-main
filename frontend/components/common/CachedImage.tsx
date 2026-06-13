@@ -2,6 +2,7 @@ import React, { forwardRef, useCallback, useEffect, useMemo, useState } from 're
 import { useCachedImageSrc } from '../../hooks/useCachedImageSrc';
 import { useRetainedBlobObjectUrl } from '../../hooks/useRetainedBlobObjectUrl';
 import { type MediaCacheSource } from '../../services/mediaCache';
+import { isSafeInlineImageDataUrl } from '../../utils/safeMediaDataUrl';
 
 export interface CachedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> {
   src?: string | null;
@@ -27,6 +28,15 @@ const isAuthenticatedStorageSrc = (value: string | null | undefined): boolean =>
   } catch {
     return src.startsWith('/api/storage/');
   }
+};
+
+const isRenderableImageSrc = (value: string | null | undefined): boolean => {
+  const src = (value || '').trim();
+  if (!src) return false;
+  const lowered = src.toLowerCase();
+  if (lowered.startsWith('local-blob:')) return false;
+  if (lowered.startsWith('data:')) return isSafeInlineImageDataUrl(src);
+  return true;
 };
 
 export const CachedImage = forwardRef<HTMLImageElement, CachedImageProps>(
@@ -100,12 +110,13 @@ export const CachedImage = forwardRef<HTMLImageElement, CachedImageProps>(
       Boolean(cached.src) &&
       failedCachedSrc === cached.src &&
       !canUseStableRawFallback;
-    const resolvedSrc = shouldSuppressFailedCachedSrc
+    const unsafeResolvedSrc = shouldSuppressFailedCachedSrc
       ? ''
-      : (shouldUseStableRawFallback ? src || '' : cached.src) ||
+      : (shouldUseStableRawFallback ? src || '' : cacheEnabled ? cached.src : '') ||
         (shouldUseImmediateRawFallback ? src || '' : '') ||
         (canUseDelayedRawFallback && showRawFallback ? src || '' : '') ||
         (cacheEnabled && cacheSource ? '' : src || '');
+    const resolvedSrc = isRenderableImageSrc(unsafeResolvedSrc) ? unsafeResolvedSrc : '';
 
     useRetainedBlobObjectUrl(resolvedSrc);
 

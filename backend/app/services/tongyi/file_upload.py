@@ -33,6 +33,7 @@ from ...utils.url_security import (
     validate_outbound_http_url,
     validate_outbound_http_url_async,
 )
+from ...utils.log_sanitization import summarize_url_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +198,7 @@ def upload_bytes_to_dashscope(
         logger.error(f"[DashScope Upload] {error}")
         return DashScopeUploadResult(success=False, error=error)
     
-    logger.info(f"[DashScope Upload] ✅ 上传成功: {oss_url}")
+    logger.info("[DashScope Upload] ✅ 上传成功: %s", summarize_url_for_log(oss_url))
     logger.info("[DashScope Upload] ⏱️  有效期 48 小时")
     
     return DashScopeUploadResult(success=True, oss_url=oss_url)
@@ -345,7 +346,7 @@ def upload_to_dashscope(
         
         oss_url = f"oss://{key}"
         logger.info("[DashScope Upload] ✅ 上传成功!")
-        logger.info(f"[DashScope Upload] OSS URL: {oss_url}")
+        logger.info("[DashScope Upload] OSS URL: %s", summarize_url_for_log(oss_url))
         logger.info("[DashScope Upload] ⏱️  有效期 48 小时")
         
         return DashScopeUploadResult(
@@ -479,7 +480,7 @@ async def upload_bytes_to_dashscope_async(
         logger.error(f"[DashScope Upload] {error}")
         return DashScopeUploadResult(success=False, error=error)
 
-    logger.info(f"[DashScope Upload] ✅ 上传成功: {oss_url}")
+    logger.info("[DashScope Upload] ✅ 上传成功: %s", summarize_url_for_log(oss_url))
     logger.info("[DashScope Upload] ⏱️  有效期 48 小时")
 
     return DashScopeUploadResult(success=True, oss_url=oss_url)
@@ -565,7 +566,7 @@ async def upload_to_dashscope_async(
             return DashScopeUploadResult(success=False, error=error)
 
         logger.info("[DashScope Upload] ✅ 上传成功!")
-        logger.info(f"[DashScope Upload] OSS URL: {oss_url}")
+        logger.info("[DashScope Upload] OSS URL: %s", summarize_url_for_log(oss_url))
         logger.info("[DashScope Upload] ⏱️  有效期 48 小时")
 
         return DashScopeUploadResult(success=True, oss_url=oss_url)

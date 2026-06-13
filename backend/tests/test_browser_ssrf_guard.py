@@ -8,6 +8,7 @@ existed; these tests pin that it is now wired in BEFORE any network/driver call.
 """
 
 import pytest
+import logging
 
 from app.services.gemini.common import browser
 
@@ -72,3 +73,110 @@ def test_read_webpage_allows_public_target(monkeypatch):
     result = browser.read_webpage("http://8.8.8.8/")
     assert "hello-public" in result.lower()
     assert captured.get("url") == "http://8.8.8.8/"
+
+
+def test_read_webpage_logs_url_summary_without_signed_query(monkeypatch, caplog):
+    class _FakeResponse:
+        status_code = 200
+        text = "<html><body><h1>hello-private</h1></body></html>"
+        headers: dict = {}
+
+        def raise_for_status(self):
+            return None
+
+    captured = {}
+
+    def _fake_get(self, url, **kwargs):
+        captured["url"] = url
+        return _FakeResponse()
+
+    import httpx
+
+    monkeypatch.setattr(httpx.Client, "get", _fake_get)
+
+    raw_url = (
+        "http://8.8.8.8/private/path"
+        "?token=secret-token&X-Amz-Signature=secret-signature"
+        "#private-fragment"
+    )
+
+    with caplog.at_level(logging.INFO, logger=browser.logger.name):
+        result = browser.read_webpage(raw_url)
+
+    assert "hello-private" in result.lower()
+    assert captured.get("url") == raw_url
+
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "http://8.8.8.8 path_len=13 query_params=2 fragment=yes" in log_text
+    assert raw_url not in log_text
+    assert "/private/path" not in log_text
+    assert "secret-token" not in log_text
+    assert "secret-signature" not in log_text
+    assert "private-fragment" not in log_text
+
+
+def test_selenium_browse_logs_url_summary_and_not_step_payload(monkeypatch, caplog):
+    captured = {}
+
+    class _FakeDriver:
+        page_source = "<html><body><h1>selenium-private</h1></body></html>"
+
+        def set_window_size(self, width, height):
+            return None
+
+        def get(self, url):
+            captured["url"] = url
+
+        def execute_script(self, script, *args):
+            if "scrollHeight" in script:
+                return 100
+            if "pageYOffset" in script:
+                return 100
+            return None
+
+        def get_window_size(self):
+            return {"width": 1024, "height": 2048}
+
+        def get_screenshot_as_base64(self):
+            return "screenshot"
+
+    class _FakeWait:
+        def __init__(self, driver, timeout):
+            self.driver = driver
+            self.timeout = timeout
+
+        def until(self, condition):
+            return object()
+
+    monkeypatch.setattr(browser, "SELENIUM_AVAILABLE", True)
+    monkeypatch.setattr(browser, "get_driver", lambda user_id="default": _FakeDriver())
+    monkeypatch.setattr(browser, "WebDriverWait", _FakeWait)
+    monkeypatch.setattr(browser.time, "sleep", lambda seconds: None)
+
+    raw_url = (
+        "http://8.8.8.8/private/path"
+        "?token=secret-token&X-Amz-Signature=secret-signature"
+        "#private-fragment"
+    )
+
+    with caplog.at_level(logging.DEBUG, logger=browser.logger.name):
+        result = browser.selenium_browse(
+            raw_url,
+            steps=[{"action": "wait", "seconds": 0, "keys": "super-secret-password"}],
+            capture_screenshot=False,
+            auto_scroll=False,
+        )
+
+    assert result["error"] is None
+    assert "selenium-private" in result["content"].lower()
+    assert captured.get("url") == raw_url
+
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "http://8.8.8.8 path_len=13 query_params=2 fragment=yes" in log_text
+    assert "Steps to perform: 1" in log_text
+    assert raw_url not in log_text
+    assert "/private/path" not in log_text
+    assert "secret-token" not in log_text
+    assert "secret-signature" not in log_text
+    assert "private-fragment" not in log_text
+    assert "super-secret-password" not in log_text

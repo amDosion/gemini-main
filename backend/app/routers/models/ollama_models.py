@@ -5,16 +5,20 @@ Ollama 模型管理 API 路由
 所有端点使用 /api/ollama 前缀。
 
 设计说明:
-- 使用查询参数传递 base_url 和 api_key (与前端配置一致)
+- 使用查询参数传递 base_url；Ollama API key 仅通过 X-Ollama-Api-Key header 传递
 - 下载端点使用 SSE 流式响应返回进度
 - 错误处理遵循 FastAPI 标准异常格式
 """
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, JsonValue
 import json
 import logging
+
+from ...services.common.provider_factory import ProviderFactory
+from ...utils.log_sanitization import summarize_text_for_log
+from ...utils.url_security import UnsafeURLError
 
 # 导入 OllamaService
 try:
@@ -28,21 +32,51 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ollama", tags=["ollama"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+BASE_URL_PATTERN = r"^[^\x00-\x1F\x7F]*$"
 
 
 # ==================== 请求/响应模型 ====================
 
 class PullModelRequest(BaseModel):
     """模型下载请求"""
-    model: str
-    base_url: str = "http://localhost:11434"
-    api_key: Optional[str] = None
+    model: str = Field(min_length=1, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    base_url: str = Field(default="http://localhost:11434", max_length=4096, pattern=BASE_URL_PATTERN)
 
 
 class DeleteModelResponse(BaseModel):
     """模型删除响应"""
     success: bool
-    message: str
+    message: str = Field(max_length=512)
+
+
+class OllamaModelDetailsResponse(BaseModel):
+    format: str = Field(default="", max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    family: str = Field(default="", max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    parameter_size: str = Field(default="", max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    quantization_level: str = Field(default="", max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class OllamaModelResponse(BaseModel):
+    name: str = Field(default="", max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    model: str = Field(default="", max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    size: int = Field(default=0, ge=0, le=9_000_000_000_000_000)
+    digest: str = Field(default="", max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    modified_at: str = Field(default="", max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    details: OllamaModelDetailsResponse = Field(default_factory=OllamaModelDetailsResponse)
+
+
+class OllamaModelsResponse(BaseModel):
+    models: list[OllamaModelResponse] = Field(max_length=10_000)
+
+
+class OllamaModelInfoResponse(BaseModel):
+    modelfile: str = Field(max_length=1_000_000)
+    parameters: str = Field(max_length=1_000_000)
+    template: str = Field(max_length=1_000_000)
+    details: OllamaModelDetailsResponse
+    model_info: dict[str, JsonValue] = Field(max_length=10_000)
+    capabilities: list[str] = Field(max_length=64)
 
 
 # ==================== 辅助函数 ====================
@@ -60,8 +94,21 @@ def _get_ollama_service(base_url: str, api_key: Optional[str] = None) -> OllamaS
     """
     return OllamaService(
         api_key=api_key or "ollama",
-        api_url=base_url
+        api_url=_validate_ollama_base_url(base_url)
     )
+
+
+def _validate_ollama_base_url(base_url: str) -> str:
+    try:
+        validated = ProviderFactory._validate_provider_api_url("ollama", base_url)
+    except UnsafeURLError as exc:
+        raise _http_error(
+            status_code=400,
+            code="ollama_base_url_rejected",
+            message="Ollama base URL rejected by SSRF policy",
+            details={"reason": str(exc)},
+        ) from exc
+    return str(validated or base_url)
 
 
 def _http_error(
@@ -81,12 +128,32 @@ def _http_error(
     )
 
 
+def _safe_error_details(exc: Exception, **extra) -> dict:
+    details = {
+        "error_type": type(exc).__name__,
+        "error": summarize_text_for_log(exc, label="error"),
+    }
+    details.update(extra)
+    return details
+
+
 # ==================== API 端点 ====================
 
-@router.get("/models")
+@router.get("/models", response_model=OllamaModelsResponse)
 async def list_models(
-    base_url: str = Query(default="http://localhost:11434", description="Ollama API 地址"),
-    api_key: Optional[str] = Query(default=None, description="API 密钥")
+    base_url: str = Query(
+        default="http://localhost:11434",
+        max_length=4096,
+        pattern=BASE_URL_PATTERN,
+        description="Ollama API 地址",
+    ),
+    api_key: Optional[str] = Header(
+        default=None,
+        alias="X-Ollama-Api-Key",
+        max_length=4096,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+        description="Ollama API 密钥",
+    ),
 ):
     """
     获取本地模型列表
@@ -101,24 +168,40 @@ async def list_models(
         service = _get_ollama_service(base_url, api_key)
         models = await service.get_available_models_detailed()
         return {"models": models}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"[Ollama API] Failed to list models: {e}")
+        logger.error(
+            "[Ollama API] Failed to list models: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise _http_error(
             status_code=503,
             code="ollama_service_unavailable",
             message="Ollama service unavailable",
-            details={"error": str(e)},
+            details=_safe_error_details(e),
         )
     finally:
         if service is not None:
             await service.close()
 
 
-@router.get("/models/{name:path}")
+@router.get("/models/{name:path}", response_model=OllamaModelInfoResponse)
 async def get_model_info(
-    name: str,
-    base_url: str = Query(default="http://localhost:11434", description="Ollama API 地址"),
-    api_key: Optional[str] = Query(default=None, description="API 密钥")
+    name: str = Path(..., min_length=1, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN),
+    base_url: str = Query(
+        default="http://localhost:11434",
+        max_length=4096,
+        pattern=BASE_URL_PATTERN,
+        description="Ollama API 地址",
+    ),
+    api_key: Optional[str] = Header(
+        default=None,
+        alias="X-Ollama-Api-Key",
+        max_length=4096,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+        description="Ollama API 密钥",
+    ),
 ):
     """
     获取模型详情
@@ -149,7 +232,8 @@ async def get_model_info(
             "model_info": model_info.model_info or {},
             "capabilities": _extract_capabilities(model_info)
         }
-    
+    except HTTPException:
+        raise
     except Exception as e:
         error_str = str(e)
         if "not found" in error_str.lower() or "404" in error_str:
@@ -157,15 +241,19 @@ async def get_model_info(
                 status_code=404,
                 code="ollama_model_not_found",
                 message="Model not found",
-                details={"model": name},
+                details={"model": summarize_text_for_log(name, label="model")},
             )
 
-        logger.error(f"[Ollama API] Failed to get model info for {name}: {e}")
+        logger.error(
+            "[Ollama API] Failed to get model info for %s: %s",
+            summarize_text_for_log(name, label="model"),
+            summarize_text_for_log(e, label="error"),
+        )
         raise _http_error(
             status_code=503,
             code="ollama_service_unavailable",
             message="Ollama service unavailable",
-            details={"error": str(e), "model": name},
+            details=_safe_error_details(e, model=summarize_text_for_log(name, label="model")),
         )
     finally:
         if service is not None:
@@ -187,11 +275,22 @@ def _extract_capabilities(model_info) -> list:
     return capabilities
 
 
-@router.delete("/models/{name:path}")
+@router.delete("/models/{name:path}", response_model=DeleteModelResponse)
 async def delete_model(
-    name: str,
-    base_url: str = Query(default="http://localhost:11434", description="Ollama API 地址"),
-    api_key: Optional[str] = Query(default=None, description="API 密钥")
+    name: str = Path(..., min_length=1, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN),
+    base_url: str = Query(
+        default="http://localhost:11434",
+        max_length=4096,
+        pattern=BASE_URL_PATTERN,
+        description="Ollama API 地址",
+    ),
+    api_key: Optional[str] = Header(
+        default=None,
+        alias="X-Ollama-Api-Key",
+        max_length=4096,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+        description="Ollama API 密钥",
+    ),
 ) -> DeleteModelResponse:
     """
     删除模型
@@ -213,6 +312,8 @@ async def delete_model(
             success=True,
             message=f"Model '{name}' deleted successfully"
         )
+    except HTTPException:
+        raise
     except Exception as e:
         error_str = str(e)
         if "not found" in error_str.lower() or "404" in error_str:
@@ -220,23 +321,52 @@ async def delete_model(
                 status_code=404,
                 code="ollama_model_not_found",
                 message="Model not found",
-                details={"model": name},
+                details={"model": summarize_text_for_log(name, label="model")},
             )
 
-        logger.error(f"[Ollama API] Failed to delete model {name}: {e}")
+        logger.error(
+            "[Ollama API] Failed to delete model %s: %s",
+            summarize_text_for_log(name, label="model"),
+            summarize_text_for_log(e, label="error"),
+        )
         raise _http_error(
             status_code=500,
             code="ollama_model_delete_failed",
             message="Failed to delete model",
-            details={"error": str(e), "model": name},
+            details=_safe_error_details(e, model=summarize_text_for_log(name, label="model")),
         )
     finally:
         if service is not None:
             await service.close()
 
 
-@router.post("/pull")
-async def pull_model(request: PullModelRequest):
+@router.post(
+    "/pull",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Server-sent Ollama pull progress events",
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "type": "string",
+                        "maxLength": 1_000_000,
+                    }
+                }
+            },
+        }
+    },
+)
+async def pull_model(
+    request: PullModelRequest,
+    api_key: Optional[str] = Header(
+        default=None,
+        alias="X-Ollama-Api-Key",
+        max_length=4096,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+        description="Ollama API 密钥",
+    ),
+):
     """
     下载模型 (SSE 流式响应)
     
@@ -245,7 +375,6 @@ async def pull_model(request: PullModelRequest):
     Request Body:
         model: 模型名称 (如 llama3:latest)
         base_url: Ollama API 地址
-        api_key: API 密钥 (可选)
     
     Returns:
         SSE 流，每个事件包含:
@@ -254,10 +383,12 @@ async def pull_model(request: PullModelRequest):
         - total: 总大小 bytes (可选)
         - completed: 已完成大小 bytes (可选)
     """
+    validated_base_url = _validate_ollama_base_url(request.base_url)
+
     async def generate_progress():
         service = None
         try:
-            service = _get_ollama_service(request.base_url, request.api_key)
+            service = _get_ollama_service(validated_base_url, api_key)
             
             async for progress in service.pull_model(request.model):
                 # 转换为 SSE 格式
@@ -267,8 +398,12 @@ async def pull_model(request: PullModelRequest):
             yield f"data: {json.dumps({'status': 'success'})}\n\n"
         
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"[Ollama API] Pull failed for {request.model}: {error_msg}")
+            error_msg = summarize_text_for_log(e, label="error")
+            logger.error(
+                "[Ollama API] Pull failed for %s: %s",
+                summarize_text_for_log(request.model, label="model"),
+                error_msg,
+            )
             yield f"data: {json.dumps({'status': 'error', 'error': error_msg})}\n\n"
         
         finally:

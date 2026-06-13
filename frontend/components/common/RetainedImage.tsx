@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useRetainedBlobObjectUrl } from '../../hooks/useRetainedBlobObjectUrl';
+import { isSafeInlineImageDataUrl } from '../../utils/safeMediaDataUrl';
 
 const isBlobObjectUrl = (value: string | null | undefined): boolean =>
   String(value || '').trim().toLowerCase().startsWith('blob:');
@@ -8,6 +9,15 @@ const isFailedBlobForRenderedSrc = (
   renderedSrc: string | null | undefined,
   failedSrc: string | null | undefined
 ): boolean => isBlobObjectUrl(renderedSrc) && isBlobObjectUrl(failedSrc);
+
+const isRenderableRetainedImageSrc = (value: string | null | undefined): boolean => {
+  const src = (value || '').trim();
+  if (!src) return false;
+  const lowered = src.toLowerCase();
+  if (lowered.startsWith('local-blob:')) return false;
+  if (lowered.startsWith('data:')) return isSafeInlineImageDataUrl(src);
+  return true;
+};
 
 export interface RetainedImageProps
   extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> {
@@ -24,7 +34,9 @@ export const RetainedImage: React.FC<RetainedImageProps> = ({
   ...imgProps
 }) => {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  useRetainedBlobObjectUrl(retainBlobUrl ? src : null);
+  const normalizedSrc = src.trim();
+  const renderedSrc = isRenderableRetainedImageSrc(normalizedSrc) ? normalizedSrc : '';
+  useRetainedBlobObjectUrl(retainBlobUrl ? renderedSrc : null);
 
   useEffect(() => {
     setFailedSrc(null);
@@ -38,15 +50,15 @@ export const RetainedImage: React.FC<RetainedImageProps> = ({
         setFailedSrc(failedSrc);
         return;
       }
-      if (isFailedBlobForRenderedSrc(src, failedSrc)) {
+      if (isFailedBlobForRenderedSrc(renderedSrc, failedSrc)) {
         setFailedSrc(failedSrc);
       }
       onError?.(event);
     },
-    [onError, onRecoverImageError, src]
+    [onError, onRecoverImageError, renderedSrc]
   );
 
-  if (isFailedBlobForRenderedSrc(src, failedSrc)) return null;
+  if (!renderedSrc || isFailedBlobForRenderedSrc(renderedSrc, failedSrc)) return null;
 
-  return <img src={src} onError={handleError} {...imgProps} />;
+  return <img src={renderedSrc} onError={handleError} {...imgProps} />;
 };

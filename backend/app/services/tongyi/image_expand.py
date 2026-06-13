@@ -17,6 +17,7 @@ import time
 import httpx
 import requests
 
+from ...utils.log_sanitization import summarize_url_for_log
 from ...utils.url_security import UnsafeURLError, sync_get_with_redirect_guard, validate_outbound_http_url
 
 # 导入独立的上传服务
@@ -67,7 +68,7 @@ class ImageExpandService:
         try:
             # CANON-012: per-hop redirect-validated fetch (user-supplied URL;
             # requests would otherwise follow a 302 into a private/internal host).
-            logger.info(f"[OutPainting] 下载图片: {url[:60]}...")
+            logger.info("[OutPainting] 下载图片: %s", summarize_url_for_log(url))
             response = sync_get_with_redirect_guard(url, timeout=30)
             if response.status_code == 200:
                 logger.info(f"[OutPainting] 下载成功，大小: {len(response.content)} bytes")
@@ -248,7 +249,7 @@ class ImageExpandService:
 
                 if task_status == "SUCCEEDED":
                     output_url = task_data.get("output", {}).get("output_image_url")
-                    logger.info(f"[OutPainting] 任务成功: {output_url}")
+                    logger.info("[OutPainting] 任务成功: %s", summarize_url_for_log(output_url))
                     return OutPaintingResult(
                         success=True,
                         task_id=task_id,
@@ -313,7 +314,7 @@ class ImageExpandService:
 
                 if task_status == "SUCCEEDED":
                     output_url = task_data.get("output", {}).get("output_image_url")
-                    logger.info(f"[OutPainting] 任务成功: {output_url}")
+                    logger.info("[OutPainting] 任务成功: %s", summarize_url_for_log(output_url))
                     return OutPaintingResult(
                         success=True,
                         task_id=task_id,
@@ -360,7 +361,7 @@ class ImageExpandService:
         Returns:
             OutPaintingResult
         """
-        logger.info(f"[OutPainting] 原始图片 URL: {image_url}")
+        logger.info("[OutPainting] 原始图片 URL: %s", summarize_url_for_log(image_url))
 
         # svc-providers-1: validate http(s) image_url against SSRF policy before it
         # is forwarded server-side to DashScope (submit_task) or downloaded in the
@@ -427,7 +428,10 @@ class ImageExpandService:
             return OutPaintingResult(success=False, error=f"备用方案失败：{upload_result.error}")
         
         # 3. 使用 oss:// URL 重新提交任务
-        logger.info(f"[OutPainting] 使用 DashScope OSS URL 重新提交: {upload_result.oss_url}")
+        logger.info(
+            "[OutPainting] 使用 DashScope OSS URL 重新提交: %s",
+            summarize_url_for_log(upload_result.oss_url),
+        )
         success, task_id, error_msg = self.submit_task(upload_result.oss_url, api_key, parameters, use_oss_resolve=True)
         
         if not success:

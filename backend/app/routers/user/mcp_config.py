@@ -7,10 +7,11 @@ import json
 import logging
 import hashlib
 import time
-from typing import Any, Dict, Optional, List
+from datetime import datetime
+from typing import Annotated, Any, Dict, Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy.orm import Session
 
 from ...core.config import settings
@@ -25,16 +26,21 @@ from ...services.mcp.types import (
     validate_mcp_stdio_command_policy,
 )
 from ...services.mcp.mcp_manager import get_mcp_manager
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp-config"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+MAX_MCP_CONFIG_JSON_LENGTH = 10_000_000
+McpSessionText = Annotated[str, Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)]
+McpConfigJsonText = Annotated[str, Field(max_length=MAX_MCP_CONFIG_JSON_LENGTH)]
 
 
 class McpConfigUpdatePayload(BaseModel):
     """MCP 配置更新请求体。"""
 
-    config_json: Optional[str] = Field(default=None, alias="configJson")
+    config_json: Optional[McpConfigJsonText] = Field(default=None, alias="configJson")
     config: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(
@@ -44,7 +50,7 @@ class McpConfigUpdatePayload(BaseModel):
 
 class StopMcpSessionPayload(BaseModel):
     """停止 MCP 会话请求体。"""
-    mcp_server_key: Optional[str] = Field(default=None, alias="mcpServerKey")
+    mcp_server_key: Optional[McpSessionText] = Field(default=None, alias="mcpServerKey")
 
     model_config = ConfigDict(
         extra="ignore",
@@ -52,9 +58,44 @@ class StopMcpSessionPayload(BaseModel):
     )
 
 
+class StopMcpSessionResponse(BaseModel):
+    success: bool
+    closed_count: int = Field(ge=0, le=10_000)
+    closed_sessions: List[McpSessionText] = Field(max_length=10_000)
+    errors: List[McpSessionText] = Field(max_length=10_000)
+
+
+class McpConfigResponse(BaseModel):
+    config_json: McpConfigJsonText
+    updated_at: Optional[datetime] = None
+
+
+class McpToolSummaryResponse(BaseModel):
+    name: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    description: str = Field(max_length=100_000)
+
+
+class McpToolsResponse(BaseModel):
+    server_key: McpSessionText
+    tool_count: int = Field(ge=0, le=10_000)
+    tools: List[McpToolSummaryResponse] = Field(max_length=10_000)
+
+
+class McpToolInvokeResponse(BaseModel):
+    server_key: McpSessionText
+    tool_name: McpSessionText
+    session_id: McpSessionText
+    latency_ms: float = Field(ge=0, le=3_600_000)
+    timestamp: float = Field(ge=0, le=4_102_444_800)
+    success: bool
+    result: Optional[JsonValue] = None
+    error: Optional[str] = Field(default=None, max_length=100_000)
+    is_error: bool
+
+
 class McpToolInvokePayload(BaseModel):
     """调用 MCP 工具请求体。"""
-    tool_name: str = Field(alias="toolName")
+    tool_name: McpSessionText = Field(alias="toolName")
     arguments: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(
@@ -252,7 +293,7 @@ def _load_server_config_or_raise(db: Session, user_id: str, server_key: str) -> 
     return server_config
 
 
-@router.get("/config")
+@router.get("/config", response_model=McpConfigResponse)
 @case_conversion_options(always_convert_response=True)
 async def get_mcp_config(
     user_id: str = Depends(require_current_user),
@@ -285,7 +326,7 @@ async def get_mcp_config(
     }
 
 
-@router.put("/config")
+@router.put("/config", response_model=McpConfigResponse)
 @case_conversion_options(always_convert_response=True)
 async def update_mcp_config(
     payload: McpConfigUpdatePayload,
@@ -321,9 +362,8 @@ async def update_mcp_config(
         db.rollback()
         logger.error(
             "[MCP Config] Failed to persist config for user=%s: %s",
-            user_id,
-            exc,
-            exc_info=True,
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(exc, label="mcp_config_error"),
         )
         raise HTTPException(status_code=500, detail="Failed to save MCP config") from exc
 
@@ -333,7 +373,7 @@ async def update_mcp_config(
     }
 
 
-@router.get("/config/tools/{server_key}")
+@router.get("/config/tools/{server_key}", response_model=McpToolsResponse)
 @case_conversion_options(always_convert_response=True)
 async def get_mcp_server_tools(
     server_key: str,
@@ -371,12 +411,11 @@ async def get_mcp_server_tools(
     except Exception as exc:
         logger.error(
             "[MCP Config] Failed to get tools for user=%s, server=%s: %s",
-            user_id,
-            server_key,
-            exc,
-            exc_info=True,
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(server_key, label="server_key"),
+            summarize_text_for_log(exc, label="mcp_tools_error"),
         )
-        raise HTTPException(status_code=500, detail=f"Failed to fetch MCP tools: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Failed to fetch MCP tools") from exc
 
     return {
         "server_key": server_key,
@@ -391,7 +430,7 @@ async def get_mcp_server_tools(
     }
 
 
-@router.post("/config/tools/{server_key}/invoke")
+@router.post("/config/tools/{server_key}/invoke", response_model=McpToolInvokeResponse)
 @case_conversion_options(always_convert_response=True)
 async def invoke_mcp_server_tool(
     server_key: str,
@@ -438,13 +477,12 @@ async def invoke_mcp_server_tool(
     except Exception as exc:
         logger.error(
             "[MCP Config] Failed to invoke tool for user=%s, server=%s, tool=%s: %s",
-            user_id,
-            server_key,
-            tool_name,
-            exc,
-            exc_info=True,
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(server_key, label="server_key"),
+            summarize_text_for_log(tool_name, label="tool_name"),
+            summarize_text_for_log(exc, label="mcp_tool_error"),
         )
-        raise HTTPException(status_code=500, detail=f"Failed to invoke MCP tool: {exc}") from exc
+        raise HTTPException(status_code=500, detail="Failed to invoke MCP tool") from exc
 
     return {
         "server_key": server_key,
@@ -456,7 +494,7 @@ async def invoke_mcp_server_tool(
     }
 
 
-@router.post("/session/stop")
+@router.post("/session/stop", response_model=StopMcpSessionResponse)
 @case_conversion_options(always_convert_response=True)
 async def stop_mcp_sessions(
     payload: StopMcpSessionPayload,
@@ -480,8 +518,17 @@ async def stop_mcp_sessions(
             await manager.close_session(session_id)
             closed.append(session_id)
         except Exception as exc:
-            logger.warning("[MCP Config] Failed to close session=%s: %s", session_id, exc)
-            errors.append(f"{session_id}: {exc}")
+            logger.warning(
+                "[MCP Config] Failed to close session=%s: %s",
+                summarize_text_for_log(session_id, label="session_id"),
+                summarize_text_for_log(exc, label="mcp_session_close_error"),
+            )
+            errors.append(
+                (
+                    f"{summarize_text_for_log(session_id, label='session_id')}: "
+                    f"{summarize_text_for_log(exc, label='mcp_session_close_error')}"
+                )
+            )
 
     return {
         "success": True,

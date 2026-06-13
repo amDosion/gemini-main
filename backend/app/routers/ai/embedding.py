@@ -1,12 +1,14 @@
 """Embedding/RAG routes"""
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ...core.dependencies import require_current_user
 
 router = APIRouter(prefix="/api/embedding", tags=["embedding"])
+FREE_TEXT_PATTERN = r"^[\s\S]*$"
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
 
 # Service reference (set in main.py)
 rag_service = None
@@ -33,7 +35,48 @@ class SearchRequest(BaseModel):
     top_k: int = 3
 
 
-@router.post("/add-document")
+class AddDocumentResponse(BaseModel):
+    success: bool
+    error: Optional[str] = Field(default=None, max_length=4096, pattern=FREE_TEXT_PATTERN)
+    document_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    filename: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    chunk_count: Optional[int] = Field(default=None, ge=0, le=1_000_000)
+    total_chunks: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+    total_documents: Optional[int] = Field(default=None, ge=0, le=1_000_000)
+
+
+class SearchResultResponse(BaseModel):
+    text: str = Field(max_length=200_000, pattern=FREE_TEXT_PATTERN)
+    source: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    filename: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    similarity: float = Field(ge=-1, le=1)
+    chunk_id: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class SearchResponse(BaseModel):
+    success: bool
+    results: list[SearchResultResponse] = Field(max_length=1_000)
+    count: int = Field(ge=0, le=1_000)
+
+
+class EmbeddingStatsResponse(BaseModel):
+    total_chunks: int = Field(ge=0, le=10_000_000)
+    total_documents: int = Field(ge=0, le=1_000_000)
+    documents: list[str] = Field(max_length=1_000_000)
+
+
+class DocumentsResponse(BaseModel):
+    success: bool
+    documents: list[dict[str, Any]] = Field(max_length=1_000_000)
+    stats: EmbeddingStatsResponse
+
+
+class EmbeddingMessageResponse(BaseModel):
+    success: bool
+    message: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+@router.post("/add-document", response_model=AddDocumentResponse)
 async def add_document(
     request: AddDocumentRequest,
     user_id: str = Depends(require_current_user),
@@ -47,7 +90,7 @@ async def add_document(
     return result
 
 
-@router.post("/search")
+@router.post("/search", response_model=SearchResponse)
 async def search_documents(
     request: SearchRequest,
     user_id: str = Depends(require_current_user),
@@ -65,8 +108,8 @@ def _validate_legacy_user_id(legacy_user_id: Optional[str], user_id: str) -> Non
         raise HTTPException(status_code=403, detail="Cannot access other user's documents")
 
 
-@router.get("/documents")
-@router.get("/documents/{legacy_user_id}")
+@router.get("/documents", response_model=DocumentsResponse)
+@router.get("/documents/{legacy_user_id}", response_model=DocumentsResponse)
 async def get_user_documents(
     legacy_user_id: Optional[str] = None,
     user_id: str = Depends(require_current_user),
@@ -79,8 +122,8 @@ async def get_user_documents(
     return {"success": True, "documents": documents, "stats": stats}
 
 
-@router.delete("/document/{document_id}")
-@router.delete("/document/{legacy_user_id}/{document_id}")
+@router.delete("/document/{document_id}", response_model=EmbeddingMessageResponse)
+@router.delete("/document/{legacy_user_id}/{document_id}", response_model=EmbeddingMessageResponse)
 async def delete_document(
     document_id: str,
     legacy_user_id: Optional[str] = None,
@@ -95,8 +138,8 @@ async def delete_document(
     raise HTTPException(status_code=404, detail="Document not found")
 
 
-@router.delete("/documents")
-@router.delete("/documents/{legacy_user_id}")
+@router.delete("/documents", response_model=EmbeddingMessageResponse)
+@router.delete("/documents/{legacy_user_id}", response_model=EmbeddingMessageResponse)
 async def clear_user_documents(
     legacy_user_id: Optional[str] = None,
     user_id: str = Depends(require_current_user),

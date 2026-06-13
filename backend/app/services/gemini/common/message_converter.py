@@ -7,10 +7,122 @@ Supports multimodal messages (text + images/files).
 
 import re
 import logging
+import base64
+import binascii
+import os
 from typing import Dict, Any, List, Optional
+from urllib.parse import urlparse
 from ....utils.attachment_handler import is_base64_url
+from ....utils.log_sanitization import summarize_url_for_log
 
 logger = logging.getLogger(__name__)
+
+
+_WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"^[a-zA-Z]:[\\/]")
+_GOOGLE_FILE_URI_PATH_RE = re.compile(r"^/v\d+(?:beta\d*)?/files/[^/]+$")
+MAX_INLINE_ATTACHMENT_BYTES = int(os.getenv("GEMINI_MAX_INLINE_ATTACHMENT_BYTES", str(20 * 1024 * 1024)))
+
+
+def is_allowed_provider_file_uri(file_uri: Any) -> bool:
+    normalized = str(file_uri or "").strip()
+    if not normalized:
+        return False
+
+    lowered = normalized.lower()
+    if (
+        lowered.startswith("file:")
+        or normalized.startswith(("/", "\\", "~"))
+        or _WINDOWS_ABSOLUTE_PATH_RE.match(normalized) is not None
+    ):
+        return False
+
+    if normalized.startswith("files/"):
+        return len(normalized) > len("files/")
+
+    if lowered.startswith("gs://"):
+        parsed = urlparse(normalized)
+        return bool(parsed.netloc and parsed.path.strip("/"))
+
+    if lowered.startswith("https://"):
+        parsed = urlparse(normalized)
+        host = str(parsed.hostname or "").lower()
+        path = str(parsed.path or "")
+        return (
+            host == "generativelanguage.googleapis.com"
+            and _GOOGLE_FILE_URI_PATH_RE.match(path) is not None
+        )
+
+    return False
+
+
+def _raise_inline_payload_too_large(source: str) -> None:
+    raise ValueError(f"{source} too large (> {MAX_INLINE_ATTACHMENT_BYTES} bytes)")
+
+
+def _max_inline_base64_chars() -> int:
+    return ((MAX_INLINE_ATTACHMENT_BYTES + 2) // 3) * 4 + 16
+
+
+def _compact_base64_payload(payload: Any) -> str:
+    return re.sub(r"\s+", "", str(payload or ""))
+
+
+def _estimated_base64_decoded_size(payload: str) -> int:
+    normalized = _compact_base64_payload(payload)
+    if not normalized:
+        return 0
+    padding = len(normalized) - len(normalized.rstrip("="))
+    return max(0, (len(normalized) * 3 // 4) - padding)
+
+
+def normalize_inline_base64_payload(payload: Any, *, source: str) -> str:
+    normalized = _compact_base64_payload(payload)
+    if not normalized:
+        raise ValueError(f"{source} payload is empty")
+    if len(normalized) > _max_inline_base64_chars():
+        _raise_inline_payload_too_large(source)
+    if _estimated_base64_decoded_size(normalized) > MAX_INLINE_ATTACHMENT_BYTES:
+        _raise_inline_payload_too_large(source)
+    return normalized
+
+
+def validate_inline_base64_payload(payload: Any, *, source: str) -> str:
+    normalized = normalize_inline_base64_payload(payload, source=source)
+    try:
+        base64.b64decode(normalized, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError(f"invalid {source} base64 payload") from exc
+    return normalized
+
+
+def decode_inline_attachment_bytes(payload: Any, *, source: str) -> bytes:
+    normalized = normalize_inline_base64_payload(payload, source=source)
+    try:
+        decoded = base64.b64decode(normalized, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError(f"invalid {source} base64 payload") from exc
+    if len(decoded) > MAX_INLINE_ATTACHMENT_BYTES:
+        _raise_inline_payload_too_large(source)
+    return decoded
+
+
+def extract_inline_data_url_payload(
+    value: Any,
+    *,
+    fallback_mime_type: str,
+    source: str,
+) -> Optional[tuple[str, str]]:
+    raw_value = str(value or "")
+    if not is_base64_url(raw_value):
+        return None
+
+    match = re.match(r'^data:(.*?);base64,(.*)$', raw_value, re.DOTALL)
+    if not match:
+        return None
+
+    actual_mime = match.group(1) or fallback_mime_type
+    base64_payload = validate_inline_base64_payload(match.group(2), source=source)
+    return actual_mime, base64_payload
 
 
 class MessageConverter:
@@ -123,7 +235,13 @@ class MessageConverter:
         # Priority 1: fileUri (Google Files API)
         file_uri = attachment.get('fileUri')
         if file_uri:
-            logger.info(f"[MessageConverter] Attachment: file_data (uri={file_uri[:50]}...)")
+            if not is_allowed_provider_file_uri(file_uri):
+                logger.warning("[MessageConverter] Attachment: rejected unsupported fileUri")
+                return None
+            logger.info(
+                "[MessageConverter] Attachment: file_data uri=%s",
+                summarize_url_for_log(str(file_uri)),
+            )
             return {
                 'file_data': {
                     'file_uri': file_uri,
@@ -133,11 +251,18 @@ class MessageConverter:
 
         # Priority 2: url or tempUrl with Base64 Data URL
         url = attachment.get('url') or attachment.get('tempUrl')
-        if url and is_base64_url(url):
-            match = re.match(r'^data:(.*?);base64,(.*)$', url)
-            if match:
-                actual_mime = match.group(1) or mime_type
-                base64_str = match.group(2)
+        if url:
+            try:
+                data_url_payload = extract_inline_data_url_payload(
+                    url,
+                    fallback_mime_type=mime_type,
+                    source="attachment data URL",
+                )
+            except ValueError as exc:
+                logger.warning("[MessageConverter] Attachment: rejected data URL: %s", exc)
+                return None
+            if data_url_payload:
+                actual_mime, base64_str = data_url_payload
                 logger.info(f"[MessageConverter] Attachment: inline_data from data URL "
                           f"(mime={actual_mime}, base64_len={len(base64_str)})")
                 return {
@@ -150,11 +275,14 @@ class MessageConverter:
         # Priority 3: base64Data field
         base64_data = attachment.get('base64Data')
         if base64_data:
-            if is_base64_url(base64_data):
-                match = re.match(r'^data:(.*?);base64,(.*)$', base64_data)
-                if match:
-                    actual_mime = match.group(1) or mime_type
-                    base64_str = match.group(2)
+            try:
+                data_url_payload = extract_inline_data_url_payload(
+                    base64_data,
+                    fallback_mime_type=mime_type,
+                    source="attachment base64Data",
+                )
+                if data_url_payload:
+                    actual_mime, base64_str = data_url_payload
                     logger.info(f"[MessageConverter] Attachment: inline_data from base64Data "
                               f"(mime={actual_mime})")
                     return {
@@ -163,8 +291,10 @@ class MessageConverter:
                             'mime_type': actual_mime
                         }
                     }
-            else:
-                # Pure base64 string without data: prefix
+                base64_str = validate_inline_base64_payload(
+                    base64_data,
+                    source="attachment base64Data",
+                )
                 logger.info(f"[MessageConverter] Attachment: inline_data from raw base64 "
                           f"(mime={mime_type})")
                 return {
@@ -173,6 +303,9 @@ class MessageConverter:
                         'mime_type': mime_type
                     }
                 }
+            except ValueError as exc:
+                logger.warning("[MessageConverter] Attachment: rejected base64Data: %s", exc)
+                return None
 
         logger.warning(f"[MessageConverter] Attachment: no usable data found "
                       f"(mimeType={mime_type}, hasUrl={bool(url)}, hasBase64={bool(base64_data)})")

@@ -23,4 +23,53 @@ describe('MarkdownRenderer sanitization (W02R-019)', () => {
     const { container } = render(<MarkdownRenderer content={'**bold**'} />);
     expect(container.querySelector('strong')).not.toBeNull();
   });
+
+  it('renders fenced code while the highlighter chunk loads', () => {
+    const { container } = render(<MarkdownRenderer content={'```ts\nconst value = 1;\n```'} />);
+    expect(container.textContent).toContain('ts');
+    expect(container.textContent).toContain('const value = 1;');
+  });
+
+  it('forces safe new-tab attributes on chat-supplied links', () => {
+    const { container } = render(
+      <MarkdownRenderer
+        content={'<a href="https://example.com" target="_self" rel="opener">link</a>'}
+      />
+    );
+
+    const link = container.querySelector('a');
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('removes navigation attributes from unsafe markdown links', () => {
+    const { container } = render(
+      <MarkdownRenderer content={'[js](javascript:alert(1)) [relative](/local/path)'} />
+    );
+
+    const links = Array.from(container.querySelectorAll('a'));
+    expect(links).toHaveLength(2);
+    links.forEach((link) => {
+      expect(link.hasAttribute('href')).toBe(false);
+      expect(link.hasAttribute('target')).toBe(false);
+      expect(link.hasAttribute('rel')).toBe(false);
+    });
+  });
+
+  it('removes navigation attributes from unsafe raw HTML links', () => {
+    const { container } = render(
+      <MarkdownRenderer
+        content={'<a href="mailto:user@example.com">mail</a> <a href="/local">relative</a>'}
+      />
+    );
+
+    const links = Array.from(container.querySelectorAll('a'));
+    expect(links).toHaveLength(2);
+    links.forEach((link) => {
+      expect(link.hasAttribute('href')).toBe(false);
+      expect(link.hasAttribute('target')).toBe(false);
+      expect(link.hasAttribute('rel')).toBe(false);
+    });
+  });
 });

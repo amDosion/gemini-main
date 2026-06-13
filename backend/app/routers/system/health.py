@@ -8,10 +8,14 @@ import time
 from typing import Any, Awaitable, Callable, Dict
 
 from fastapi import APIRouter
+from pydantic import BaseModel, Field
 from sqlalchemy import text
+
+from ...utils.log_sanitization import summarize_text_for_log
 
 router = APIRouter(tags=["health"])
 logger = logging.getLogger(__name__)
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
 
 # 服务可用性标志（在 main.py 中通过 set_availability() 设置）
 SELENIUM_AVAILABLE = False
@@ -31,6 +35,17 @@ def _load_component_timeout_ms() -> int:
 
 HEALTH_COMPONENT_TIMEOUT_MS = _load_component_timeout_ms()
 ComponentChecker = Callable[[], Awaitable[None]]
+
+
+class RootResponse(BaseModel):
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    message: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    version: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class PublicHealthResponse(BaseModel):
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    version: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
 
 
 def set_availability(
@@ -159,19 +174,6 @@ def _derive_overall_status(components: Dict[str, Dict[str, Any]]) -> str:
     return "degraded"
 
 
-def _sanitize_component_for_public(component: Dict[str, Any]) -> Dict[str, Any]:
-    sanitized: Dict[str, Any] = {
-        "status": component.get("status"),
-        "latency_ms": component.get("latency_ms"),
-    }
-    status = str(component.get("status") or "").strip().lower()
-    if status == "error":
-        sanitized["error"] = "component check failed"
-    elif status == "timeout":
-        sanitized["error"] = "component check timed out"
-    return sanitized
-
-
 async def build_health_payload(*, include_internal_errors: bool = False) -> Dict[str, Any]:
     """Build health payload for public (/health) and admin views."""
     checks: tuple[tuple[str, ComponentChecker], ...] = (
@@ -187,10 +189,9 @@ async def build_health_payload(*, include_internal_errors: bool = False) -> Dict
     )
     raw_components = {name: result for name, result in check_results}
 
-    if include_internal_errors:
-        components = raw_components
-    else:
-        components = {name: _sanitize_component_for_public(result) for name, result in raw_components.items()}
+    overall_status = _derive_overall_status(raw_components)
+
+    if not include_internal_errors:
         for name, result in raw_components.items():
             if result.get("error"):
                 logger.warning(
@@ -199,10 +200,14 @@ async def build_health_payload(*, include_internal_errors: bool = False) -> Dict
                     result.get("status"),
                     result.get("error"),
                 )
+        return {
+            "status": overall_status,
+            "version": "1.0.0",
+        }
 
     return {
-        "status": _derive_overall_status(raw_components),
-        "components": components,
+        "status": overall_status,
+        "components": raw_components,
         "selenium": SELENIUM_AVAILABLE,
         "pdf_extraction": PDF_EXTRACTION_AVAILABLE,
         "embedding": EMBEDDING_AVAILABLE,
@@ -233,7 +238,10 @@ def _gemini_pool_health() -> Dict[str, Any]:
             "max_size": pool._max_size,
         }
     except Exception as err:
-        logger.warning("[Health] gemini_pool health check failed: %s", err, exc_info=True)
+        logger.warning(
+            "[Health] gemini_pool health check failed: %s",
+            summarize_text_for_log(err, label="error"),
+        )
         return {
             "initialized": False,
             "sdk_available": False,
@@ -243,20 +251,17 @@ def _gemini_pool_health() -> Dict[str, Any]:
         }
 
 
-@router.get("/")
+@router.get("/", response_model=RootResponse, include_in_schema=False)
 async def root():
-    """根路径健康检查端点"""
+    """Public root endpoint with no operational inventory."""
     return {
         "status": "ok",
         "message": "Gemini Chat Backend API",
-        "selenium_available": SELENIUM_AVAILABLE,
-        "pdf_extraction_available": PDF_EXTRACTION_AVAILABLE,
-        "embedding_available": EMBEDDING_AVAILABLE,
-        "upload_worker_pool_available": WORKER_POOL_AVAILABLE
+        "version": "1.0.0",
     }
 
 
-@router.get("/health")
+@router.get("/health", response_model=PublicHealthResponse)
 async def health_check():
-    """详细健康检查端点（含依赖组件健康状态）"""
+    """Public liveness endpoint. Detailed dependency state is admin-only."""
     return await build_health_payload(include_internal_errors=False)

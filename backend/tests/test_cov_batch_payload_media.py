@@ -33,11 +33,16 @@ is active, so every coroutine boundary is awaited.
 from __future__ import annotations
 
 import asyncio
+import base64
 from types import SimpleNamespace
 
 import pytest
 
 import app.services.common.batch_job_orchestrator as bjo
+from app.services.agent.execution_context import ExecutionContext
+from app.services.agent.workflow_engine import WorkflowEngine
+from app.services.agent.workflow_engine import payload_media as pm
+from app.services.agent.workflow_engine import text_utils as tu
 from app.services.common.batch_job_orchestrator import (
     BatchJobConflictError,
     BatchJobDependencyError,
@@ -46,10 +51,6 @@ from app.services.common.batch_job_orchestrator import (
     BatchJobValidationError,
     create_batch_job_orchestrator,
 )
-from app.services.agent.workflow_engine import WorkflowEngine
-from app.services.agent.workflow_engine import payload_media as pm
-from app.services.agent.execution_context import ExecutionContext
-
 
 # ===========================================================================
 # Fixtures / helpers
@@ -133,16 +134,12 @@ class TestSubmitValidation:
     async def test_unsupported_workload_rejected(self):
         orch = BatchJobOrchestrator(handlers={"echo": _echo_handler})
         with pytest.raises(BatchJobValidationError, match="Unsupported batch workload"):
-            await orch.submit_job(
-                user_id="u", items=[{"workload": "nope", "payload": {}}]
-            )
+            await orch.submit_job(user_id="u", items=[{"workload": "nope", "payload": {}}])
 
     async def test_non_dict_payload_rejected(self):
         orch = BatchJobOrchestrator(handlers={"echo": _echo_handler})
         with pytest.raises(BatchJobValidationError, match="payload must be an object"):
-            await orch.submit_job(
-                user_id="u", items=[{"workload": "echo", "payload": "x"}]
-            )
+            await orch.submit_job(user_id="u", items=[{"workload": "echo", "payload": "x"}])
 
     async def test_invalid_timeout_string_rejected(self):
         orch = BatchJobOrchestrator(handlers={"echo": _echo_handler})
@@ -217,9 +214,7 @@ class TestExecutionSemantics:
         assert prog["status"] == "completed"
 
     async def test_stop_on_error_pauses_and_skips_remaining(self):
-        orch = BatchJobOrchestrator(
-            handlers={"echo": _echo_handler, "boom": _boom_handler}
-        )
+        orch = BatchJobOrchestrator(handlers={"echo": _echo_handler, "boom": _boom_handler})
         snap = await orch.submit_job(
             user_id="u",
             items=[
@@ -237,9 +232,7 @@ class TestExecutionSemantics:
         assert "handler exploded" in prog["items"][0]["error"]
 
     async def test_partial_success_continues_when_not_stop_on_error(self):
-        orch = BatchJobOrchestrator(
-            handlers={"echo": _echo_handler, "boom": _boom_handler}
-        )
+        orch = BatchJobOrchestrator(handlers={"echo": _echo_handler, "boom": _boom_handler})
         snap = await orch.submit_job(
             user_id="u",
             items=[
@@ -284,9 +277,7 @@ class TestExecutionSemantics:
 @pytest.mark.asyncio
 class TestRetryResumeCancel:
     async def _run_to_paused(self):
-        orch = BatchJobOrchestrator(
-            handlers={"echo": _echo_handler, "boom": _boom_handler}
-        )
+        orch = BatchJobOrchestrator(handlers={"echo": _echo_handler, "boom": _boom_handler})
         snap = await orch.submit_job(
             user_id="u",
             items=[
@@ -313,9 +304,7 @@ class TestRetryResumeCancel:
 
     async def test_retry_with_no_eligible_items_rejected(self):
         orch = BatchJobOrchestrator(handlers={"echo": _echo_handler})
-        snap = await orch.submit_job(
-            user_id="u", items=[{"workload": "echo", "payload": {}}]
-        )
+        snap = await orch.submit_job(user_id="u", items=[{"workload": "echo", "payload": {}}])
         await _drain(orch)
         # All completed, include_completed defaults to False -> nothing to retry.
         with pytest.raises(BatchJobValidationError, match="No failed/cancelled"):
@@ -323,13 +312,9 @@ class TestRetryResumeCancel:
 
     async def test_retry_include_completed_reruns_done_items(self):
         orch = BatchJobOrchestrator(handlers={"echo": _echo_handler})
-        snap = await orch.submit_job(
-            user_id="u", items=[{"workload": "echo", "payload": {}}]
-        )
+        snap = await orch.submit_job(user_id="u", items=[{"workload": "echo", "payload": {}}])
         await _drain(orch)
-        snap2 = await orch.retry_job(
-            user_id="u", job_id=snap["job_id"], include_completed=True
-        )
+        snap2 = await orch.retry_job(user_id="u", job_id=snap["job_id"], include_completed=True)
         assert snap2["status"] in {"queued", "running"}
         await _drain(orch)
         prog = await orch.get_progress(user_id="u", job_id=snap["job_id"])
@@ -352,9 +337,7 @@ class TestRetryResumeCancel:
 
     async def test_resume_completed_job_rejected(self):
         orch = BatchJobOrchestrator(handlers={"echo": _echo_handler})
-        snap = await orch.submit_job(
-            user_id="u", items=[{"workload": "echo", "payload": {}}]
-        )
+        snap = await orch.submit_job(user_id="u", items=[{"workload": "echo", "payload": {}}])
         await _drain(orch)
         with pytest.raises(BatchJobValidationError, match="already completed"):
             await orch.resume_job(user_id="u", job_id=snap["job_id"])
@@ -371,9 +354,7 @@ class TestRetryResumeCancel:
 
     async def test_cancel_already_terminal_is_idempotent(self):
         orch = BatchJobOrchestrator(handlers={"echo": _echo_handler})
-        snap = await orch.submit_job(
-            user_id="u", items=[{"workload": "echo", "payload": {}}]
-        )
+        snap = await orch.submit_job(user_id="u", items=[{"workload": "echo", "payload": {}}])
         await _drain(orch)
         # Completed job: cancel returns current snapshot without changing status.
         out = await orch.cancel_job(user_id="u", job_id=snap["job_id"])
@@ -395,9 +376,7 @@ class TestRetryResumeCancel:
 class TestScopingAndSummary:
     async def test_other_user_cannot_read_job(self):
         orch = BatchJobOrchestrator(handlers={"echo": _echo_handler})
-        snap = await orch.submit_job(
-            user_id="owner", items=[{"workload": "echo", "payload": {}}]
-        )
+        snap = await orch.submit_job(user_id="owner", items=[{"workload": "echo", "payload": {}}])
         await _drain(orch)
         with pytest.raises(BatchJobNotFoundError):
             await orch.get_progress(user_id="intruder", job_id=snap["job_id"])
@@ -442,18 +421,14 @@ class TestScopingAndSummary:
 
     async def test_summary_generic_workload_keys_preview(self):
         orch = BatchJobOrchestrator(handlers={"echo": _echo_handler})
-        snap = await orch.submit_job(
-            user_id="u", items=[{"workload": "echo", "payload": {"q": 1}}]
-        )
+        snap = await orch.submit_job(user_id="u", items=[{"workload": "echo", "payload": {"q": 1}}])
         await _drain(orch)
         summary = await orch.get_summary(user_id="u", job_id=snap["job_id"])
         item_summary = summary["completed_items"][0]["summary"]
         assert item_summary["keys_preview"] == ["echo"]
 
     async def test_failed_and_cancelled_id_lists_in_summary(self):
-        orch = BatchJobOrchestrator(
-            handlers={"echo": _echo_handler, "boom": _boom_handler}
-        )
+        orch = BatchJobOrchestrator(handlers={"echo": _echo_handler, "boom": _boom_handler})
         snap = await orch.submit_job(
             user_id="u",
             items=[
@@ -490,9 +465,7 @@ class TestSummaryResultShapes:
             return "just-a-string"
 
         orch = BatchJobOrchestrator(handlers={"echo": _scalar})
-        snap = await orch.submit_job(
-            user_id="u", items=[{"workload": "echo", "payload": {}}]
-        )
+        snap = await orch.submit_job(user_id="u", items=[{"workload": "echo", "payload": {}}])
         await _drain(orch)
         summary = await orch.get_summary(user_id="u", job_id=snap["job_id"])
         # Non-dict result yields no summary payload, so it is omitted entirely.
@@ -544,13 +517,14 @@ class TestExcelDetection:
         assert pm.looks_like_excel_binary(engine, file_name="data.xlsb?token=1") is True
 
     def test_mime_detected(self, engine):
-        assert pm.looks_like_excel_binary(
-            engine, mime_type="application/vnd.ms-excel"
-        ) is True
-        assert pm.looks_like_excel_binary(
-            engine,
-            mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        ) is True
+        assert pm.looks_like_excel_binary(engine, mime_type="application/vnd.ms-excel") is True
+        assert (
+            pm.looks_like_excel_binary(
+                engine,
+                mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            is True
+        )
 
     def test_non_excel_rejected(self, engine):
         assert pm.looks_like_excel_binary(engine, file_name="x.png", mime_type="image/png") is False
@@ -617,6 +591,7 @@ class TestReferenceIpHostGuards:
         assert pm.is_disallowed_reference_hostname(engine, "localhost") is True
         assert pm.is_disallowed_reference_hostname(engine, "app.localhost") is True
         assert pm.is_disallowed_reference_hostname(engine, "metadata.google.internal") is True
+        assert pm.is_disallowed_reference_hostname(engine, "metadata.attacker.test") is True
         meta_host = next(iter(engine.REFERENCE_METADATA_HOSTS))
         assert pm.is_disallowed_reference_hostname(engine, meta_host) is True
         assert pm.is_disallowed_reference_hostname(engine, "example.com") is False
@@ -650,6 +625,46 @@ class TestResolveGenericPath:
 
 
 # ===========================================================================
+# text_utils: data URL decoding limits
+# ===========================================================================
+
+
+class TestDecodeDataUrlLimits:
+    def test_decode_data_url_accepts_base64_and_plain_payload(self, engine):
+        encoded = base64.b64encode(b"hello").decode("ascii")
+
+        assert engine._decode_data_url(f"data:text/plain;base64,{encoded}") == (
+            "text/plain",
+            b"hello",
+        )
+        assert engine._decode_data_url("data:text/plain,hello%20world") == (
+            "text/plain",
+            b"hello world",
+        )
+
+    def test_decode_data_url_rejects_malformed_base64(self, engine):
+        with pytest.raises(ValueError, match="base64"):
+            engine._decode_data_url("data:image/png;base64,not-valid!")
+
+    def test_decode_data_url_rejects_oversized_base64_before_decode(
+        self,
+        engine,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(tu, "DATA_URL_MAX_BYTES", 3)
+        encoded = base64.b64encode(b"abcd").decode("ascii")
+
+        with pytest.raises(ValueError, match="超过"):
+            engine._decode_data_url(f"data:text/plain;base64,{encoded}")
+
+    def test_decode_data_url_rejects_oversized_plain_payload(self, engine, monkeypatch):
+        monkeypatch.setattr(tu, "DATA_URL_MAX_BYTES", 3)
+
+        with pytest.raises(ValueError, match="超过"):
+            engine._decode_data_url("data:text/plain,abcd")
+
+
+# ===========================================================================
 # payload_media: image URL normalization & extraction
 # ===========================================================================
 
@@ -660,27 +675,48 @@ class TestImageUrlNormalization:
         assert pm.normalize_possible_image_url(engine, "   ") is None
 
     def test_data_and_blob_and_scheme_urls(self, engine):
-        assert pm.normalize_possible_image_url(engine, "data:image/png;base64,AAAA").startswith("data:")
+        assert pm.normalize_possible_image_url(engine, "data:image/png;base64,AAAA").startswith(
+            "data:"
+        )
         assert pm.normalize_possible_image_url(engine, "oss://bucket/k.png") == "oss://bucket/k.png"
         assert pm.normalize_possible_image_url(engine, "file:///tmp/a.png") == "file:///tmp/a.png"
+
+    def test_data_image_url_is_validated_and_normalized(self, engine):
+        assert (
+            pm.normalize_possible_image_url(engine, "data:image/PNG;base64,YW JjZA==")
+            == "data:image/png;base64,YWJjZA=="
+        )
+        assert pm.normalize_possible_image_url(engine, "data:text/plain;base64,YWJj") is None
+        assert pm.normalize_possible_image_url(engine, "data:image/png;base64,not-valid!") is None
 
     def test_long_bare_base64_wrapped_as_data_uri(self, engine):
         blob = "A" * 200
         out = pm.normalize_possible_image_url(engine, blob)
         assert out == f"data:image/png;base64,{blob}"
 
+    def test_bare_base64_rejects_invalid_and_oversized_payload(self, engine, monkeypatch):
+        monkeypatch.setattr(pm, "INLINE_IMAGE_MAX_BYTES", 3)
+        assert pm.normalize_possible_image_url(engine, "not-valid!" * 32) is None
+        encoded = base64.b64encode(b"abcd").decode("ascii") * 32
+        assert pm.normalize_possible_image_url(engine, encoded) is None
+
     def test_http_with_image_extension(self, engine):
-        assert pm.normalize_possible_image_url(engine, "https://x.com/a/photo.jpeg") == "https://x.com/a/photo.jpeg"
+        assert (
+            pm.normalize_possible_image_url(engine, "https://x.com/a/photo.jpeg")
+            == "https://x.com/a/photo.jpeg"
+        )
 
     def test_http_with_image_key_hint(self, engine):
-        assert pm.normalize_possible_image_url(
-            engine, "https://x.com/blob/123", key_hint="imageUrl"
-        ) == "https://x.com/blob/123"
+        assert (
+            pm.normalize_possible_image_url(engine, "https://x.com/blob/123", key_hint="imageUrl")
+            == "https://x.com/blob/123"
+        )
 
     def test_http_with_image_path_token(self, engine):
-        assert pm.normalize_possible_image_url(
-            engine, "https://x.com/uploads/file123"
-        ) == "https://x.com/uploads/file123"
+        assert (
+            pm.normalize_possible_image_url(engine, "https://x.com/uploads/file123")
+            == "https://x.com/uploads/file123"
+        )
 
     def test_http_non_image_rejected(self, engine):
         assert pm.normalize_possible_image_url(engine, "https://x.com/doc.pdf") is None
@@ -724,9 +760,10 @@ class TestExtractImageUrls:
         assert urls == ["https://x.com/found.png"]
 
     def test_extract_first_image_url(self, engine):
-        assert pm.extract_first_image_url(
-            engine, {"x": "https://x.com/a.png"}
-        ) == "https://x.com/a.png"
+        assert (
+            pm.extract_first_image_url(engine, {"x": "https://x.com/a.png"})
+            == "https://x.com/a.png"
+        )
         assert pm.extract_first_image_url(engine, {"x": "no"}) is None
 
 
@@ -737,7 +774,9 @@ class TestExtractImageUrls:
 
 class TestFileAndResultMediaUrls:
     def test_normalize_file_url_passthrough(self, engine):
-        assert pm.normalize_possible_file_url(engine, "https://x.com/a.bin") == "https://x.com/a.bin"
+        assert (
+            pm.normalize_possible_file_url(engine, "https://x.com/a.bin") == "https://x.com/a.bin"
+        )
         # svc-agent-3: only recognised schemes are valid file references; an
         # absolute path is accepted, but an arbitrary relative string is not.
         assert pm.normalize_possible_file_url(engine, "/abs/name.txt") == "/abs/name.txt"
@@ -751,7 +790,10 @@ class TestFileAndResultMediaUrls:
         assert pm.normalize_possible_file_url(engine, "  ") is None
 
     def test_result_media_url_http_and_oss(self, engine):
-        assert pm.normalize_possible_result_media_url(engine, "https://x.com/v.mp4") == "https://x.com/v.mp4"
+        assert (
+            pm.normalize_possible_result_media_url(engine, "https://x.com/v.mp4")
+            == "https://x.com/v.mp4"
+        )
         assert pm.normalize_possible_result_media_url(engine, "oss://b/v.mp4") == "oss://b/v.mp4"
 
     def test_result_media_url_api_path(self, engine):
@@ -773,9 +815,10 @@ class TestFileAndResultMediaUrls:
 
 class TestVideoAudioExtraction:
     def test_first_video_from_direct_keys(self, engine):
-        assert pm.extract_first_video_url(
-            engine, {"videoUrl": "https://x.com/v.mp4"}
-        ) == "https://x.com/v.mp4"
+        assert (
+            pm.extract_first_video_url(engine, {"videoUrl": "https://x.com/v.mp4"})
+            == "https://x.com/v.mp4"
+        )
 
     def test_first_video_from_url_with_mime(self, engine):
         out = pm.extract_first_video_url(
@@ -790,9 +833,7 @@ class TestVideoAudioExtraction:
         assert out == "https://x.com/a.mp4"
 
     def test_first_video_from_nested_dict_candidate(self, engine):
-        out = pm.extract_first_video_url(
-            engine, {"videos": [{"url": "https://x.com/n.mp4"}]}
-        )
+        out = pm.extract_first_video_url(engine, {"videos": [{"url": "https://x.com/n.mp4"}]})
         assert out == "https://x.com/n.mp4"
 
     def test_first_video_from_bare_string_payload(self, engine):
@@ -802,12 +843,14 @@ class TestVideoAudioExtraction:
         assert pm.extract_first_video_url(engine, {"foo": "bar"}) is None
 
     def test_first_audio_from_direct_and_list(self, engine):
-        assert pm.extract_first_audio_url(
-            engine, {"audioUrl": "https://x.com/a.mp3"}
-        ) == "https://x.com/a.mp3"
-        assert pm.extract_first_audio_url(
-            engine, {"audioUrls": ["https://x.com/list.mp3"]}
-        ) == "https://x.com/list.mp3"
+        assert (
+            pm.extract_first_audio_url(engine, {"audioUrl": "https://x.com/a.mp3"})
+            == "https://x.com/a.mp3"
+        )
+        assert (
+            pm.extract_first_audio_url(engine, {"audioUrls": ["https://x.com/list.mp3"]})
+            == "https://x.com/list.mp3"
+        )
 
     def test_first_audio_from_url_with_mime(self, engine):
         out = pm.extract_first_audio_url(
@@ -819,9 +862,7 @@ class TestVideoAudioExtraction:
         assert pm.extract_first_audio_url(engine, {"x": 1}) is None
 
     def test_first_audio_from_nested_dict_candidate(self, engine):
-        out = pm.extract_first_audio_url(
-            engine, {"audios": [{"url": "https://x.com/nested.mp3"}]}
-        )
+        out = pm.extract_first_audio_url(engine, {"audios": [{"url": "https://x.com/nested.mp3"}]})
         assert out == "https://x.com/nested.mp3"
 
 
@@ -841,7 +882,9 @@ class TestBuildSourceVideoPayload:
 
     def test_bare_text_passthrough_when_no_video_url(self, engine):
         # Non-URL, non-template text is returned verbatim.
-        assert pm.build_source_video_payload(engine, "some-reference-token") == "some-reference-token"
+        assert (
+            pm.build_source_video_payload(engine, "some-reference-token") == "some-reference-token"
+        )
 
     def test_url_only_dict_collapses_to_string(self, engine):
         out = pm.build_source_video_payload(engine, {"videoUrl": "https://x.com/v.mp4"})
@@ -886,17 +929,24 @@ class TestBuildSourceVideoPayload:
 
 class TestMimeGuessAndProviderRewrite:
     def test_guess_from_data_uri(self, engine):
-        assert pm.guess_image_mime_type_from_reference(engine, "data:image/jpeg;base64,AAA") == "image/jpeg"
+        assert (
+            pm.guess_image_mime_type_from_reference(engine, "data:image/jpeg;base64,AAA")
+            == "image/jpeg"
+        )
 
     def test_guess_from_extension(self, engine):
         assert pm.guess_image_mime_type_from_reference(engine, "https://x.com/a.png") == "image/png"
 
     def test_guess_from_file_uri(self, engine):
-        assert pm.guess_image_mime_type_from_reference(engine, "file:///tmp/pic.webp") == "image/webp"
+        assert (
+            pm.guess_image_mime_type_from_reference(engine, "file:///tmp/pic.webp") == "image/webp"
+        )
 
     def test_guess_defaults_to_png(self, engine):
         assert pm.guess_image_mime_type_from_reference(engine, "") == "image/png"
-        assert pm.guess_image_mime_type_from_reference(engine, "https://x.com/unknown") == "image/png"
+        assert (
+            pm.guess_image_mime_type_from_reference(engine, "https://x.com/unknown") == "image/png"
+        )
 
     def test_provider_rewrite_skips_unknown_provider(self, engine):
         url = "https://x.com/a.png"
@@ -916,9 +966,7 @@ class TestMimeGuessAndProviderRewrite:
             return (b"\x89PNG-bytes", "image/png", "ref.png")
 
         monkeypatch.setattr(engine, "_load_binary_from_reference", _fake_load)
-        out = pm.normalize_reference_image_for_provider(
-            engine, "https://x.com/ref.png", "google"
-        )
+        out = pm.normalize_reference_image_for_provider(engine, "https://x.com/ref.png", "google")
         assert out.startswith("data:image/png;base64,")
 
     def test_provider_rewrite_falls_back_on_load_error(self, engine, monkeypatch):

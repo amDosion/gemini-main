@@ -10,10 +10,12 @@ import logging
 import re
 import uuid
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Optional
 
 from ..workflow_contract import (
     is_active_inline_provider_token as contract_is_active_inline_provider_token,
+)
+from ..workflow_contract import (
     is_auto_inline_model_token as contract_is_auto_inline_model_token,
 )
 
@@ -25,8 +27,8 @@ def get_workflow_user_id(engine: Any) -> str:
     return str(user_id or "").strip()
 
 
-def extract_agent_card_defaults(engine: Any, agent: Any) -> Dict[str, Any]:
-    defaults: Dict[str, Any] = {}
+def extract_agent_card_defaults(engine: Any, agent: Any) -> dict[str, Any]:
+    defaults: dict[str, Any] = {}
     raw_agent_card = getattr(agent, "agent_card_json", None)
     if not raw_agent_card:
         return defaults
@@ -45,7 +47,7 @@ def extract_agent_card_defaults(engine: Any, agent: Any) -> Dict[str, Any]:
     return defaults
 
 
-def extract_agent_llm_defaults(engine: Any, agent_card_defaults: Dict[str, Any]) -> Dict[str, Any]:
+def extract_agent_llm_defaults(engine: Any, agent_card_defaults: dict[str, Any]) -> dict[str, Any]:
     _ = engine
     llm_defaults = agent_card_defaults.get("llm") if isinstance(agent_card_defaults, dict) else None
     if not isinstance(llm_defaults, dict):
@@ -53,7 +55,7 @@ def extract_agent_llm_defaults(engine: Any, agent_card_defaults: Dict[str, Any])
     return llm_defaults
 
 
-def resolve_llm_default_value(engine: Any, payload: Dict[str, Any], *keys: str) -> Any:
+def resolve_llm_default_value(engine: Any, payload: dict[str, Any], *keys: str) -> Any:
     _ = engine
     for key in keys:
         if key not in payload:
@@ -72,17 +74,17 @@ async def invoke_llm_chat(
     *,
     provider_id: str,
     model_id: str,
-    messages: List[Dict[str, Any]],
+    messages: list[dict[str, Any]],
     system_prompt: str,
     temperature: float,
     max_tokens: int,
     profile_id: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     chat_method = getattr(engine.llm_service, "chat", None)
     if chat_method is None or not callable(chat_method):
         raise ValueError("llm_service.chat is not available")
 
-    kwargs: Dict[str, Any] = {
+    kwargs: dict[str, Any] = {
         "provider_id": provider_id,
         "model_id": model_id,
         "messages": messages,
@@ -149,7 +151,7 @@ def is_auto_inline_model_token(engine: Any, value: Any) -> bool:
 def should_resolve_inline_from_active_profile(
     engine: Any,
     *,
-    node_data: Dict[str, Any],
+    node_data: dict[str, Any],
     inline_provider_id: str,
     inline_model_id: str,
 ) -> bool:
@@ -159,13 +161,12 @@ def should_resolve_inline_from_active_profile(
     )
     if explicit_flag:
         return True
-    return (
-        engine._is_active_inline_provider_token(inline_provider_id)
-        and engine._is_auto_inline_model_token(inline_model_id)
-    )
+    return engine._is_active_inline_provider_token(
+        inline_provider_id
+    ) and engine._is_auto_inline_model_token(inline_model_id)
 
 
-def get_user_profiles(engine: Any, user_id: str) -> List[Any]:
+def get_user_profiles(engine: Any, user_id: str) -> list[Any]:
     from ....models.db_models import ConfigProfile
 
     normalized_user_id = str(user_id or "").strip()
@@ -176,9 +177,9 @@ def get_user_profiles(engine: Any, user_id: str) -> List[Any]:
     if cached is not None:
         return cached
 
-    profiles = engine.db.query(ConfigProfile).filter(
-        ConfigProfile.user_id == normalized_user_id
-    ).all()
+    profiles = (
+        engine.db.query(ConfigProfile).filter(ConfigProfile.user_id == normalized_user_id).all()
+    )
     engine._profiles_cache[normalized_user_id] = profiles
     return profiles
 
@@ -210,24 +211,52 @@ def looks_like_google_chat_image_edit_model(engine: Any, model_id: str) -> bool:
         return False
     if "gemini" in lowered and "image" in lowered:
         return True
-    if any(token in lowered for token in ("flash-image", "pro-image", "nano-banana")):
-        return True
-    return False
+    return any(token in lowered for token in ("flash-image", "pro-image", "nano-banana"))
 
 
 def looks_like_image_generation_model(engine: Any, model_id: str) -> bool:
     lowered = str(model_id or "").lower()
     if not lowered:
         return False
-    if any(token in lowered for token in ("veo", "sora", "luma", "video", "tts", "whisper", "embedding", "segmentation", "upscale", "try-on", "recontext")):
+    if any(
+        token in lowered
+        for token in (
+            "veo",
+            "sora",
+            "luma",
+            "video",
+            "tts",
+            "whisper",
+            "embedding",
+            "segmentation",
+            "upscale",
+            "try-on",
+            "recontext",
+        )
+    ):
         return False
     if any(token in lowered for token in ("wan2.6-image", "qwen-image-edit", "-i2i")):
         return False
     if lowered.startswith("wan") and "image" in lowered and "-t2i" not in lowered:
         return False
-    if any(token in lowered for token in ("capability", "ingredients", "edit", "inpaint", "outpaint")):
+    if any(
+        token in lowered for token in ("capability", "ingredients", "edit", "inpaint", "outpaint")
+    ):
         return False
-    return any(token in lowered for token in ("imagen", "image", "dall", "wanx", "-t2i", "z-image", "flux", "midjourney", "nano-banana"))
+    return any(
+        token in lowered
+        for token in (
+            "imagen",
+            "image",
+            "dall",
+            "wanx",
+            "-t2i",
+            "z-image",
+            "flux",
+            "midjourney",
+            "nano-banana",
+        )
+    )
 
 
 def looks_like_image_edit_model(engine: Any, model_id: str) -> bool:
@@ -240,11 +269,20 @@ def looks_like_image_edit_model(engine: Any, model_id: str) -> bool:
         return True
     if lowered.startswith("wan") and "image" in lowered and "-t2i" not in lowered:
         return True
-    if any(token in lowered for token in ("capability", "ingredients", "edit", "inpaint", "outpaint", "mask", "recontext")):
+    if any(
+        token in lowered
+        for token in (
+            "capability",
+            "ingredients",
+            "edit",
+            "inpaint",
+            "outpaint",
+            "mask",
+            "recontext",
+        )
+    ):
         return True
-    if "imagen" in lowered and "generate" not in lowered:
-        return True
-    return False
+    return "imagen" in lowered and "generate" not in lowered
 
 
 def looks_like_video_generation_model(engine: Any, model_id: str) -> bool:
@@ -254,7 +292,9 @@ def looks_like_video_generation_model(engine: Any, model_id: str) -> bool:
         return False
     if any(token in lowered for token in ("veo", "sora", "luma")):
         return True
-    return "video" in lowered and not any(token in lowered for token in ("vision", "audio", "speech", "whisper"))
+    return "video" in lowered and not any(
+        token in lowered for token in ("vision", "audio", "speech", "whisper")
+    )
 
 
 def looks_like_audio_generation_model(engine: Any, model_id: str) -> bool:
@@ -271,9 +311,37 @@ def looks_like_vision_understand_model(engine: Any, model_id: str) -> bool:
     lowered = str(model_id or "").lower()
     if not lowered:
         return False
-    if any(token in lowered for token in ("veo", "sora", "luma", "video", "tts", "audio", "speech", "whisper", "embedding", "segmentation", "upscale")):
+    if any(
+        token in lowered
+        for token in (
+            "veo",
+            "sora",
+            "luma",
+            "video",
+            "tts",
+            "audio",
+            "speech",
+            "whisper",
+            "embedding",
+            "segmentation",
+            "upscale",
+        )
+    ):
         return False
-    if any(token in lowered for token in ("imagen", "wanx", "dall", "midjourney", "flux", "-t2i", "z-image", "wan2.6-image", "qwen-image-edit")):
+    if any(
+        token in lowered
+        for token in (
+            "imagen",
+            "wanx",
+            "dall",
+            "midjourney",
+            "flux",
+            "-t2i",
+            "z-image",
+            "wan2.6-image",
+            "qwen-image-edit",
+        )
+    ):
         return False
     if engine._looks_like_google_chat_image_edit_model(lowered):
         return True
@@ -281,9 +349,9 @@ def looks_like_vision_understand_model(engine: Any, model_id: str) -> bool:
         return True
     if "-vl-" in lowered or lowered.endswith("-vl"):
         return True
-    if any(token in lowered for token in ("gpt-4o", "claude-3", "qwen-vl", "qwen2-vl", "qwen2.5-vl")):
-        return True
-    return False
+    return any(
+        token in lowered for token in ("gpt-4o", "claude-3", "qwen-vl", "qwen2-vl", "qwen2.5-vl")
+    )
 
 
 def looks_like_text_model(engine: Any, model_id: str) -> bool:
@@ -292,10 +360,33 @@ def looks_like_text_model(engine: Any, model_id: str) -> bool:
     if not lowered:
         return False
     blocked_tokens = (
-        "imagen", "image", "wanx", "dall", "midjourney", "-t2i",
-        "veo", "sora", "luma", "video", "tts", "whisper", "embedding", "segmentation", "upscale",
-        "try-on", "tryon", "recontext", "inpaint", "outpaint",
-        "edit", "mask", "aqa", "audio", "speech", "realtime", "live",
+        "imagen",
+        "image",
+        "wanx",
+        "dall",
+        "midjourney",
+        "-t2i",
+        "veo",
+        "sora",
+        "luma",
+        "video",
+        "tts",
+        "whisper",
+        "embedding",
+        "segmentation",
+        "upscale",
+        "try-on",
+        "tryon",
+        "recontext",
+        "inpaint",
+        "outpaint",
+        "edit",
+        "mask",
+        "aqa",
+        "audio",
+        "speech",
+        "realtime",
+        "live",
     )
     return not any(token in lowered for token in blocked_tokens)
 
@@ -309,12 +400,19 @@ def is_candidate_for_agent_task(
     normalized_task = str(agent_task_type or "").strip().lower().replace("_", "-")
     normalized_mode = str(preferred_mode or "").strip().lower().replace("_", "-")
 
-    if normalized_task in {"vision-understand", "image-understand", "vision-analyze", "image-analyze"}:
+    if normalized_task in {
+        "vision-understand",
+        "image-understand",
+        "vision-analyze",
+        "image-analyze",
+    }:
         return engine._looks_like_vision_understand_model(model_id)
     if normalized_task == "image-gen":
         return engine._looks_like_image_generation_model(model_id)
     if normalized_task == "image-edit":
-        if normalized_mode == "image-chat-edit" and engine._looks_like_google_chat_image_edit_model(model_id):
+        if normalized_mode == "image-chat-edit" and engine._looks_like_google_chat_image_edit_model(
+            model_id
+        ):
             return True
         return engine._looks_like_image_edit_model(model_id)
     if normalized_task == "video-gen":
@@ -329,14 +427,21 @@ def rank_model_for_agent_task(
     model_id: str,
     agent_task_type: str,
     preferred_mode: str = "",
-) -> Tuple[int, int, float]:
+) -> tuple[int, int, float]:
     lowered = str(model_id or "").lower()
     normalized_task = str(agent_task_type or "").strip().lower().replace("_", "-")
     normalized_mode = str(preferred_mode or "").strip().lower().replace("_", "-")
-    preview_penalty = 1 if any(flag in lowered for flag in ("preview", "-exp", "_exp", "experimental")) else 0
+    preview_penalty = (
+        1 if any(flag in lowered for flag in ("preview", "-exp", "_exp", "experimental")) else 0
+    )
     version_score = engine._extract_model_version(lowered)
 
-    if normalized_task in {"vision-understand", "image-understand", "vision-analyze", "image-analyze"}:
+    if normalized_task in {
+        "vision-understand",
+        "image-understand",
+        "vision-analyze",
+        "image-analyze",
+    }:
         if engine._looks_like_google_chat_image_edit_model(lowered):
             family_rank = 0
         elif engine._looks_like_vision_understand_model(lowered):
@@ -361,7 +466,9 @@ def rank_model_for_agent_task(
         return (family_rank, preview_penalty, -version_score)
 
     if normalized_task == "image-edit":
-        if normalized_mode == "image-chat-edit" and engine._looks_like_google_chat_image_edit_model(lowered):
+        if normalized_mode == "image-chat-edit" and engine._looks_like_google_chat_image_edit_model(
+            lowered
+        ):
             family_rank = 0
         elif any(token in lowered for token in ("wan2.6-image", "qwen-image-edit", "-i2i")):
             family_rank = 1
@@ -416,7 +523,7 @@ def rank_model_for_agent_task(
     return (family_rank, preview_penalty, -version_score)
 
 
-def list_saved_model_ids(engine: Any, profile: Any) -> List[str]:
+def list_saved_model_ids(engine: Any, profile: Any) -> list[str]:
     cache_profile_id = str(getattr(profile, "id", "") or f"obj-{id(profile)}")
     cache_updated_at = int(getattr(profile, "updated_at", 0) or 0)
     cache_key = f"{cache_profile_id}:{cache_updated_at}"
@@ -431,7 +538,7 @@ def list_saved_model_ids(engine: Any, profile: Any) -> List[str]:
         except Exception:
             raw_models = []
 
-    model_ids: List[str] = []
+    model_ids: list[str] = []
     if isinstance(raw_models, list):
         for item in raw_models:
             if isinstance(item, dict):
@@ -482,7 +589,11 @@ def get_default_audio_model(engine: Any, provider_id: str) -> str:
 
 def select_image_model(engine: Any, profile: Any, operation: str) -> str:
     model_ids = engine._list_saved_model_ids(profile)
-    matcher = engine._looks_like_image_generation_model if operation == "generate" else engine._looks_like_image_edit_model
+    matcher = (
+        engine._looks_like_image_generation_model
+        if operation == "generate"
+        else engine._looks_like_image_edit_model
+    )
     for model_id in model_ids:
         if matcher(model_id):
             return model_id
@@ -517,7 +628,7 @@ def select_text_chat_target(
     requested_provider: str = "",
     requested_model: str = "",
     requested_profile_id: str = "",
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     from ....models.db_models import UserSettings
 
     user_id = engine._get_workflow_user_id()
@@ -533,7 +644,8 @@ def select_text_chat_target(
     if normalized_profile_id:
         profile_match = next(
             (
-                profile for profile in profiles
+                profile
+                for profile in profiles
                 if str(getattr(profile, "id", "") or "").strip() == normalized_profile_id
             ),
             None,
@@ -545,7 +657,8 @@ def select_text_chat_target(
     if requested_provider:
         requested = requested_provider.strip().lower()
         profiles = [
-            profile for profile in profiles
+            profile
+            for profile in profiles
             if (
                 str(getattr(profile, "provider_id", "")).lower() == requested
                 or str(getattr(profile, "provider_id", "")).lower().startswith(requested)
@@ -558,9 +671,13 @@ def select_text_chat_target(
         settings = engine.db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
         active_profile_id = settings.active_profile_id if settings else None
         if active_profile_id:
-            active = next((profile for profile in profiles if profile.id == active_profile_id), None)
+            active = next(
+                (profile for profile in profiles if profile.id == active_profile_id), None
+            )
             if active:
-                profiles = [active] + [profile for profile in profiles if profile.id != active_profile_id]
+                profiles = [active] + [
+                    profile for profile in profiles if profile.id != active_profile_id
+                ]
 
     selected_profile = profiles[0]
     provider_id = str(getattr(selected_profile, "provider_id", "")).strip()
@@ -587,7 +704,7 @@ def rank_provider_profiles_for_tool(
     requested_provider: str,
     operation: str,
     requested_profile_id: str = "",
-) -> List[Any]:
+) -> list[Any]:
     from ....models.db_models import UserSettings
 
     user_id = engine._get_workflow_user_id()
@@ -604,7 +721,8 @@ def rank_provider_profiles_for_tool(
     if normalized_requested_profile_id:
         preferred_profile = next(
             (
-                profile for profile in profiles
+                profile
+                for profile in profiles
                 if str(getattr(profile, "id", "") or "").strip() == normalized_requested_profile_id
             ),
             None,
@@ -615,7 +733,10 @@ def rank_provider_profiles_for_tool(
     def score(profile: Any) -> int:
         provider_id = str(getattr(profile, "provider_id", "")).lower()
         if operation == "generate":
-            if any(engine._looks_like_image_generation_model(model_id) for model_id in engine._list_saved_model_ids(profile)):
+            if any(
+                engine._looks_like_image_generation_model(model_id)
+                for model_id in engine._list_saved_model_ids(profile)
+            ):
                 return 0
             if provider_id.startswith("google"):
                 return 1
@@ -625,7 +746,10 @@ def rank_provider_profiles_for_tool(
                 return 3
             return 9
 
-        if any(engine._looks_like_image_edit_model(model_id) for model_id in engine._list_saved_model_ids(profile)):
+        if any(
+            engine._looks_like_image_edit_model(model_id)
+            for model_id in engine._list_saved_model_ids(profile)
+        ):
             return 0
         if provider_id.startswith("google"):
             return 1
@@ -636,7 +760,9 @@ def rank_provider_profiles_for_tool(
     if requested_provider:
         requested = requested_provider.strip().lower()
         if preferred_profile is not None:
-            preferred_provider = str(getattr(preferred_profile, "provider_id", "") or "").strip().lower()
+            preferred_provider = (
+                str(getattr(preferred_profile, "provider_id", "") or "").strip().lower()
+            )
             if not (
                 preferred_provider == requested
                 or preferred_provider.startswith(requested)
@@ -646,7 +772,8 @@ def rank_provider_profiles_for_tool(
                     f"Profile {requested_profile_id} 不匹配 Provider {requested_provider}"
                 )
         matched = [
-            profile for profile in profiles
+            profile
+            for profile in profiles
             if (
                 str(getattr(profile, "provider_id", "")).lower() == requested
                 or str(getattr(profile, "provider_id", "")).lower().startswith(requested)
@@ -661,14 +788,18 @@ def rank_provider_profiles_for_tool(
             if preferred_score >= 9:
                 raise ValueError(f"Profile {requested_profile_id} 不支持当前图像工具操作")
             matched = [preferred_profile] + [
-                profile for profile in matched
+                profile
+                for profile in matched
                 if str(getattr(profile, "id", "") or "").strip() != normalized_requested_profile_id
             ]
 
         ranked_matched = sorted(
             matched,
             key=lambda profile: (
-                0 if normalized_requested_profile_id and str(getattr(profile, "id", "") or "").strip() == normalized_requested_profile_id else 1,
+                0
+                if normalized_requested_profile_id
+                and str(getattr(profile, "id", "") or "").strip() == normalized_requested_profile_id
+                else 1,
                 score(profile),
                 -int(getattr(profile, "updated_at", 0) or 0),
             ),
@@ -678,10 +809,11 @@ def rank_provider_profiles_for_tool(
         matched_ids = {str(getattr(profile, "id", "")) for profile in ranked_matched}
         ranked_fallback = sorted(
             [
-                profile for profile in profiles
+                profile
+                for profile in profiles
                 if str(getattr(profile, "id", "")) not in matched_ids and score(profile) < 9
             ],
-            key=lambda profile: (score(profile), -int(getattr(profile, "updated_at", 0) or 0))
+            key=lambda profile: (score(profile), -int(getattr(profile, "updated_at", 0) or 0)),
         )
         return ranked_matched + ranked_fallback
 
@@ -691,8 +823,10 @@ def rank_provider_profiles_for_tool(
             raise ValueError(f"Profile {requested_profile_id} 不支持当前图像工具操作")
         ranked_fallback = sorted(
             [
-                profile for profile in profiles
-                if str(getattr(profile, "id", "") or "").strip() != normalized_requested_profile_id and score(profile) < 9
+                profile
+                for profile in profiles
+                if str(getattr(profile, "id", "") or "").strip() != normalized_requested_profile_id
+                and score(profile) < 9
             ],
             key=lambda profile: (score(profile), -int(getattr(profile, "updated_at", 0) or 0)),
         )
@@ -700,7 +834,7 @@ def rank_provider_profiles_for_tool(
 
     settings = engine.db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
     active_profile_id = settings.active_profile_id if settings else None
-    active_first: List[Any] = []
+    active_first: list[Any] = []
     if active_profile_id:
         active = next((profile for profile in profiles if profile.id == active_profile_id), None)
         if active and score(active) < 9:
@@ -708,17 +842,21 @@ def rank_provider_profiles_for_tool(
 
     ranked = sorted(
         [profile for profile in profiles if score(profile) < 9],
-        key=lambda profile: (score(profile), -int(getattr(profile, "updated_at", 0) or 0))
+        key=lambda profile: (score(profile), -int(getattr(profile, "updated_at", 0) or 0)),
     )
     if not ranked:
         raise ValueError("当前配置中没有可用于图像工具的 Provider")
     if active_first:
         active_id = str(getattr(active_first[0], "id", ""))
-        return active_first + [profile for profile in ranked if str(getattr(profile, "id", "")) != active_id]
+        return active_first + [
+            profile for profile in ranked if str(getattr(profile, "id", "")) != active_id
+        ]
     return ranked
 
 
-def select_provider_profile_for_tool(engine: Any, requested_provider: str, operation: str, requested_profile_id: str = "") -> Any:
+def select_provider_profile_for_tool(
+    engine: Any, requested_provider: str, operation: str, requested_profile_id: str = ""
+) -> Any:
     ranked_profiles = engine._rank_provider_profiles_for_tool(
         requested_provider=requested_provider,
         operation=operation,
@@ -734,22 +872,37 @@ def is_usable_requested_image_model(engine: Any, model_id: str, operation: str) 
     if not normalized:
         return False
 
-    matcher = engine._looks_like_image_generation_model if operation == "generate" else engine._looks_like_image_edit_model
+    matcher = (
+        engine._looks_like_image_generation_model
+        if operation == "generate"
+        else engine._looks_like_image_edit_model
+    )
     if matcher(normalized):
         return True
 
     lowered = normalized.lower()
     if any(token in lowered for token in ("image", "imagen", "wanx", "dall", "flux", "midjourney")):
         return True
-    if any(token in lowered for token in ("capability", "ingredients", "edit", "inpaint", "outpaint", "mask", "recontext")):
+    if any(
+        token in lowered
+        for token in (
+            "capability",
+            "ingredients",
+            "edit",
+            "inpaint",
+            "outpaint",
+            "mask",
+            "recontext",
+        )
+    ):
         return True
 
-    if engine._looks_like_text_model(normalized):
-        return False
-    return True
+    return not engine._looks_like_text_model(normalized)
 
 
-def resolve_image_model_for_profile(engine: Any, profile: Any, operation: str, requested_model: str = "") -> str:
+def resolve_image_model_for_profile(
+    engine: Any, profile: Any, operation: str, requested_model: str = ""
+) -> str:
     preferred = str(requested_model or "").strip()
     if preferred and engine._is_usable_requested_image_model(preferred, operation=operation):
         return preferred
@@ -762,10 +915,14 @@ def list_candidate_image_models(
     operation: str,
     requested_model: str = "",
     preferred_mode: str = "",
-) -> List[str]:
+) -> list[str]:
     provider_id = str(getattr(profile, "provider_id", "") or "")
     saved_model_ids = engine._list_saved_model_ids(profile)
-    matcher = engine._looks_like_image_generation_model if operation == "generate" else engine._looks_like_image_edit_model
+    matcher = (
+        engine._looks_like_image_generation_model
+        if operation == "generate"
+        else engine._looks_like_image_edit_model
+    )
 
     def is_image_like(model_id: str) -> bool:
         lowered = str(model_id or "").lower()
@@ -774,9 +931,21 @@ def list_candidate_image_models(
         if matcher(lowered):
             return True
         return any(
-            token in lowered for token in (
-                "image", "imagen", "wanx", "dall", "flux", "midjourney",
-                "capability", "ingredients", "edit", "inpaint", "outpaint", "mask", "recontext",
+            token in lowered
+            for token in (
+                "image",
+                "imagen",
+                "wanx",
+                "dall",
+                "flux",
+                "midjourney",
+                "capability",
+                "ingredients",
+                "edit",
+                "inpaint",
+                "outpaint",
+                "mask",
+                "recontext",
             )
         )
 
@@ -801,11 +970,15 @@ def list_candidate_image_models(
         else:
             if "imagen-3.0-capability" in lowered:
                 base = 0
-            elif "imagen" in lowered and any(token in lowered for token in ("capability", "ingredients", "edit")):
+            elif "imagen" in lowered and any(
+                token in lowered for token in ("capability", "ingredients", "edit")
+            ):
                 base = 1
             elif "wanx" in lowered:
                 base = 2
-            elif any(token in lowered for token in ("edit", "inpaint", "outpaint", "mask", "recontext")):
+            elif any(
+                token in lowered for token in ("edit", "inpaint", "outpaint", "mask", "recontext")
+            ):
                 base = 3
             elif "image" in lowered:
                 base = 5
@@ -813,7 +986,7 @@ def list_candidate_image_models(
                 base = 8
         return base + penalty
 
-    candidates: List[str] = []
+    candidates: list[str] = []
     preferred = str(requested_model or "").strip()
     if preferred:
         candidates.append(preferred)
@@ -826,7 +999,7 @@ def list_candidate_image_models(
     if default_model:
         candidates.append(default_model)
 
-    dedup: List[str] = []
+    dedup: list[str] = []
     seen = set()
     for model_id in candidates:
         normalized = str(model_id or "").strip()
@@ -841,7 +1014,11 @@ def list_candidate_image_models(
         and normalized_mode == "image-chat-edit"
         and provider_id.lower().startswith("google")
     ):
-        chat_models = [model_id for model_id in dedup if engine._looks_like_google_chat_image_edit_model(model_id)]
+        chat_models = [
+            model_id
+            for model_id in dedup
+            if engine._looks_like_google_chat_image_edit_model(model_id)
+        ]
         if chat_models:
             return chat_models
         fallback_models = ["gemini-2.5-flash-image"]
@@ -883,7 +1060,7 @@ def select_profile_target_for_agent_task(
     requested_model: str = "",
     requested_profile_id: str = "",
     preferred_mode: str = "",
-) -> Tuple[str, str, str]:
+) -> tuple[str, str, str]:
     from ....models.db_models import UserSettings
 
     user_id = engine._get_workflow_user_id()
@@ -909,7 +1086,8 @@ def select_profile_target_for_agent_task(
     if normalized_requested_profile:
         profile_match = next(
             (
-                profile for profile in profiles
+                profile
+                for profile in profiles
                 if str(getattr(profile, "id", "") or "").strip() == normalized_requested_profile
             ),
             None,
@@ -917,7 +1095,8 @@ def select_profile_target_for_agent_task(
         if profile_match is None:
             raise ValueError(f"未找到 Profile 配置：{requested_profile_id}")
         profiles = [profile_match] + [
-            profile for profile in profiles
+            profile
+            for profile in profiles
             if str(getattr(profile, "id", "") or "").strip() != normalized_requested_profile
         ]
 
@@ -939,25 +1118,29 @@ def select_profile_target_for_agent_task(
     elif active_profile_id:
         active_profile = next(
             (
-                profile for profile in profiles
+                profile
+                for profile in profiles
                 if str(getattr(profile, "id", "") or "").strip() == active_profile_id
             ),
             None,
         )
         if active_profile is not None:
             profiles = [active_profile] + [
-                profile for profile in profiles
+                profile
+                for profile in profiles
                 if str(getattr(profile, "id", "") or "").strip() != active_profile_id
             ]
 
-    candidate_rows: List[Tuple[Any, str, str]] = []
+    candidate_rows: list[tuple[Any, str, str]] = []
     for profile in profiles:
         provider_id = str(getattr(profile, "provider_id", "") or "").strip()
         if not provider_id:
             continue
         candidate_model = engine._resolve_preferred_model_for_agent_task(
             provider_id=provider_id,
-            requested_model=str(requested_model or "").strip() if normalized_requested_provider else "",
+            requested_model=str(requested_model or "").strip()
+            if normalized_requested_provider
+            else "",
             agent_task_type=normalized_task,
             preferred_mode=preferred_mode,
             preferred_profile_id=str(getattr(profile, "id", "") or "").strip(),
@@ -981,8 +1164,14 @@ def select_profile_target_for_agent_task(
 
     candidate_rows.sort(
         key=lambda item: (
-            0 if normalized_requested_profile and str(getattr(item[0], "id", "") or "").strip() == normalized_requested_profile else 1,
-            0 if active_profile_id and str(getattr(item[0], "id", "") or "").strip() == active_profile_id else 1,
+            0
+            if normalized_requested_profile
+            and str(getattr(item[0], "id", "") or "").strip() == normalized_requested_profile
+            else 1,
+            0
+            if active_profile_id
+            and str(getattr(item[0], "id", "") or "").strip() == active_profile_id
+            else 1,
             engine._rank_model_for_agent_task(
                 item[2],
                 normalized_task,
@@ -1039,7 +1228,8 @@ def resolve_preferred_model_for_agent_task(
     if normalized_preferred_profile:
         preferred_profile = next(
             (
-                profile for profile in matching_profiles
+                profile
+                for profile in matching_profiles
                 if str(getattr(profile, "id", "") or "").strip() == normalized_preferred_profile
             ),
             None,
@@ -1048,12 +1238,13 @@ def resolve_preferred_model_for_agent_task(
             matching_profiles = [
                 preferred_profile,
                 *[
-                    profile for profile in matching_profiles
+                    profile
+                    for profile in matching_profiles
                     if str(getattr(profile, "id", "") or "").strip() != normalized_preferred_profile
                 ],
             ]
 
-    candidate_models: List[str] = []
+    candidate_models: list[str] = []
     for profile in matching_profiles:
         for model_id in engine._list_saved_model_ids(profile):
             if engine._is_candidate_for_agent_task(
@@ -1067,7 +1258,8 @@ def resolve_preferred_model_for_agent_task(
     normalized_mode = str(preferred_mode or "").strip().lower().replace("_", "-")
     requested = str(requested_model or "").strip()
     requested_is_candidate = bool(
-        requested and engine._is_candidate_for_agent_task(
+        requested
+        and engine._is_candidate_for_agent_task(
             model_id=requested,
             agent_task_type=agent_task_type,
             preferred_mode=preferred_mode,
@@ -1076,8 +1268,8 @@ def resolve_preferred_model_for_agent_task(
     if requested_is_candidate:
         candidate_models.append(requested)
 
-    dedup: List[str] = []
-    seen: Set[str] = set()
+    dedup: list[str] = []
+    seen: set[str] = set()
     for model_id in candidate_models:
         normalized = str(model_id or "").strip()
         if not normalized or normalized in seen:
@@ -1137,7 +1329,7 @@ def resolve_preferred_model_for_agent_task(
     return fallback or requested
 
 
-def build_inline_agent(engine: Any, *, node_id: str, node_data: Dict[str, Any]) -> Optional[Any]:
+def build_inline_agent(engine: Any, *, node_id: str, node_data: dict[str, Any]) -> Optional[Any]:
     inline_provider_id = str(
         node_data.get("inlineProviderId")
         or node_data.get("inline_provider_id")
@@ -1156,14 +1348,17 @@ def build_inline_agent(engine: Any, *, node_id: str, node_data: Dict[str, Any]) 
         or node_data.get("model_override_model_id")
         or ""
     ).strip()
-    inline_name = str(
-        node_data.get("inlineAgentName")
-        or node_data.get("inline_agent_name")
-        or node_data.get("agentName")
-        or node_data.get("agent_name")
-        or node_data.get("label")
+    inline_name = (
+        str(
+            node_data.get("inlineAgentName")
+            or node_data.get("inline_agent_name")
+            or node_data.get("agentName")
+            or node_data.get("agent_name")
+            or node_data.get("label")
+            or f"Inline Agent {node_id}"
+        ).strip()
         or f"Inline Agent {node_id}"
-    ).strip() or f"Inline Agent {node_id}"
+    )
     inline_prompt = str(
         node_data.get("inlineSystemPrompt")
         or node_data.get("inline_system_prompt")
@@ -1190,11 +1385,11 @@ def build_inline_agent(engine: Any, *, node_id: str, node_data: Dict[str, Any]) 
         maximum=65536,
     )
     inline_task_type = str(
-        node_data.get("agentTaskType")
-        or node_data.get("agent_task_type")
-        or "chat"
+        node_data.get("agentTaskType") or node_data.get("agent_task_type") or "chat"
     ).strip()
-    normalized_task_type = inline_task_type.lower().replace("_", "-") if inline_task_type else "chat"
+    normalized_task_type = (
+        inline_task_type.lower().replace("_", "-") if inline_task_type else "chat"
+    )
     inline_profile_id = str(
         node_data.get("inlineProfileId")
         or node_data.get("inline_profile_id")
@@ -1203,9 +1398,7 @@ def build_inline_agent(engine: Any, *, node_id: str, node_data: Dict[str, Any]) 
         or ""
     ).strip()
     preferred_mode = str(
-        node_data.get("agentEditMode")
-        or node_data.get("agent_edit_mode")
-        or ""
+        node_data.get("agentEditMode") or node_data.get("agent_edit_mode") or ""
     ).strip()
 
     if engine._should_resolve_inline_from_active_profile(
@@ -1213,10 +1406,12 @@ def build_inline_agent(engine: Any, *, node_id: str, node_data: Dict[str, Any]) 
         inline_provider_id=inline_provider_id,
         inline_model_id=inline_model_id,
     ):
-        resolved_provider_id, resolved_model_id, resolved_profile_id = engine._select_profile_target_for_agent_task(
-            agent_task_type=normalized_task_type,
-            requested_profile_id=inline_profile_id,
-            preferred_mode=preferred_mode,
+        resolved_provider_id, resolved_model_id, resolved_profile_id = (
+            engine._select_profile_target_for_agent_task(
+                agent_task_type=normalized_task_type,
+                requested_profile_id=inline_profile_id,
+                preferred_mode=preferred_mode,
+            )
         )
         if not inline_provider_id or engine._is_active_inline_provider_token(inline_provider_id):
             inline_provider_id = resolved_provider_id
@@ -1227,7 +1422,7 @@ def build_inline_agent(engine: Any, *, node_id: str, node_data: Dict[str, Any]) 
     if not inline_provider_id or not inline_model_id:
         return None
 
-    defaults_payload: Dict[str, Any] = {
+    defaults_payload: dict[str, Any] = {
         "defaultTaskType": normalized_task_type,
     }
     if inline_profile_id:
@@ -1281,11 +1476,11 @@ async def run_adk_text_chat(
     prompt: str,
     node_id: str,
     profile_id: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     from ...gemini.agent.adk_agent import ADKAgent
-    from ..adk_builtin_tools import build_adk_builtin_tools
     from ...gemini.agent.adk_runner import ADKRunner
     from ...llm.credentials_resolver import ProviderCredentialsResolver
+    from ..adk_builtin_tools import build_adk_builtin_tools
 
     user_id = engine._get_workflow_user_id()
     if not user_id:

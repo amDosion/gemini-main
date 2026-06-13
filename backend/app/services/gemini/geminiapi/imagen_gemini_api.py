@@ -25,6 +25,7 @@ from ..base.imagen_common import (
     VALID_ASPECT_RATIOS,
     VALID_IMAGE_SIZES
 )
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ class GeminiAPIImageGenerator(BaseImageGenerator):
         logger.info(f"[GeminiAPIImageGenerator] ========== 开始生成图片 ==========")
         logger.info(f"[GeminiAPIImageGenerator] 📥 请求参数:")
         logger.info(f"[GeminiAPIImageGenerator]     - model: {model}")
-        logger.info(f"[GeminiAPIImageGenerator]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
+        logger.info(f"[GeminiAPIImageGenerator]     - prompt: {summarize_text_for_log(prompt, label='prompt')}")
         logger.info(f"[GeminiAPIImageGenerator]     - prompt长度: {len(prompt)}")
         for key, value in kwargs.items():
             if key in ['number_of_images', 'aspect_ratio', 'image_size', 'output_mime_type', 'image_style']:

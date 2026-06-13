@@ -12,6 +12,7 @@
 import asyncio
 import os
 import mimetypes
+import re
 from typing import Optional
 from datetime import datetime
 import logging
@@ -32,6 +33,39 @@ from ...utils.attachment_handler import is_base64_url
 from .upload_task_scope import resolve_upload_task_user_id
 
 logger = logging.getLogger(__name__)
+
+_URL_MENTION_RE = re.compile(r"(?:https?://|blob:|data:)[^\s\"'<>]+", re.IGNORECASE)
+_SENSITIVE_ERROR_PATTERNS = (
+    re.compile(r"(Bearer\s+[A-Za-z0-9_\-\.]{4})[A-Za-z0-9_\-\.]+", re.IGNORECASE),
+    re.compile(
+        r"((?:api[_-]?key|access[_-]?token|secret|token)[\s=:\"']+[A-Za-z0-9_-]{0,4})"
+        r"[A-Za-z0-9_-]{8,}",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _summarize_url_for_log(value: Optional[str]) -> str:
+    if not value:
+        return "none"
+    if is_base64_url(value):
+        return f"base64(len={len(value)})"
+    if value.startswith(("http://", "https://")):
+        return f"http(len={len(value)})"
+    if value.startswith("blob:"):
+        return f"blob(len={len(value)})"
+    return f"other(len={len(value)})"
+
+
+def _sanitize_error_for_diagnostics(value: object) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+
+    text = _URL_MENTION_RE.sub(lambda match: _summarize_url_for_log(match.group(0)), text)
+    for pattern in _SENSITIVE_ERROR_PATTERNS:
+        text = pattern.sub(lambda match: match.group(1) + "...redacted", text)
+    return text
 
 
 class UploadWorkerPool:
@@ -565,15 +599,8 @@ class UploadWorkerPool:
             logger.info(f"    - 优先级: {task.priority}")
             logger.info(f"    - 重试次数: {task.retry_count or 0}")
             logger.info(f"    - 文件路径: {task.source_file_path or 'None'}")
-            logger.info(f"    - 源 URL: {task.source_url or 'None'}")
-            # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
-            if task.source_ai_url:
-                if is_base64_url(task.source_ai_url):
-                    logger.info(f"    - AI URL: Base64 Data URL (长度: {len(task.source_ai_url)} 字符)")
-                else:
-                    logger.info(f"    - AI URL: {task.source_ai_url[:80] + '...' if len(task.source_ai_url) > 80 else task.source_ai_url}")
-            else:
-                logger.info(f"    - AI URL: None")
+            logger.info(f"    - 源 URL: {_summarize_url_for_log(task.source_url)}")
+            logger.info(f"    - AI URL: {_summarize_url_for_log(task.source_ai_url)}")
             logger.info(f"    - 复用附件ID: {task.source_attachment_id or 'None'}")
 
             # 状态已在主循环中置为 uploading（获取锁后、限流前），此处不再更新
@@ -655,13 +682,8 @@ class UploadWorkerPool:
                 url = result.get('url')
                 logger.info(f"[{worker_name}] ✅ 上传成功！")
                 logger.info(f"    - 耗时: {upload_duration:.2f} 秒")
-                # 对于BASE64 URL，只输出类型和长度，不输出内容
-                if url and is_base64_url(url):
-                    logger.info(f"    - URL: Base64 Data URL (长度: {len(url)} 字符)")
-                else:
-                    logger.info(f"    - URL: {url}")
-                # 对于BASE64 URL，在日志中只记录类型，不记录完整内容
-                url_log = f"Base64 Data URL (长度: {len(url)} 字符)" if url and is_base64_url(url) else str(url)
+                logger.info(f"    - URL: {_summarize_url_for_log(url)}")
+                url_log = _summarize_url_for_log(url)
                 await redis_queue.append_task_log(
                     task_id,
                     level="info",
@@ -672,26 +694,28 @@ class UploadWorkerPool:
                 await self._handle_success(db, task, url, worker_name)
             else:
                 error = result.get('error', '上传失败')
-                logger.error(f"[{worker_name}] ❌ 上传失败: {error}")
+                safe_error = _sanitize_error_for_diagnostics(error)
+                logger.error(f"[{worker_name}] ❌ 上传失败: {safe_error}")
                 await redis_queue.append_task_log(
                     task_id,
                     level="error",
-                    message=f"upload failed: {error}",
+                    message=f"upload failed: {safe_error}",
                     source="worker",
                     extra={"worker": worker_name},
                 )
-                raise Exception(error)
+                raise Exception(safe_error)
 
         except Exception as e:
-            logger.error(f"[{worker_name}] ❌ 任务处理异常: {e}")
+            safe_error = _sanitize_error_for_diagnostics(e)
+            logger.error(f"[{worker_name}] ❌ 任务处理异常: {safe_error}")
             await redis_queue.append_task_log(
                 task_id,
                 level="error",
-                message=f"task processing exception: {e}",
+                message=f"task processing exception: {safe_error}",
                 source="worker",
                 extra={"worker": worker_name},
             )
-            await self._handle_failure(db, task_id, str(e), worker_name)
+            await self._handle_failure(db, task_id, safe_error, worker_name)
         finally:
             db.close()
 
@@ -777,21 +801,17 @@ class UploadWorkerPool:
         # 类型2: source_url（已有）
         elif task.source_url:
             safe_source_url = validate_outbound_http_url(task.source_url)
-            logger.info(f"[{worker_name}] 🌐 Download from URL: {safe_source_url}")
+            logger.info(f"[{worker_name}] 🌐 Download from URL: {_summarize_url_for_log(safe_source_url)}")
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response, final_url = await get_with_redirect_guard(client, safe_source_url, max_redirects=5)
                 response.raise_for_status()
-                logger.info(f"[{worker_name}] ✅ URL download resolved: {final_url}")
+                logger.info(f"[{worker_name}] ✅ URL download resolved: {_summarize_url_for_log(final_url)}")
                 return response.content
         
         # 【新增】类型3: source_ai_url
         elif task.source_ai_url:
             ai_url = task.source_ai_url
-            # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
-            if is_base64_url(ai_url):
-                logger.info(f"[{worker_name}] 🤖 Process AI URL: Base64 Data URL (长度: {len(ai_url)} 字符)")
-            else:
-                logger.info(f"[{worker_name}] 🤖 Process AI URL: {ai_url[:80] + '...' if len(ai_url) > 80 else ai_url}")
+            logger.info(f"[{worker_name}] 🤖 Process AI URL: {_summarize_url_for_log(ai_url)}")
             
             # 判断是Base64 Data URL还是HTTP URL
             if is_base64_url(ai_url):
@@ -810,7 +830,7 @@ class UploadWorkerPool:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response, final_ai_url = await get_with_redirect_guard(client, safe_ai_url, max_redirects=5)
                     response.raise_for_status()
-                    logger.info(f"[{worker_name}] ✅ AI URL download resolved: {final_ai_url}")
+                    logger.info(f"[{worker_name}] ✅ AI URL download resolved: {_summarize_url_for_log(final_ai_url)}")
                     return response.content
         
         # 【新增】类型4: source_attachment_id
@@ -833,7 +853,9 @@ class UploadWorkerPool:
                 # 如果已有云URL且状态完成 → 无需重新上传
                 if existing.url and existing.upload_status == 'completed':
                     # 直接复用云URL
-                    logger.info(f"[{worker_name}] ✅ Attachment already uploaded, reusing cloud URL: {existing.url}")
+                    logger.info(
+                        f"[{worker_name}] ✅ Attachment already uploaded, reusing cloud URL: {_summarize_url_for_log(existing.url)}"
+                    )
                     # 注意: task 和 current_attachment 需要使用传入的 db，这里我们返回 None
                     # 实际的状态更新在 _process_task 中处理
                     return None  # 特殊标记：无需上传
@@ -1040,26 +1062,27 @@ class UploadWorkerPool:
 
         logger.info(f"[{worker_name}] ✅✅✅ 任务完成: {task.id}")
         logger.info(f"    - 文件名: {task.filename}")
-        logger.info(f"    - 云存储 URL: {url}")
+        logger.info(f"    - 云存储 URL: {_summarize_url_for_log(url)}")
 
     async def _handle_failure(self, db, task_id: str, error: str, worker_name: str):
         """处理失败"""
         task = db.query(UploadTask).filter(UploadTask.id == task_id).first()
         if not task:
             return
+        safe_error = _sanitize_error_for_diagnostics(error)
 
         # 递增重试次数
         retry_count = (task.retry_count or 0) + 1
         task.retry_count = retry_count
-        task.error_message = f"{error} (重试 {retry_count}/{self.max_retries})"
+        task.error_message = f"{safe_error} (重试 {retry_count}/{self.max_retries})"
 
         logger.warning(f"[{worker_name}] ⚠️ 任务失败: {task_id}")
-        logger.info(f"    - 错误: {error}")
+        logger.info(f"    - 错误: {safe_error}")
         logger.info(f"    - 重试次数: {retry_count}/{self.max_retries}")
         await redis_queue.append_task_log(
             task_id,
             level="warn",
-            message=f"task failed: {error} (retry {retry_count}/{self.max_retries})",
+            message=f"task failed: {safe_error} (retry {retry_count}/{self.max_retries})",
             source="worker",
             extra={"worker": worker_name},
         )

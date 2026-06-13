@@ -10,6 +10,7 @@ import logging
 
 import httpx
 
+from ...utils.log_sanitization import summarize_text_for_log
 from ..common.model_capabilities import (
     Capabilities,
     ModelConfig,
@@ -137,12 +138,22 @@ class ModelManager:
                 result.append(config)
 
             result.sort(key=lambda item: (str(item.name or "").lower(), str(item.id or "").lower()))
-            logger.info(f"[Grok ModelManager] Found {len(result)} models")
+            logger.info("[Grok ModelManager] Found %s models", len(result))
 
             return result
 
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "[Grok ModelManager] Error fetching models: status=%s body=%s",
+                e.response.status_code,
+                summarize_text_for_log(e.response.text, label="provider_error"),
+            )
+            raise
         except Exception as e:
-            logger.error(f"[Grok ModelManager] Error fetching models: {e}", exc_info=True)
+            logger.error(
+                "[Grok ModelManager] Error fetching models: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise
 
     def _is_supported_model(self, model_id: str) -> bool:

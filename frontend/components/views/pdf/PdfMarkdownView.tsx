@@ -5,6 +5,18 @@ interface PdfMarkdownViewProps {
   data: Record<string, any>;
 }
 
+const toSafeMarkdownHref = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.toString();
+    }
+  } catch {
+    // Relative or malformed links from extracted PDF content should not become navigable.
+  }
+  return '';
+};
+
 // 将数据转换为 Markdown 格式
 const generateMarkdown = (obj: Record<string, any>, level: number = 1): string => {
   let md = '';
@@ -50,6 +62,7 @@ export const PdfMarkdownView: React.FC<PdfMarkdownViewProps> = ({ data }) => {
   return (
     <div className="text-slate-300 leading-relaxed markdown-body prose prose-invert max-w-none">
       <ReactMarkdown
+        urlTransform={toSafeMarkdownHref}
         components={{
           h1: ({ node, ...props }) => (
             <h1
@@ -90,14 +103,18 @@ export const PdfMarkdownView: React.FC<PdfMarkdownViewProps> = ({ data }) => {
               {...props}
             />
           ),
-          a: ({ node, ...props }) => (
-            <a
-              className="text-indigo-400 hover:text-indigo-300 underline"
-              target="_blank"
-              rel="noopener noreferrer"
-              {...props}
-            />
-          ),
+          a: ({ node, href, ...props }) => {
+            const safeHref = typeof href === 'string' && href.trim() ? href : undefined;
+            return (
+              <a
+                {...props}
+                href={safeHref}
+                className="text-indigo-400 hover:text-indigo-300 underline"
+                target={safeHref ? '_blank' : undefined}
+                rel={safeHref ? 'noopener noreferrer' : undefined}
+              />
+            );
+          },
           table: ({ node, ...props }) => (
             <table className="w-full border-collapse my-4" {...props} />
           ),

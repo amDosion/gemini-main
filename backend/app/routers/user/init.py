@@ -2,13 +2,16 @@
 统一初始化 API 路由
 """
 from fastapi import APIRouter, HTTPException, Depends, Request, Query
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
+from typing import Any, Optional
 import logging
 
 from ...core.database import SessionLocal, get_db
 from ...core.dependencies import require_current_user
 from ...middleware.case_conversion_middleware import case_conversion_options
 from ...services.common.init_service import get_init_data
+from ...utils.log_sanitization import summarize_text_for_log
 from ..models.models import (
     _merge_saved_models,
     _get_effective_profile,
@@ -22,9 +25,61 @@ from ..models.models import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["init"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
 
 
-@router.get("/init/critical")
+class InitCriticalResponse(BaseModel):
+    profiles: list[dict[str, Any]] = Field(max_length=10_000)
+    active_profile_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    active_profile: Optional[dict[str, Any]] = None
+    cached_models: Optional[list[dict[str, Any]]] = Field(default=None, max_length=10_000)
+    cached_mode_catalog: list[dict[str, Any]] = Field(max_length=128)
+    cached_chat_models: Optional[list[dict[str, Any]]] = Field(default=None, max_length=10_000)
+    cached_default_model_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    dashscope_key: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class InitMoreSessionsResponse(BaseModel):
+    sessions: list[dict[str, Any]] = Field(max_length=50)
+    total: Optional[int] = Field(default=None, ge=0, le=10_000_000)
+    hasMore: bool
+    nextCursor: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class InitNonCriticalResponse(BaseModel):
+    sessions: list[dict[str, Any]] = Field(max_length=20)
+    sessionsTotal: int = Field(ge=0, le=10_000_000)
+    sessionsHasMore: bool
+    sessionsMode: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    personas: list[dict[str, Any]] = Field(max_length=10_000)
+    storageConfigs: list[dict[str, Any]] = Field(max_length=10_000)
+    activeStorageId: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    imagenConfig: Optional[dict[str, Any]] = None
+
+
+class InitMetadataResponse(BaseModel):
+    timestamp: int = Field(ge=0, le=4_102_444_800_000)
+    partial_failures: list[str] = Field(max_length=32)
+
+
+class InitResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    profiles: list[dict[str, Any]] = Field(max_length=10_000)
+    active_profile_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    active_profile: Optional[dict[str, Any]] = None
+    dashscope_key: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    storage_configs: list[dict[str, Any]] = Field(max_length=10_000)
+    active_storage_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    sessions: list[dict[str, Any]] = Field(max_length=10_000)
+    personas: list[dict[str, Any]] = Field(max_length=10_000)
+    imagen_config: Optional[dict[str, Any]] = None
+    vertex_ai_config: Optional[dict[str, Any]] = None
+    cached_models: Optional[list[dict[str, Any]]] = Field(default=None, max_length=10_000)
+    metadata: InitMetadataResponse = Field(alias="_metadata")
+
+
+@router.get("/init/critical", response_model=InitCriticalResponse)
 @case_conversion_options(always_convert_response=True)
 async def get_critical_init_data(
     user_id: str = Depends(require_current_user),
@@ -122,14 +177,18 @@ async def get_critical_init_data(
             "dashscope_key": profiles_result.get("dashscope_key", "")
         }
     except Exception as e:
-        logger.error(f"Failed to load critical initialization data for user {user_id}: {e}", exc_info=True)
+        logger.error(
+            "Failed to load critical initialization data: user=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
             detail="Failed to load critical initialization data. Please try again later."
         )
 
 
-@router.get("/init/sessions/more")
+@router.get("/init/sessions/more", response_model=InitMoreSessionsResponse)
 @case_conversion_options(always_convert_response=True)
 async def get_more_sessions(
     offset: int = Query(0, ge=0),
@@ -166,11 +225,15 @@ async def get_more_sessions(
         }
     except Exception as e:
         # A-10: 不再静默返空——前端能区分加载错误与"无更多数据"
-        logger.error(f"Failed to load more sessions for user {user_id}: {e}", exc_info=True)
+        logger.error(
+            "Failed to load more sessions: user=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(status_code=503, detail="Failed to load more sessions")
 
 
-@router.get("/init/non-critical")
+@router.get("/init/non-critical", response_model=InitNonCriticalResponse)
 @case_conversion_options(always_convert_response=True)
 async def get_non_critical_init_data(
     mode: str = Query("chat", max_length=64),
@@ -205,7 +268,11 @@ async def get_non_critical_init_data(
         try:
             return await coro
         except Exception as exc:
-            logger.warning(f"[Init/non-critical] {label} 查询失败: {exc}", exc_info=True)
+            logger.warning(
+                "[Init/non-critical] %s query failed: %s",
+                label,
+                summarize_text_for_log(exc, label="error"),
+            )
             return exc
 
     try:
@@ -243,7 +310,11 @@ async def get_non_critical_init_data(
             "imagenConfig": imagen_config
         }
     except Exception as e:
-        logger.error(f"Failed to load non-critical initialization data for user {user_id}: {e}", exc_info=True)
+        logger.error(
+            "Failed to load non-critical initialization data: user=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(e, label="error"),
+        )
         # 非关键数据失败不影响主流程，返回空数据
         return {
             "sessions": [],
@@ -257,7 +328,7 @@ async def get_non_critical_init_data(
         }
 
 
-@router.get("/init")
+@router.get("/init", response_model=InitResponse)
 @case_conversion_options(always_convert_response=True)
 async def get_init(
     user_id: str = Depends(require_current_user),
@@ -274,7 +345,11 @@ async def get_init(
         return init_data
     except Exception as e:
         # 记录错误日志
-        logger.error(f"Failed to load initialization data for user {user_id}: {e}", exc_info=True)
+        logger.error(
+            "Failed to load initialization data: user=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(e, label="error"),
+        )
         # 返回 500 错误
         raise HTTPException(
             status_code=500,

@@ -4,44 +4,11 @@ import ReactMarkdown from 'react-markdown';
 import type { Components, ExtraProps } from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
-import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
-import css from 'react-syntax-highlighter/dist/esm/languages/prism/css';
-import javascript from 'react-syntax-highlighter/dist/esm/languages/prism/javascript';
-import json from 'react-syntax-highlighter/dist/esm/languages/prism/json';
-import jsx from 'react-syntax-highlighter/dist/esm/languages/prism/jsx';
-import markdown from 'react-syntax-highlighter/dist/esm/languages/prism/markdown';
-import markup from 'react-syntax-highlighter/dist/esm/languages/prism/markup';
-import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
-import sql from 'react-syntax-highlighter/dist/esm/languages/prism/sql';
-import tsx from 'react-syntax-highlighter/dist/esm/languages/prism/tsx';
-import typescript from 'react-syntax-highlighter/dist/esm/languages/prism/typescript';
-import yaml from 'react-syntax-highlighter/dist/esm/languages/prism/yaml';
+import type { PluggableList } from 'unified';
 import { Copy, Check, ChevronDown, ChevronRight, Brain } from 'lucide-react';
 import { STREAMING_CURSOR_CLASSNAME } from '../../utils/cursorUtils';
 
-SyntaxHighlighter.registerLanguage('bash', bash);
-SyntaxHighlighter.registerLanguage('sh', bash);
-SyntaxHighlighter.registerLanguage('shell', bash);
-SyntaxHighlighter.registerLanguage('css', css);
-SyntaxHighlighter.registerLanguage('javascript', javascript);
-SyntaxHighlighter.registerLanguage('js', javascript);
-SyntaxHighlighter.registerLanguage('json', json);
-SyntaxHighlighter.registerLanguage('jsx', jsx);
-SyntaxHighlighter.registerLanguage('markdown', markdown);
-SyntaxHighlighter.registerLanguage('md', markdown);
-SyntaxHighlighter.registerLanguage('html', markup);
-SyntaxHighlighter.registerLanguage('xml', markup);
-SyntaxHighlighter.registerLanguage('markup', markup);
-SyntaxHighlighter.registerLanguage('python', python);
-SyntaxHighlighter.registerLanguage('py', python);
-SyntaxHighlighter.registerLanguage('sql', sql);
-SyntaxHighlighter.registerLanguage('tsx', tsx);
-SyntaxHighlighter.registerLanguage('typescript', typescript);
-SyntaxHighlighter.registerLanguage('ts', typescript);
-SyntaxHighlighter.registerLanguage('yaml', yaml);
-SyntaxHighlighter.registerLanguage('yml', yaml);
+const MarkdownCodeHighlighter = React.lazy(() => import('./MarkdownCodeHighlighter'));
 
 // 思考块组件 - 用于渲染 AI 模型的 <think> 标签内容
 const ThinkBlock: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
@@ -96,6 +63,8 @@ const CodeBlock = ({
     }
   };
 
+  const codeText = String(children).replace(/\n$/, '');
+
   return (
     <div className="rounded-lg overflow-hidden my-3 border border-slate-700/50 shadow-sm group font-sans bg-[#0f172a]">
       <div className="bg-slate-900/80 px-3 py-2 text-xs text-slate-400 border-b border-slate-700/50 flex justify-between items-center backdrop-blur-sm">
@@ -109,23 +78,17 @@ const CodeBlock = ({
           <span className="text-[10px] font-medium">{isCopied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
-      <SyntaxHighlighter
-        style={vscDarkPlus}
-        language={language}
-        PreTag="div"
-        customStyle={{
-          margin: 0,
-          padding: '1rem',
-          background: 'transparent',
-          fontSize: '0.875rem',
-          lineHeight: '1.6',
-        }}
-        wrapLines={true}
-        wrapLongLines={true}
-        {...props}
+      <React.Suspense
+        fallback={
+          <pre className="m-0 overflow-x-auto bg-transparent p-4 text-sm leading-relaxed text-slate-200">
+            <code>{codeText}</code>
+          </pre>
+        }
       >
-        {String(children).replace(/\n$/, '')}
-      </SyntaxHighlighter>
+        <MarkdownCodeHighlighter language={language} syntaxProps={props}>
+          {children}
+        </MarkdownCodeHighlighter>
+      </React.Suspense>
     </div>
   );
 };
@@ -142,6 +105,19 @@ const sanitizeSchema = {
     img: [...(defaultSchema.attributes?.['img'] || []), 'src', 'alt', 'width', 'height', 'loading'],
     a: [...(defaultSchema.attributes?.['a'] || []), 'target', 'rel'],
   },
+};
+const markdownRehypePlugins: PluggableList = [rehypeRaw, [rehypeSanitize, sanitizeSchema]];
+
+const toSafeMarkdownHref = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.toString();
+    }
+  } catch {
+    // Relative or malformed model-supplied links should not become navigable.
+  }
+  return '';
 };
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, showCursor = false }) => {
@@ -173,14 +149,18 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, showCursor
           </code>
         );
       },
-      a: ({ node, ...props }: React.ComponentPropsWithoutRef<'a'> & ExtraProps) => (
-        <a
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-400 hover:underline"
-          {...props}
-        />
-      ),
+      a: ({ node, href, ...props }: React.ComponentPropsWithoutRef<'a'> & ExtraProps) => {
+        const safeHref = typeof href === 'string' && href.trim() ? href : undefined;
+        return (
+          <a
+            {...props}
+            href={safeHref}
+            target={safeHref ? '_blank' : undefined}
+            rel={safeHref ? 'noopener noreferrer' : undefined}
+            className="text-blue-400 hover:underline"
+          />
+        );
+      },
       ul: ({ node, ...props }: React.ComponentPropsWithoutRef<'ul'> & ExtraProps) => (
         <ul className="list-disc pl-5 my-2 space-y-1" {...props} />
       ),
@@ -203,8 +183,9 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, showCursor
   return (
     <div className="prose prose-invert prose-sm sm:prose-base max-w-none break-words">
       <ReactMarkdown
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+        rehypePlugins={markdownRehypePlugins}
         components={customComponents}
+        urlTransform={toSafeMarkdownHref}
       >
         {content}
       </ReactMarkdown>

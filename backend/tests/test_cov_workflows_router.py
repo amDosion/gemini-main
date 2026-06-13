@@ -19,7 +19,9 @@ idempotency replay, state-machine transitions, and validation branches.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import time
 from typing import Any, Dict, Optional
 
@@ -160,9 +162,83 @@ def _add_agent(
     return agent
 
 
+def _workflow_log_text(caplog) -> str:
+    return "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name == wf.logger.name
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Pure helpers / module-level state machines (no DB, no client)
 # --------------------------------------------------------------------------- #
+class TestWorkflowRuntimeLogSanitization:
+    def test_background_runtime_store_sync_logs_error_summary(self, caplog):
+        secret = "runtime-store-sync-secret"
+
+        async def _boom():
+            raise RuntimeError(f"sync failed {secret}")
+
+        async def _run():
+            with caplog.at_level(logging.DEBUG, logger=wf.logger.name):
+                wf._schedule_runtime_store_sync(
+                    _boom(),
+                    execution_id="exec-runtime-sync",
+                    action="touch",
+                )
+                await asyncio.sleep(0)
+                await asyncio.sleep(0)
+
+        asyncio.run(_run())
+
+        log_text = _workflow_log_text(caplog)
+        assert secret not in log_text
+        assert "Traceback" not in log_text
+        assert "<redacted error; length=" in log_text
+
+    def test_cleanup_runtime_clear_logs_error_summary(self, monkeypatch, caplog):
+        secret = "runtime-clear-secret"
+
+        class FakeRuntimeStore:
+            async def clear(self, *args, **kwargs):
+                raise RuntimeError(f"clear failed {secret}")
+
+        monkeypatch.setattr(wf, "_workflow_runtime_store", FakeRuntimeStore())
+
+        with caplog.at_level(logging.DEBUG, logger=wf.logger.name):
+            asyncio.run(
+                wf._cleanup_execution_runtime(
+                    "exec-runtime-clear",
+                    clear_store=True,
+                    clear_local_runtime=True,
+                )
+            )
+
+        log_text = _workflow_log_text(caplog)
+        assert secret not in log_text
+        assert "Traceback" not in log_text
+        assert "<redacted error; length=" in log_text
+
+    def test_serialize_workflow_result_logs_error_summary(self, monkeypatch, caplog):
+        secret = "serialize-secret"
+        payload = {"text": secret}
+
+        def _boom(_payload):
+            raise RuntimeError(f"serialize failed {secret}")
+
+        monkeypatch.setattr(wf, "to_camel_case", _boom)
+
+        with caplog.at_level(logging.WARNING, logger=wf.logger.name):
+            result = wf._serialize_workflow_result(payload)
+
+        log_text = _workflow_log_text(caplog)
+        assert result is payload
+        assert secret not in log_text
+        assert "Traceback" not in log_text
+        assert "<redacted error; length=" in log_text
+
+
 class TestStatusNormalization:
     def test_workflow_status_alias_mapping(self):
         assert wf._normalize_workflow_status("queued") == "pending"
@@ -741,6 +817,28 @@ class TestWorkflowHistory:
         resp = client.get(f"/api/workflows/history/{execution.id}")
         assert resp.status_code == 404
 
+    def test_history_analysis_download_build_error_is_generic(
+        self, client, db_session, monkeypatch, caplog
+    ):
+        secret = "workflow-analysis-download-secret"
+        execution = _add_execution(db_session, status="completed", result={"text": "final"})
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError(f"workbook failed {secret}")
+
+        monkeypatch.setattr(wf, "_build_workflow_analysis_excel_bytes", _boom)
+        with caplog.at_level(logging.ERROR, logger=wf.logger.name):
+            resp = client.get(
+                f"/api/workflows/history/{execution.id}/analysis/download"
+            )
+
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Workflow analysis workbook generation failed"
+        assert secret not in resp.text
+        assert secret not in caplog.text
+        assert "Traceback" not in caplog.text
+        assert "<redacted error; length=" in caplog.text
+
     def test_delete_history(self, client, db_session):
         execution = _add_execution(db_session, status="completed")
         resp = client.delete(f"/api/workflows/history/{execution.id}")
@@ -935,6 +1033,13 @@ class TestExecuteEndpoint:
         )
         assert resp.status_code == 400
 
+    def test_execute_non_graph_validation_errors_remain_422(self, client):
+        resp = client.post(
+            "/api/workflows/execute",
+            json={"nodes": [{"id": "start-1"}]},
+        )
+        assert resp.status_code == 422
+
     def test_execute_sync_happy_path(self, client, db_session, monkeypatch):
         captured: Dict[str, Any] = {}
 
@@ -963,17 +1068,46 @@ class TestExecuteEndpoint:
         assert "execution_id" in body or "executionId" in body
         assert captured["nodes"]  # engine actually invoked with normalized nodes
 
-    def test_execute_engine_failure_maps_to_500(self, client, monkeypatch):
+    def test_execute_engine_failure_maps_to_500(self, client, monkeypatch, caplog):
+        secret = "workflow-engine-secret"
+
+        class FakeRuntimeStore:
+            async def initialize_execution_local(self, *args, **kwargs):
+                return None
+
+            async def initialize_execution(self, *args, **kwargs):
+                return None
+
+            async def mark_done(self, *args, **kwargs):
+                return None
+
+            async def clear(self, *args, **kwargs):
+                return None
+
         async def boom(self, *, nodes, edges, initial_input, on_event):
-            raise RuntimeError("engine exploded")
+            raise RuntimeError(f"engine exploded {secret}")
 
         from app.services.agent.workflow_engine import WorkflowEngine
 
         monkeypatch.setattr(WorkflowEngine, "execute", boom)
-        resp = client.post("/api/workflows/execute", json=self._valid_payload())
+        monkeypatch.setattr(wf, "_workflow_runtime_store", FakeRuntimeStore())
+        monkeypatch.setattr(
+            wf,
+            "_schedule_runtime_store_sync",
+            lambda awaitable, **kwargs: getattr(awaitable, "close", lambda: None)(),
+        )
+        with caplog.at_level(logging.ERROR, logger=wf.logger.name):
+            resp = client.post("/api/workflows/execute", json=self._valid_payload())
+
         assert resp.status_code == 500
         detail = resp.json()["detail"]
         assert detail["code"] == "workflow_execution_failed"
+        assert detail["message"] == "Workflow execution failed"
+        workflow_log_text = _workflow_log_text(caplog)
+        assert secret not in resp.text
+        assert secret not in workflow_log_text
+        assert "Traceback" not in workflow_log_text
+        assert "<redacted error; length=" in workflow_log_text
 
     def test_execute_idempotency_replay(self, client, db_session, monkeypatch):
         # Pre-create a terminal execution carrying the idempotency key; a second

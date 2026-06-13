@@ -18,6 +18,7 @@ from ....services.llm import ProviderCredentialsResolver
 from ....services.agent.adk_builtin_tools import build_adk_builtin_tools
 from ....services.common.provider_factory import ProviderFactory
 from ....models.db_models import AgentRegistry
+from ....utils.log_sanitization import summarize_text_for_log
 from .adk_agent import ADKAgent
 from .adk_runner import ADKRunner
 
@@ -520,8 +521,12 @@ class LiveAPIHandler:
         Yields:
             响应块
         """
-        logger.info("[LiveAPIHandler] Bidi stream session started for user %s", user_id)
+        logger.info(
+            "[LiveAPIHandler] Bidi stream session started: user=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+        )
 
+        current_agent_id = agent_id
         while True:
             try:
                 message = await asyncio.wait_for(queue.get(), timeout=30.0)
@@ -530,6 +535,7 @@ class LiveAPIHandler:
 
                 user_input = str(message.get("input") or "").strip()
                 request_agent_id = str(message.get("agent_id") or "").strip() or agent_id
+                current_agent_id = request_agent_id
 
                 if user_input.lower() in ("exit", "quit"):
                     yield {"output": "Goodbye!", "status": "completed"}
@@ -549,6 +555,11 @@ class LiveAPIHandler:
             except asyncio.TimeoutError:
                 yield {"type": "heartbeat"}
             except Exception as e:
-                logger.error("[LiveAPIHandler] Error in bidi stream: %s", e, exc_info=True)
+                logger.error(
+                    "[LiveAPIHandler] Error in bidi stream: user=%s agent=%s error=%s",
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(current_agent_id, label="agent_id"),
+                    summarize_text_for_log(e, label="bidi_stream_error"),
+                )
                 yield {"error": str(e), "status": "failed"}
                 break

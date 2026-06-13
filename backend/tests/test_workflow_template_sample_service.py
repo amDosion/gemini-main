@@ -1,3 +1,6 @@
+import pytest
+
+from app.services.gemini.agent import workflow_template_sample_service as sample_service
 from app.services.gemini.agent.workflow_template_sample_service import (
     SAMPLE_TEMPLATE_ASSET_DIR,
     WorkflowTemplateSampleService,
@@ -42,6 +45,103 @@ def test_build_sample_input_inlines_trusted_remote_image_and_video_assets() -> N
 
     assert str(sample_input["imageUrl"]).startswith("data:image/png;base64,")
     assert str(sample_input["videoUrl"]).startswith("data:video/mp4;base64,")
+
+
+class _FakeStreamResponse:
+    def __init__(self, status_code: int, headers=None, chunks=None):
+        self.status_code = status_code
+        self.headers = dict(headers or {})
+        self._chunks = list(chunks or [])
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def raise_for_status(self):
+        return None
+
+    def iter_bytes(self):
+        yield from self._chunks
+
+
+class _FakeSampleAssetClient:
+    def __init__(self, *, events, responses, **kwargs):
+        self.events = events
+        self.responses = responses
+        self.kwargs = kwargs
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def stream(self, method, url, *, headers):
+        self.events.append(("stream", method, url, headers["User-Agent"]))
+        return self.responses.pop(0)
+
+
+def test_download_sample_remote_asset_installs_pinning_and_streams(monkeypatch) -> None:
+    events = []
+    responses = [
+        _FakeStreamResponse(200, headers={"Content-Type": "image/png"}, chunks=[b"im", b"age"])
+    ]
+
+    def fake_client(**kwargs):
+        return _FakeSampleAssetClient(events=events, responses=responses, **kwargs)
+
+    def fake_pin(client):
+        events.append(("pin", client.kwargs["timeout"]))
+
+    monkeypatch.setattr(sample_service.httpx, "Client", fake_client)
+    monkeypatch.setattr(sample_service, "pin_sync_client_for_outbound_guard", fake_pin)
+
+    raw, mime_type = WorkflowTemplateSampleService._download_sample_remote_asset(
+        "https://images.unsplash.com/photo-1",
+        asset_kind="image",
+    )
+
+    assert raw == b"image"
+    assert mime_type == "image/png"
+    assert events == [
+        ("pin", 20.0),
+        (
+            "stream",
+            "GET",
+            "https://images.unsplash.com/photo-1",
+            "WorkflowTemplateSampleService/1.0",
+        ),
+    ]
+
+
+def test_download_sample_remote_asset_rejects_untrusted_redirect(monkeypatch) -> None:
+    events = []
+    responses = [
+        _FakeStreamResponse(302, headers={"Location": "https://evil.example/asset.png"})
+    ]
+
+    def fake_client(**kwargs):
+        return _FakeSampleAssetClient(events=events, responses=responses, **kwargs)
+
+    monkeypatch.setattr(sample_service.httpx, "Client", fake_client)
+    monkeypatch.setattr(sample_service, "pin_sync_client_for_outbound_guard", lambda _client: None)
+
+    with pytest.raises(ValueError, match="redirect host is not trusted"):
+        WorkflowTemplateSampleService._download_sample_remote_asset(
+            "https://images.unsplash.com/photo-1",
+            asset_kind="image",
+        )
+
+    assert events == [
+        (
+            "stream",
+            "GET",
+            "https://images.unsplash.com/photo-1",
+            "WorkflowTemplateSampleService/1.0",
+        )
+    ]
 
 
 def test_build_sample_input_inlines_local_sample_assets_via_sample_scheme() -> None:

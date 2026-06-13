@@ -64,7 +64,8 @@ def test_is_url_falls_back_when_shared_import_fails(monkeypatch):
 # ToolManager registration
 # ---------------------------------------------------------------------------
 
-def test_register_google_search_and_code_execution():
+def test_register_google_search_and_code_execution(monkeypatch):
+    monkeypatch.setenv(tools_mod.LOCAL_CODE_EXECUTION_ENABLED_ENV, "true")
     tm = ToolManager([
         {"type": "google_search"},
         {"type": "code_execution"},
@@ -73,6 +74,12 @@ def test_register_google_search_and_code_execution():
     assert "code_execution" in tm._registered_tools
     assert tm._registered_tools["google_search"]["name"] == "google_search"
     assert "query" in tm._registered_tools["google_search"]["parameters"]["properties"]
+
+
+def test_register_code_execution_requires_explicit_env(monkeypatch):
+    monkeypatch.delenv(tools_mod.LOCAL_CODE_EXECUTION_ENABLED_ENV, raising=False)
+    tm = ToolManager([{"type": "code_execution"}])
+    assert "code_execution" not in tm._registered_tools
 
 
 def test_register_file_search_only_when_store_names_present():
@@ -155,6 +162,7 @@ def test_get_tools_genai_format():
 
 
 def test_get_tools_dict_fallback_when_genai_unavailable(monkeypatch):
+    monkeypatch.setenv(tools_mod.LOCAL_CODE_EXECUTION_ENABLED_ENV, "true")
     tm = ToolManager([{"type": "code_execution"}])
     real_import = __import__
 
@@ -207,6 +215,7 @@ async def test_execute_tool_dispatches_file_search_with_defaults(monkeypatch):
 
 
 async def test_execute_tool_dispatches_code(monkeypatch):
+    monkeypatch.setenv(tools_mod.LOCAL_CODE_EXECUTION_ENABLED_ENV, "true")
     tm = ToolManager([{"type": "code_execution"}])
 
     async def fake_code(code):
@@ -364,7 +373,7 @@ def test_is_text_searchable_file():
     assert ToolManager._is_text_searchable_file(Path("a.png")) is False
 
 
-def test_resolve_local_search_files(tmp_path):
+def test_resolve_local_search_files(tmp_path, monkeypatch):
     tm = ToolManager([])
     f1 = tmp_path / "a.txt"
     f1.write_text("x")
@@ -372,12 +381,31 @@ def test_resolve_local_search_files(tmp_path):
     sub.mkdir()
     f2 = sub / "b.md"
     f2.write_text("y")
+    monkeypatch.setenv(tools_mod.FILE_SEARCH_ALLOWED_ROOTS_ENV, str(tmp_path))
     # one file path, one directory path, one blank, one missing
     resolved = tm._resolve_local_search_files(
         [str(f1), str(tmp_path), "  ", str(tmp_path / "missing")]
     )
     names = {p.name for p in resolved}
     assert "a.txt" in names and "b.md" in names
+
+
+def test_resolve_local_search_files_rejects_outside_allowed_root(tmp_path, monkeypatch):
+    tm = ToolManager([])
+    allowed = tmp_path / "allowed"
+    denied = tmp_path / "denied"
+    allowed.mkdir()
+    denied.mkdir()
+    public_file = allowed / "public.txt"
+    public_file.write_text("ok")
+    secret_file = denied / "secret.txt"
+    secret_file.write_text("secret")
+    monkeypatch.setenv(tools_mod.FILE_SEARCH_ALLOWED_ROOTS_ENV, str(allowed))
+
+    resolved = tm._resolve_local_search_files([str(allowed), str(denied), str(secret_file)])
+
+    assert public_file.resolve() in resolved
+    assert secret_file.resolve() not in resolved
 
 
 # ---------------------------------------------------------------------------
@@ -391,17 +419,31 @@ async def test_file_search_requires_query():
     assert out["error"] == "query is required"
 
 
-async def test_file_search_no_files_found(tmp_path):
+async def test_file_search_no_files_found(tmp_path, monkeypatch):
     tm = ToolManager([])
+    monkeypatch.setenv(tools_mod.FILE_SEARCH_ALLOWED_ROOTS_ENV, str(tmp_path))
     out = await tm._execute_file_search("hello", [str(tmp_path / "nope")])
     assert out["success"] is False
     assert "No readable local files" in out["error"]
 
 
-async def test_file_search_finds_matches(tmp_path):
+async def test_file_search_requires_explicit_allowed_root(tmp_path, monkeypatch):
+    tm = ToolManager([])
+    f = tmp_path / "doc.txt"
+    f.write_text("needle\n")
+    monkeypatch.delenv(tools_mod.FILE_SEARCH_ALLOWED_ROOTS_ENV, raising=False)
+
+    out = await tm._execute_file_search("needle", [str(f)])
+
+    assert out["success"] is False
+    assert out["matches"] == []
+
+
+async def test_file_search_finds_matches(tmp_path, monkeypatch):
     tm = ToolManager([])
     f = tmp_path / "doc.txt"
     f.write_text("first line\nThe needle is here\nlast line\n")
+    monkeypatch.setenv(tools_mod.FILE_SEARCH_ALLOWED_ROOTS_ENV, str(tmp_path))
     out = await tm._execute_file_search("needle", [str(f)], top_k=5)
     assert out["success"] is True
     assert out["searched_files"] == 1
@@ -412,29 +454,32 @@ async def test_file_search_finds_matches(tmp_path):
     assert m["highlights"][0]["end"] > m["highlights"][0]["start"]
 
 
-async def test_file_search_respects_top_k_clamp(tmp_path):
+async def test_file_search_respects_top_k_clamp(tmp_path, monkeypatch):
     tm = ToolManager([])
     f = tmp_path / "doc.txt"
     f.write_text("\n".join(["needle"] * 10))
+    monkeypatch.setenv(tools_mod.FILE_SEARCH_ALLOWED_ROOTS_ENV, str(tmp_path))
     out = await tm._execute_file_search("needle", [str(f)], top_k=3)
     assert out["top_k"] == 3
     assert len(out["matches"]) == 3
 
 
-async def test_file_search_skips_non_text_files(tmp_path):
+async def test_file_search_skips_non_text_files(tmp_path, monkeypatch):
     tm = ToolManager([])
     f = tmp_path / "img.png"
     f.write_text("needle inside but png")
+    monkeypatch.setenv(tools_mod.FILE_SEARCH_ALLOWED_ROOTS_ENV, str(tmp_path))
     out = await tm._execute_file_search("needle", [str(f)])
     # png is not text-searchable so it is "searched_files" but yields no matches
     assert out["success"] is True
     assert out["matches"] == []
 
 
-async def test_file_search_metadata_filter_serialized(tmp_path):
+async def test_file_search_metadata_filter_serialized(tmp_path, monkeypatch):
     tm = ToolManager([])
     f = tmp_path / "code.py"
     f.write_text("def needle():\n    pass\n")
+    monkeypatch.setenv(tools_mod.FILE_SEARCH_ALLOWED_ROOTS_ENV, str(tmp_path))
     out = await tm._execute_file_search(
         "needle", [str(f)], metadata_filter={"extensions": ["py"]}
     )
@@ -453,7 +498,17 @@ async def test_execute_code_requires_code():
     assert out["status"] == "invalid_input"
 
 
-async def test_execute_code_success():
+async def test_execute_code_disabled_by_default(monkeypatch):
+    monkeypatch.delenv(tools_mod.LOCAL_CODE_EXECUTION_ENABLED_ENV, raising=False)
+    tm = ToolManager([])
+    out = await tm._execute_code("print('should-not-run')")
+    assert out["success"] is False
+    assert out["status"] == "disabled"
+    assert out["output"] == ""
+
+
+async def test_execute_code_success(monkeypatch):
+    monkeypatch.setenv(tools_mod.LOCAL_CODE_EXECUTION_ENABLED_ENV, "true")
     tm = ToolManager([])
     out = await tm._execute_code("print('hello-from-test')")
     assert out["success"] is True
@@ -462,7 +517,8 @@ async def test_execute_code_success():
     assert out["return_code"] == 0
 
 
-async def test_execute_code_failure_nonzero_exit():
+async def test_execute_code_failure_nonzero_exit(monkeypatch):
+    monkeypatch.setenv(tools_mod.LOCAL_CODE_EXECUTION_ENABLED_ENV, "true")
     tm = ToolManager([])
     out = await tm._execute_code("import sys; sys.exit(3)")
     assert out["success"] is False
@@ -471,6 +527,7 @@ async def test_execute_code_failure_nonzero_exit():
 
 
 async def test_execute_code_timeout(monkeypatch):
+    monkeypatch.setenv(tools_mod.LOCAL_CODE_EXECUTION_ENABLED_ENV, "true")
     tm = ToolManager([])
     monkeypatch.setenv("GEMINI_TOOL_CODE_TIMEOUT_SEC", "1")
     out = await tm._execute_code("import time; time.sleep(5)")

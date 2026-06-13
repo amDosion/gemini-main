@@ -5,13 +5,16 @@ Grok 图片编辑器
 使用 httpx 发送 multipart form data 调用 grok2api 的 /images/edits 端点。
 """
 from __future__ import annotations
+
 import base64
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import httpx
+
 from ...utils.attachment_handler import is_base64_url
-from ...utils.url_security import validate_outbound_http_url_async
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
+from ...utils.url_security import get_with_redirect_guard, validate_outbound_http_url_async
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +56,10 @@ class ImageEditor:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        logger.info(f"[Grok ImageEditor] Initialized with base_url={self.base_url}")
+        logger.info(
+            "[Grok ImageEditor] Initialized with base_url=%s",
+            summarize_url_for_log(self.base_url),
+        )
 
     def _resolve_size(self, kwargs: Dict[str, Any]) -> str:
         """Resolve image size from kwargs."""
@@ -85,11 +91,15 @@ class ImageEditor:
                 _, encoded = source.split(",", 1)
                 return base64.b64decode(encoded)
             if source.startswith(("http://", "https://")):
-                # CANON-011: request-controlled reference image URL — enforce the
-                # outbound SSRF policy before fetching it server-side.
+                # CANON-011: request-controlled reference image URL - validate
+                # the initial URL and every redirect hop before downloading.
                 safe_source = await validate_outbound_http_url_async(source)
                 async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.get(safe_source)
+                    response, _final_url = await get_with_redirect_guard(
+                        client,
+                        safe_source,
+                        max_redirects=5,
+                    )
                     response.raise_for_status()
                     return response.content
         if isinstance(source, bytes):
@@ -131,7 +141,11 @@ class ImageEditor:
             图片结果列表（统一格式）
         """
         try:
-            logger.info(f"[Grok ImageEditor] Image edit: model={model}, prompt={prompt[:50]}...")
+            logger.info(
+                "[Grok ImageEditor] Image edit: model=%s, prompt=%s",
+                model,
+                summarize_text_for_log(prompt, label="prompt"),
+            )
 
             size = self._resolve_size(kwargs)
             n = self._resolve_n(kwargs)
@@ -173,7 +187,11 @@ class ImageEditor:
                     img_bytes = await self._load_image_bytes(ref_url)
                     files.append(("image", (f"image_{i}.png", img_bytes, "image/png")))
                 except Exception as load_err:
-                    logger.warning(f"[Grok ImageEditor] Failed to load reference image {i}: {load_err}")
+                    logger.warning(
+                        "[Grok ImageEditor] Failed to load reference image index=%s error=%s",
+                        i,
+                        summarize_text_for_log(load_err, label="error"),
+                    )
                     continue
 
             if not files:
@@ -208,12 +226,19 @@ class ImageEditor:
             if not results:
                 raise RuntimeError("Grok image edit response did not contain a usable image payload.")
 
-            logger.info(f"[Grok ImageEditor] Image edited: {len(results)} image(s)")
+            logger.info("[Grok ImageEditor] Image edited: %s image(s)", len(results))
             return results
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"[Grok ImageEditor] HTTP error: {e.response.status_code} - {e.response.text}", exc_info=True)
+            logger.error(
+                "[Grok ImageEditor] HTTP error: status=%s body=%s",
+                e.response.status_code,
+                summarize_text_for_log(e.response.text, label="provider_error"),
+            )
             raise
         except Exception as e:
-            logger.error(f"[Grok ImageEditor] Image edit error: {e}", exc_info=True)
+            logger.error(
+                "[Grok ImageEditor] Image edit error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise

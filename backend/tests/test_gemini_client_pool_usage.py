@@ -8,7 +8,9 @@
 from __future__ import annotations
 
 import ast
+import importlib
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -208,6 +210,22 @@ def test_embedding_service_uses_client_pool(monkeypatch):
     assert result == [0.1, 0.2, 0.3]
     assert captured_kwargs.get("api_key") == "emb-test-key"
     assert captured_kwargs.get("vertexai") is False
+
+
+def test_embedding_service_cosine_similarity_does_not_require_numpy(monkeypatch):
+    module_name = "app.services.common.embedding_service"
+    common_pkg = importlib.import_module("app.services.common")
+    sys.modules.pop(module_name, None)
+    monkeypatch.delattr(common_pkg, "embedding_service", raising=False)
+    monkeypatch.setitem(sys.modules, "numpy", None)
+
+    svc = importlib.import_module(module_name)
+
+    assert svc.cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+    assert svc.cosine_similarity([1.0, 1.0], [1.0, 1.0]) == pytest.approx(1.0)
+    assert svc.cosine_similarity([0.0, 0.0], [1.0, 1.0]) == pytest.approx(0.0)
+    with pytest.raises(ValueError, match="same length"):
+        svc.cosine_similarity([1.0], [1.0, 2.0])
 
 
 def test_file_search_uses_client_pool_for_api_key(monkeypatch):

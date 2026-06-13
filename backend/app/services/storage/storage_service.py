@@ -3,9 +3,24 @@
 支持多种存储提供商的统一接口
 """
 
+import logging
 from typing import Dict, Any
+
 from fastapi import HTTPException
+
+from ...utils.log_sanitization import summarize_text_for_log
 from .factory import ProviderFactory
+
+logger = logging.getLogger(__name__)
+
+
+def _raise_internal_storage_error(operation: str, detail: str, error: object) -> None:
+    logger.error(
+        "[StorageService] %s failed: %s",
+        operation,
+        summarize_text_for_log(error, label="error"),
+    )
+    raise HTTPException(status_code=500, detail=detail)
 
 
 class StorageService:
@@ -40,9 +55,10 @@ class StorageService:
             result = await provider_instance.upload(filename, content, content_type)
             
             if not result.success:
-                raise HTTPException(
-                    status_code=500,
-                    detail=result.error or f"{provider} 上传失败"
+                _raise_internal_storage_error(
+                    "upload",
+                    "上传失败",
+                    result.error or f"{provider} upload failed",
                 )
             
             return {
@@ -54,8 +70,10 @@ class StorageService:
         
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        except HTTPException:
+            raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"上传失败: {str(e)}")
+            _raise_internal_storage_error("upload", "上传失败", e)
 
     @staticmethod
     async def browse_files(
@@ -76,7 +94,7 @@ class StorageService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"浏览目录失败: {str(e)}")
+            _raise_internal_storage_error("browse", "浏览目录失败", e)
 
     @staticmethod
     async def count_files(
@@ -95,7 +113,7 @@ class StorageService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"统计目录失败: {str(e)}")
+            _raise_internal_storage_error("count", "统计目录失败", e)
 
     @staticmethod
     async def delete_item(
@@ -120,7 +138,7 @@ class StorageService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+            _raise_internal_storage_error("delete", "删除失败", e)
 
     @staticmethod
     async def rename_item(
@@ -145,7 +163,7 @@ class StorageService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"重命名失败: {str(e)}")
+            _raise_internal_storage_error("rename", "重命名失败", e)
     
     # 向后兼容方法（保留现有 API）
     @staticmethod

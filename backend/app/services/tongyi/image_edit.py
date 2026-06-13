@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from urllib.parse import unquote
 
-from .file_upload import upload_bytes_to_dashscope_async, upload_to_dashscope, upload_to_dashscope_async
+from .file_upload import upload_bytes_to_dashscope_async, upload_to_dashscope_async
 from .base import (
     WAN27_STANDARD_MAX_IMAGES,
     clamp_image_count,
@@ -29,11 +29,29 @@ from .base import (
     is_wan27_image_model,
 )
 from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 
 logger = logging.getLogger(__name__)
 
 # DashScope 官方 API 地址
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"
+
+
+def _summarize_response_shape_for_log(response_data: object) -> str:
+    if not isinstance(response_data, dict):
+        return summarize_text_for_log(response_data, label="response")
+
+    parts = [f"dict_keys={len(response_data)}"]
+    output = response_data.get("output")
+    if isinstance(output, dict):
+        parts.append(f"output_keys={len(output)}")
+        choices = output.get("choices")
+        if isinstance(choices, list):
+            parts.append(f"choices={len(choices)}")
+        results = output.get("results")
+        if isinstance(results, list):
+            parts.append(f"results={len(results)}")
+    return "; ".join(parts)
 
 
 @dataclass
@@ -96,12 +114,12 @@ class ImageEditService:
         """
         # 情况 1: 已经是 oss:// URL - 直接使用
         if image_url.startswith('oss://'):
-            logger.info(f"[Image Edit] 使用现有 OSS URL: {image_url[:60]}...")
+            logger.info("[Image Edit] 使用现有 OSS URL: %s", summarize_url_for_log(image_url))
             return image_url
 
         local_path = self._resolve_local_public_image_path(image_url)
         if local_path:
-            logger.info(f"[Image Edit] 上传本地存储图片到 OSS: {image_url[:80]}...")
+            logger.info("[Image Edit] 上传本地存储图片到 OSS: %s", summarize_url_for_log(image_url))
             mime_type = mimetypes.guess_type(local_path.name)[0] or "image/png"
             extension = mimetypes.guess_extension(mime_type) or ".png"
             result = await upload_bytes_to_dashscope_async(
@@ -112,11 +130,11 @@ class ImageEditService:
             )
             if not result.success:
                 raise Exception(f"图片上传失败: {result.error}")
-            logger.info(f"[Image Edit] ✅ 本地图片上传成功: {result.oss_url[:60]}...")
+            logger.info("[Image Edit] ✅ 本地图片上传成功: %s", summarize_url_for_log(result.oss_url))
             return result.oss_url
 
         # 情况 2 & 3: HTTPS URL 或 Base64 data URI
-        logger.info(f"[Image Edit] 上传图片到 OSS: {image_url[:60]}...")
+        logger.info("[Image Edit] 上传图片到 OSS: %s", summarize_url_for_log(image_url))
         logger.info(f"[Image Edit] 使用模型获取上传凭证: {model}")
 
         # Use the async httpx variant from this async context so we do not
@@ -130,7 +148,7 @@ class ImageEditService:
         if not result.success:
             raise Exception(f"图片上传失败: {result.error}")
 
-        logger.info(f"[Image Edit] ✅ 上传成功: {result.oss_url[:60]}...")
+        logger.info("[Image Edit] ✅ 上传成功: %s", summarize_url_for_log(result.oss_url))
         return result.oss_url
 
     def _resolve_local_public_image_path(self, image_url: str) -> Optional[Path]:
@@ -141,7 +159,7 @@ class ImageEditService:
         local_path = resolve_local_public_file_path(image_url) or resolve_local_public_file_path(unquote(image_url))
         if local_path and local_path.exists() and local_path.is_file():
             return local_path
-        raise FileNotFoundError(f"本地存储图片不存在: {image_url[:80]}")
+        raise FileNotFoundError(f"本地存储图片不存在: {summarize_url_for_log(image_url)}")
 
     def _resolve_optimizer_image_input(self, image_url: str):
         local_path = self._resolve_local_public_image_path(image_url)
@@ -319,8 +337,9 @@ class ImageEditService:
 
             if response.status_code != 200:
                 error_text = response.text
-                logger.error(f"[Image Edit] API 错误 ({response.status_code}): {error_text}")
-                raise Exception(f"DashScope API 错误: {error_text}")
+                safe_error = summarize_text_for_log(error_text, label="dashscope_error")
+                logger.error("[Image Edit] API 错误 (%s): %s", response.status_code, safe_error)
+                raise Exception(f"DashScope API 错误: {safe_error}")
 
             result = response.json()
             logger.info("[Image Edit] ✅ API 调用成功")
@@ -380,7 +399,10 @@ class ImageEditService:
                 if field in output:
                     return [output[field]]
 
-        logger.error(f"[Image Edit] 无法从响应中提取图片 URL: {response_data}")
+        logger.error(
+            "[Image Edit] 无法从响应中提取图片 URL: %s",
+            _summarize_response_shape_for_log(response_data),
+        )
         raise Exception("API 返回成功但未找到图片 URL")
 
     def extract_image_url(self, response_data: dict, model: str) -> str:
@@ -435,8 +457,14 @@ class ImageEditService:
                     prompt = optimize_result.optimized_prompt
                     optimized_prompt = optimize_result.optimized_prompt
                     logger.info(f"[Image Edit] ✅ [Prompt优化] 优化成功")
-                    logger.info(f"[Image Edit]     - 原始: {original_prompt[:50]}...")
-                    logger.info(f"[Image Edit]     - 优化后: {optimized_prompt[:80]}...")
+                    logger.info(
+                        "[Image Edit]     - 原始: %s",
+                        summarize_text_for_log(original_prompt, label="original_prompt"),
+                    )
+                    logger.info(
+                        "[Image Edit]     - 优化后: %s",
+                        summarize_text_for_log(optimized_prompt, label="optimized_prompt"),
+                    )
                 else:
                     logger.warning(f"[Image Edit] ⚠️ [Prompt优化] 优化失败，使用原始 Prompt: {optimize_result.error}")
             except Exception as e:
@@ -471,7 +499,11 @@ class ImageEditService:
             result_urls = self.extract_image_urls(result, model)
             result_url = result_urls[0]
 
-            logger.info(f"[Image Edit] ✅ 图像编辑完成: {len(result_urls)} 张，首图={result_url[:60]}...")
+            logger.info(
+                "[Image Edit] ✅ 图像编辑完成: %s 张，首图=%s",
+                len(result_urls),
+                summarize_url_for_log(result_url),
+            )
 
             return ImageEditResult(
                 success=True,

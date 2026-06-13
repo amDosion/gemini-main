@@ -5,6 +5,7 @@ Interactions API 路由
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Header, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List, Union, Dict, Any
 from datetime import datetime
@@ -17,6 +18,7 @@ from ...services.common.interactions_event_utils import serialize_usage
 from ...services.llm import ProviderCredentialsResolver
 from ...core.database import get_db
 from ...core.dependencies import require_current_user
+from ...utils.log_sanitization import summarize_text_for_log
 from ...utils.sse import create_sse_response, encode_sse_data
 
 
@@ -78,6 +80,12 @@ class InteractionResponse(BaseModel):
             }
         }
     )
+
+
+class InteractionDeleteResponse(BaseModel):
+    """删除交互响应"""
+
+    message: str = Field(max_length=128)
 
 
 def _build_error_detail(
@@ -178,7 +186,13 @@ async def create_interaction(
             ),
         )
     except Exception as e:
-        logger.error("[Interactions] create_interaction failed: %s", e, exc_info=True)
+        logger.error(
+            "[Interactions] create_interaction failed: user=%s agent=%s previous=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(request.agent, label="agent"),
+            summarize_text_for_log(request.previous_interaction_id, label="previous_interaction_id"),
+            summarize_text_for_log(e, label="create_interaction_error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
@@ -218,7 +232,12 @@ async def get_interaction(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get interaction {interaction_id}: {e}")
+        logger.error(
+            "[Interactions] get_interaction failed: user=%s interaction=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(interaction_id, label="interaction_id"),
+            summarize_text_for_log(e, label="get_interaction_error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
@@ -230,7 +249,7 @@ async def get_interaction(
         )
 
 
-@router.delete("/{interaction_id}")
+@router.delete("/{interaction_id}", response_model=InteractionDeleteResponse)
 async def delete_interaction(
     interaction_id: str,
     user_id: str = Depends(require_current_user),
@@ -257,7 +276,12 @@ async def delete_interaction(
         return {"message": "Interaction deleted successfully"}
         
     except Exception as e:
-        logger.error("[Interactions] delete_interaction failed: %s", e, exc_info=True)
+        logger.error(
+            "[Interactions] delete_interaction failed: user=%s interaction=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(interaction_id, label="interaction_id"),
+            summarize_text_for_log(e, label="delete_interaction_error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
@@ -269,7 +293,23 @@ async def delete_interaction(
         )
 
 
-@router.get("/{interaction_id}/stream")
+@router.get(
+    "/{interaction_id}/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Server-sent interaction events",
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "type": "string",
+                        "maxLength": 1_000_000,
+                    }
+                }
+            },
+        }
+    },
+)
 async def stream_interaction(
     interaction_id: str,
     last_event_id_header: Optional[str] = Header(default=None, alias="Last-Event-ID"),
@@ -294,7 +334,12 @@ async def stream_interaction(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("[Interactions] Failed to resolve credentials: %s", e, exc_info=True)
+        logger.error(
+            "[Interactions] Failed to resolve credentials: user=%s interaction=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(interaction_id, label="interaction_id"),
+            summarize_text_for_log(e, label="credentials_error"),
+        )
         raise HTTPException(
             status_code=500,
             detail=_build_error_detail(
@@ -324,7 +369,13 @@ async def stream_interaction(
                 if isinstance(event_data, dict) and event_data.get("event_type") in {"interaction.complete", "error"}:
                     break
         except Exception as e:
-            logger.error("[Interactions] stream_interaction failed: %s", e, exc_info=True)
+            logger.error(
+                "[Interactions] stream_interaction failed: user=%s interaction=%s last_event=%s error=%s",
+                summarize_text_for_log(user_id, label="user_id"),
+                summarize_text_for_log(interaction_id, label="interaction_id"),
+                summarize_text_for_log(last_event_id, label="last_event_id"),
+                summarize_text_for_log(e, label="stream_interaction_error"),
+            )
             error_payload = _build_error_detail(
                 "INTERACTION_STREAM_FAILED",
                 "Failed to stream interaction",

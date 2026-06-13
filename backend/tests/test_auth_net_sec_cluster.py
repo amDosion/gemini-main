@@ -125,6 +125,20 @@ def test_forwarded_for_honored_from_trusted_proxy_cidr(monkeypatch):
     assert ip == "1.2.3.4", "trusted proxy's forwarded client IP must be honored"
 
 
+def test_invalid_forwarded_for_from_trusted_proxy_is_ignored(monkeypatch):
+    from app.services.common import system_config_service as svc
+
+    monkeypatch.setenv("TRUSTED_PROXIES", "10.0.0.0/8")
+
+    request = _make_request(
+        headers={"X-Forwarded-For": "not-an-ip, also-bad"},
+        client_host="10.0.0.5",
+    )
+
+    ip = svc.get_client_ip(request)
+    assert ip == "10.0.0.5", "invalid forwarded values must not be treated as public IPs"
+
+
 def test_forwarded_for_ignored_when_peer_outside_trusted_cidr(monkeypatch):
     from app.services.common import system_config_service as svc
 
@@ -177,6 +191,26 @@ def test_sync_validator_still_present_for_thread_callers():
     from app.utils import url_security
 
     assert hasattr(url_security, "validate_outbound_http_url")
+
+
+def test_get_ip_info_does_not_fetch_for_invalid_ip(monkeypatch):
+    from app.services.common import system_config_service as svc
+
+    class _MustNotFetch:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("invalid IP must not create an outbound HTTP client")
+
+    monkeypatch.setattr(svc.httpx, "AsyncClient", _MustNotFetch)
+
+    async def _run():
+        return await svc.get_ip_info("not-an-ip")
+
+    result = asyncio.run(_run())
+    assert result == {
+        "ip": "not-an-ip",
+        "is_private": True,
+        "note": "Private or invalid IP address",
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { X, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEscapeClose } from '../../hooks/useEscapeClose';
 import { CachedImage } from '../common/CachedImage';
+import { downloadSourceUrlInBrowser } from '../../services/downloadService';
+import { isSameOriginBlobUrl, toSafeNewTabUrl } from '../../utils/safeOpen';
 
 interface ImageModalProps {
   isOpen: boolean;
@@ -15,6 +17,15 @@ interface ImageModalProps {
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+const isSafeModalImageUrl = (url: string): boolean => {
+  const trimmed = url.trim();
+  const lowered = trimmed.toLowerCase();
+  if (lowered.startsWith('/api/storage/')) return true;
+  if (/^data:image\/[^;,]+;base64,/i.test(trimmed)) return true;
+  if (isSameOriginBlobUrl(trimmed)) return true;
+  return toSafeNewTabUrl(trimmed) !== null;
+};
 
 const ImageModal: React.FC<ImageModalProps> = ({
   isOpen,
@@ -91,16 +102,17 @@ const ImageModal: React.FC<ImageModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, hasNext, hasPrev, onNext, onPrev]);
 
-  if (!isOpen || !imageUrl) return null;
+  const safeImageUrl = imageUrl?.trim() || null;
+  if (!isOpen || !safeImageUrl || !isSafeModalImageUrl(safeImageUrl)) return null;
 
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const link = document.createElement('a');
-    link.href = imageUrl;
-    link.download = `gemini-generated-${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    void downloadSourceUrlInBrowser({
+      sourceUrl: safeImageUrl,
+      fileName: `gemini-generated-${Date.now()}.png`,
+    }).catch((error) => {
+      console.warn('[ImageModal] Download blocked or failed:', error);
+    });
   };
 
   return (
@@ -159,9 +171,9 @@ const ImageModal: React.FC<ImageModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         <CachedImage
-          src={imageUrl}
+          src={safeImageUrl}
           source={{
-            url: imageUrl,
+            url: safeImageUrl,
             mimeType: 'image/png',
           }}
           alt="Full screen preview"
@@ -180,7 +192,7 @@ const ImageModal: React.FC<ImageModalProps> = ({
           </button>
           <div className="w-px h-4 bg-white/20" />
           <span className="text-xs text-white/50 whitespace-nowrap">
-            {imageUrl.startsWith('data:') ? 'Generated Result' : 'Image Preview'}
+            {safeImageUrl.startsWith('data:') ? 'Generated Result' : 'Image Preview'}
           </span>
         </div>
       </div>

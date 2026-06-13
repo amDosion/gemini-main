@@ -7,6 +7,7 @@ import {
 import { type MediaCacheIdentity } from './mediaCacheTypes';
 import { canUseCacheStorage, isTemporaryUrl, normalizeString } from './mediaCacheObjectUrls';
 import { recordDiagnostic } from './mediaCacheDiagnostics';
+import { isSafeInlineImageDataUrl } from '../utils/safeMediaDataUrl';
 
 const MEDIA_CACHE_NAME = 'gemini-ai-media-cache-v1';
 const MEDIA_CACHE_REQUEST_PREFIX = '/__gemini_media_cache__/';
@@ -176,22 +177,21 @@ export const persistCachedMedia = async (
 };
 
 const decodeDataUrlToBlob = (dataUrl: string): Blob | null => {
-  const match = dataUrl.match(/^data:([^;,]+)?((?:;[^,]*)?),(.*)$/i);
+  if (!isSafeInlineImageDataUrl(dataUrl)) return null;
+
+  const match = /^data:([^;,]+);base64,([a-z0-9+/=\s]+)$/i.exec(dataUrl);
   if (!match) return null;
 
-  const contentType = match[1] || 'application/octet-stream';
-  const metadata = match[2] || '';
-  const payload = match[3] || '';
+  const contentType = match[1].toLowerCase();
+  const payload = match[2].replace(/\s/g, '');
+  const paddedPayload = payload + '='.repeat((4 - (payload.length % 4)) % 4);
   try {
-    if (metadata.toLowerCase().includes(';base64')) {
-      const binary = atob(payload);
-      const bytes = new Uint8Array(binary.length);
-      for (let index = 0; index < binary.length; index += 1) {
-        bytes[index] = binary.charCodeAt(index);
-      }
-      return new Blob([bytes], { type: contentType });
+    const binary = atob(paddedPayload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
     }
-    return new Blob([decodeURIComponent(payload)], { type: contentType });
+    return new Blob([bytes], { type: contentType });
   } catch {
     return null;
   }

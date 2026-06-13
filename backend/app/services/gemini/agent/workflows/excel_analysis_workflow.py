@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from ....agent.agent_llm_service import AgentLLMService
 from ....agent.workflow_engine import WorkflowEngine
+from .....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +220,7 @@ class ExcelAnalysisWorkflow:
 
         logger.info(
             "[ExcelAnalysisWorkflow] Starting execution: source=%s analysis_type=%s",
-            normalized_file_reference,
+            summarize_text_for_log(normalized_file_reference, label="file_reference"),
             normalized_analysis_type,
         )
 
@@ -301,7 +302,11 @@ class ExcelAnalysisWorkflow:
                 "errors": errors if isinstance(errors, dict) else {},
             }
         except Exception as e:
-            logger.error(f"[ExcelAnalysisWorkflow] Execution failed: {e}", exc_info=True)
+            logger.error(
+                "[ExcelAnalysisWorkflow] Execution failed: source=%s error=%s",
+                summarize_text_for_log(normalized_file_reference, label="file_reference"),
+                summarize_text_for_log(e, label="workflow_error"),
+            )
             return {
                 "success": False,
                 "workflow": "excel_analysis",

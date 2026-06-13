@@ -9,10 +9,26 @@ import binascii
 import csv
 import io
 import json
+import os
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import unquote_to_bytes
 from ....utils.attachment_handler import is_base64_url
+
+
+DEFAULT_DATA_URL_MAX_BYTES = 20 * 1024 * 1024
+
+
+def _load_data_url_max_bytes() -> int:
+    raw_value = os.getenv("WORKFLOW_DATA_URL_MAX_BYTES", str(DEFAULT_DATA_URL_MAX_BYTES))
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_DATA_URL_MAX_BYTES
+    return max(1024, value)
+
+
+DATA_URL_MAX_BYTES = _load_data_url_max_bytes()
 
 
 def build_node_input_snapshot(engine: Any, input_packets: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -252,6 +268,8 @@ def decode_data_url(engine: Any, data_url: str) -> Tuple[str, bytes]:
     _ = engine
     if not isinstance(data_url, str) or not is_base64_url(data_url):
         raise ValueError("不是合法的 data URL")
+    if len(data_url) > DATA_URL_MAX_BYTES * 4:
+        raise ValueError(f"data URL 超过 {DATA_URL_MAX_BYTES} 字节上限")
 
     header, payload = data_url.split(",", 1) if "," in data_url else ("", "")
     if not header:
@@ -263,16 +281,30 @@ def decode_data_url(engine: Any, data_url: str) -> Tuple[str, bytes]:
         mime_type = mime_and_flags.split(";", 1)[0] or mime_type
 
     if ";base64" in header.lower():
+        compact_payload = re.sub(r"\s+", "", payload)
+        if len(compact_payload) > ((DATA_URL_MAX_BYTES + 2) // 3) * 4 + 16:
+            raise ValueError(f"data URL 超过 {DATA_URL_MAX_BYTES} 字节上限")
+        remainder = len(compact_payload) % 4
+        if remainder == 1:
+            raise ValueError("data URL base64 解码失败")
+        padded_payload = compact_payload + ("=" * ((4 - remainder) % 4))
         try:
-            data = base64.b64decode(payload, validate=False)
+            data = base64.b64decode(padded_payload, validate=True)
         except (binascii.Error, ValueError) as exc:
             raise ValueError("data URL base64 解码失败") from exc
+        if len(data) > DATA_URL_MAX_BYTES:
+            raise ValueError(f"data URL 超过 {DATA_URL_MAX_BYTES} 字节上限")
         return mime_type.lower(), data
 
+    if len(payload) > DATA_URL_MAX_BYTES * 3:
+        raise ValueError(f"data URL 超过 {DATA_URL_MAX_BYTES} 字节上限")
     try:
-        return mime_type.lower(), unquote_to_bytes(payload)
+        decoded = unquote_to_bytes(payload)
     except Exception as exc:
         raise ValueError("data URL URL 编码解码失败") from exc
+    if len(decoded) > DATA_URL_MAX_BYTES:
+        raise ValueError(f"data URL 超过 {DATA_URL_MAX_BYTES} 字节上限")
+    return mime_type.lower(), decoded
 
 
 def decode_bytes_to_text(engine: Any, content: bytes) -> str:

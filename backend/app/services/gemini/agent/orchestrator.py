@@ -20,6 +20,7 @@ from .agent_matcher import AgentMatcher
 from .execution_graph import ExecutionGraph
 from .base_agent_executor import BaseAgentExecutor
 from .adk_runner import compute_adk_accuracy_signals
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +159,10 @@ class Orchestrator:
                     raise RuntimeError(
                         f"ORCHESTRATOR_NO_DEGRADE: smart decomposition failed in strict mode: {e}"
                     ) from e
-                logger.error(f"[Orchestrator] Smart decomposition failed: {e}, falling back to simple decomposition")
+                logger.error(
+                    "[Orchestrator] Smart decomposition failed: %s; falling back to simple decomposition",
+                    summarize_text_for_log(e, label="decomposition_error"),
+                )
                 subtasks = self._decompose_task_simple(task, len(selected_agents))
         else:
             subtasks = self._decompose_task_simple(task, len(selected_agents))
@@ -243,7 +247,10 @@ class Orchestrator:
                     )
 
                     if not matched_agent:
-                        logger.warning(f"[Orchestrator] No agent matched for subtask: {subtask.description}")
+                        logger.warning(
+                            "[Orchestrator] No agent matched for subtask: %s",
+                            summarize_text_for_log(subtask.description, label="subtask"),
+                        )
                         results[subtask.id] = {
                             "subtask_id": subtask.id,
                             "subtask": subtask.description,
@@ -272,7 +279,11 @@ class Orchestrator:
 
                 for (task_id, _), result in zip(level_tasks, task_results):
                     if isinstance(result, Exception):
-                        logger.error(f"[Orchestrator] Error executing subtask {task_id}: {result}")
+                        logger.error(
+                            "[Orchestrator] Error executing subtask %s: %s",
+                            task_id,
+                            summarize_text_for_log(result, label="subtask_error"),
+                        )
                         results[task_id] = {
                             "subtask_id": task_id,
                             "error": str(result)
@@ -302,7 +313,10 @@ class Orchestrator:
                     )
 
                     if not matched_agent:
-                        logger.warning(f"[Orchestrator] No agent matched for subtask: {subtask.description}")
+                        logger.warning(
+                            "[Orchestrator] No agent matched for subtask: %s",
+                            summarize_text_for_log(subtask.description, label="subtask"),
+                        )
                         results.append({
                             "subtask_id": subtask.id,
                             "subtask": subtask.description,
@@ -333,7 +347,10 @@ class Orchestrator:
                 results.append(result)
 
             except Exception as e:
-                logger.error(f"[Orchestrator] Error executing subtask: {e}", exc_info=True)
+                logger.error(
+                    "[Orchestrator] Error executing subtask: %s",
+                    summarize_text_for_log(e, label="subtask_error"),
+                )
                 error_result = {
                     "error": str(e),
                     "subtask": subtask.description if isinstance(subtask, SubTask) else str(subtask)

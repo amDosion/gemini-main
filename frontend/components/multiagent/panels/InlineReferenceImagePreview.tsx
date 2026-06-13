@@ -1,6 +1,9 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { CachedImage } from '../../common/CachedImage';
+import { isSameOriginBlobUrl } from '../../../utils/safeOpen';
+import { isSafeInlineImageDataUrl } from '../../../utils/safeMediaDataUrl';
+import { INLINE_UPLOAD_MAX_BYTES } from '../uploadHandlers';
 
 export interface InlineReferenceImagePreviewProps {
   imageUrl?: string | null;
@@ -9,9 +12,22 @@ export interface InlineReferenceImagePreviewProps {
   onClear: () => void;
 }
 
-const isPreviewableReferenceImageUrl = (value: string | null | undefined): value is string => {
+export const isPreviewableReferenceImageUrl = (
+  value: string | null | undefined,
+  maxInlineBytes = INLINE_UPLOAD_MAX_BYTES
+): value is string => {
   const url = (value || '').trim();
-  return /^(data:image\/|blob:|https?:\/\/|\/api\/storage\/)/i.test(url);
+  if (!url) return false;
+  if (isSafeInlineImageDataUrl(url, maxInlineBytes)) return true;
+  if (isSameOriginBlobUrl(url)) return true;
+  if (url.startsWith('/api/storage/')) return true;
+
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 };
 
 export const InlineReferenceImagePreview: React.FC<InlineReferenceImagePreviewProps> = ({

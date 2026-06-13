@@ -24,6 +24,8 @@ from typing import Optional, Dict, Any, Set
 from cryptography.fernet import Fernet, InvalidToken
 import logging
 
+from ..utils.log_sanitization import summarize_text_for_log
+
 logger = logging.getLogger(__name__)
 
 
@@ -166,7 +168,10 @@ def encrypt_data(data: str) -> str:
         encrypted = fernet.encrypt(data.encode())
         return base64.b64encode(encrypted).decode()
     except Exception as e:
-        logger.error(f"[Encryption] Failed to encrypt data: {e}")
+        logger.error(
+            "[Encryption] Failed to encrypt data: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise
 
 
@@ -196,7 +201,10 @@ def decrypt_data(encrypted_data: str, silent: bool = False) -> str:
     except ValueError as e:
         # ENCRYPTION_KEY 未设置，这是配置问题
         if not silent:
-            logger.error(f"[Encryption] ENCRYPTION_KEY not configured: {e}")
+            logger.error(
+                "[Encryption] ENCRYPTION_KEY not configured: %s",
+                summarize_text_for_log(e, label="error"),
+            )
         raise
     except Exception as e:
         # 其他解密失败（可能是密钥不匹配、数据格式错误等）
@@ -204,7 +212,11 @@ def decrypt_data(encrypted_data: str, silent: bool = False) -> str:
         if silent:
             logger.debug(f"[Encryption] Decryption failed (silent mode): {type(e).__name__}")
         else:
-            logger.warning(f"[Encryption] Failed to decrypt data: {type(e).__name__}: {e}")
+            logger.warning(
+                "[Encryption] Failed to decrypt data: %s type=%s",
+                summarize_text_for_log(e, label="error"),
+                type(e).__name__,
+            )
         raise
 
 
@@ -321,7 +333,10 @@ def encrypt_config(config: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         # core-4: do NOT return the plaintext config on failure. Encryption of
         # sensitive fields must be all-or-nothing; surface the error to the caller.
-        logger.error(f"[Encryption] Encryption failed (failing closed): {e}")
+        logger.error(
+            "[Encryption] Encryption failed (failing closed): %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise
 
 

@@ -12,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 
 from .path_utils import ensure_credentials_dir
+from ..utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,11 @@ async def setup_logger_configuration(log_prefixes: Dict[str, str]):
         logger.info(f"{log_prefixes['success']} Logger configuration ensured in lifespan")
         logger.info(f"{log_prefixes['info']} Root logger handlers: {diag['handlers_count']} (expected: 1)")
     except Exception as e:
-        logger.warning(f"{log_prefixes['warning']} Failed to ensure logger configuration: {e}")
+        logger.warning(
+            "%s Failed to ensure logger configuration: %s",
+            log_prefixes["warning"],
+            summarize_text_for_log(e, label="error"),
+        )
 
 
 def assert_jwt_secret_configured(log_prefixes: Dict[str, str]) -> None:
@@ -174,7 +179,11 @@ async def initialize_database_schema(log_prefixes: Dict[str, str]):
         Base.metadata.create_all(bind=engine)
         logger.info(f"{log_prefixes['success']} Database tables initialized")
     except Exception as e:
-        logger.warning(f"{log_prefixes['warning']} Database initialization failed: {e}")
+        logger.warning(
+            "%s Database initialization failed: %s",
+            log_prefixes["warning"],
+            summarize_text_for_log(e, label="error"),
+        )
 
 
 async def initialize_encryption_keys(log_prefixes: Dict[str, str]):
@@ -206,7 +215,11 @@ async def initialize_encryption_keys(log_prefixes: Dict[str, str]):
         jwt_secret = JWTSecretManager.get_or_create_secret()
         logger.info(f"{log_prefixes['success']} JWT_SECRET_KEY 已初始化（长度: {len(jwt_secret)}）")
     except Exception as e:
-        logger.error(f"{log_prefixes['error']} 密钥初始化失败: {e}")
+        logger.error(
+            "%s 密钥初始化失败: %s",
+            log_prefixes["error"],
+            summarize_text_for_log(e, label="error"),
+        )
         raise
 
 
@@ -228,7 +241,11 @@ async def initialize_system_config(log_prefixes: Dict[str, str]):
         finally:
             db.close()
     except Exception as e:
-        logger.warning(f"{log_prefixes['warning']} Failed to initialize system config: {e}")
+        logger.warning(
+            "%s Failed to initialize system config: %s",
+            log_prefixes["warning"],
+            summarize_text_for_log(e, label="error"),
+        )
 
 
 async def migrate_user_admin_schema(log_prefixes: Dict[str, str]):
@@ -270,7 +287,11 @@ async def migrate_user_admin_schema(log_prefixes: Dict[str, str]):
         finally:
             db.close()
     except Exception as e:
-        logger.warning(f"{log_prefixes['warning']} Failed to migrate users.is_admin schema: {e}")
+        logger.warning(
+            "%s Failed to migrate users.is_admin schema: %s",
+            log_prefixes["warning"],
+            summarize_text_for_log(e, label="error"),
+        )
 
 
 async def migrate_ip_login_history_index(log_prefixes: Dict[str, str]):
@@ -355,7 +376,11 @@ async def migrate_workflow_idempotency_schema(log_prefixes: Dict[str, str]):
             f"{log_prefixes['success']} Ensured workflow idempotency unique index"
         )
     except Exception as e:
-        logger.warning(f"{log_prefixes['warning']} Failed to migrate workflow idempotency schema: {e}")
+        logger.warning(
+            "%s Failed to migrate workflow idempotency schema: %s",
+            log_prefixes["warning"],
+            summarize_text_for_log(e, label="error"),
+        )
 
 
 async def ensure_performance_indexes(log_prefixes: Dict[str, str]):
@@ -420,7 +445,11 @@ async def ensure_performance_indexes(log_prefixes: Dict[str, str]):
                 log_prefixes=log_prefixes,
             )
     except Exception as e:
-        logger.warning(f"{log_prefixes['warning']} Failed to ensure performance indexes: {e}")
+        logger.warning(
+            "%s Failed to ensure performance indexes: %s",
+            log_prefixes["warning"],
+            summarize_text_for_log(e, label="error"),
+        )
 
 
 async def initialize_redis_pool(log_prefixes: Dict[str, str]):
@@ -437,10 +466,12 @@ async def initialize_redis_pool(log_prefixes: Dict[str, str]):
         await global_redis_pool.initialize()
         logger.info(f"{log_prefixes['success']} Global Redis connection pool initialized")
     except Exception as e:
-        logger.error(f"{log_prefixes['error']} Failed to initialize global Redis connection pool: {e}")
+        logger.error(
+            "%s Failed to initialize global Redis connection pool: %s",
+            log_prefixes["error"],
+            summarize_text_for_log(e, label="error"),
+        )
         logger.error("WARNING: Application will continue but Redis operations may fail!")
-        import traceback
-        traceback.print_exc()
 
 
 async def cleanup_expired_tokens(log_prefixes: Dict[str, str]):
@@ -472,7 +503,11 @@ async def cleanup_expired_tokens(log_prefixes: Dict[str, str]):
         finally:
             db.close()
     except Exception as e:
-        logger.warning(f"{log_prefixes['warning']} Failed to cleanup refresh tokens: {e}")
+        logger.warning(
+            "%s Failed to cleanup refresh tokens: %s",
+            log_prefixes["warning"],
+            summarize_text_for_log(e, label="error"),
+        )
 
 
 async def reconcile_orphan_workflow_executions(
@@ -547,7 +582,11 @@ async def reconcile_orphan_workflow_executions(
         finally:
             db.close()
     except Exception as e:
-        logger.warning(f"{log_prefixes['warning']} Failed to reconcile orphan workflow executions: {e}")
+        logger.warning(
+            "%s Failed to reconcile orphan workflow executions: %s",
+            log_prefixes["warning"],
+            summarize_text_for_log(e, label="error"),
+        )
 
 
 async def validate_provider_configs(log_prefixes: Dict[str, str]):
@@ -570,7 +609,11 @@ async def validate_provider_configs(log_prefixes: Dict[str, str]):
         else:
             logger.info(f"{log_prefixes['success']} All provider configurations validated successfully")
     except Exception as e:
-        logger.error(f"{log_prefixes['error']} Failed to validate provider configurations: {e}")
+        logger.error(
+            "%s Failed to validate provider configurations: %s",
+            log_prefixes["error"],
+            summarize_text_for_log(e, label="error"),
+        )
         logger.error("WARNING: Application will continue but some providers may not work correctly!")
 
 
@@ -595,7 +638,11 @@ async def start_worker_pool(
         from .config import settings
         worker_mode = settings.worker_mode.lower()
     except Exception as e:
-        logger.warning(f"{log_prefixes['warning']} Could not read worker_mode from settings: {e}, using 'embedded'")
+        logger.warning(
+            "%s Could not read worker_mode from settings: %s, using 'embedded'",
+            log_prefixes["warning"],
+            summarize_text_for_log(e, label="error"),
+        )
         worker_mode = "embedded"
 
     if worker_pool_available and worker_mode != "disabled":
@@ -608,10 +655,12 @@ async def start_worker_pool(
                 logger.info(f"{log_prefixes['success']} Worker pool startup verification passed (on-demand mode)")
                 logger.info(f"{log_prefixes['info']} Workers will start on-demand when tasks are submitted")
             except Exception as e:
-                logger.error(f"{log_prefixes['error']} Failed to start upload worker pool: {e}")
+                logger.error(
+                    "%s Failed to start upload worker pool: %s",
+                    log_prefixes["error"],
+                    summarize_text_for_log(e, label="error"),
+                )
                 logger.error("WARNING: Application will continue but async uploads will NOT work!")
-                import traceback
-                traceback.print_exc()
         else:
             logger.warning(f"{log_prefixes['warning']} Unknown worker_mode: {worker_mode}, valid values: 'embedded', 'disabled'")
             logger.warning(f"{log_prefixes['warning']} Falling back to 'embedded' mode")
@@ -619,7 +668,11 @@ async def start_worker_pool(
                 await worker_pool.start()
                 logger.info(f"{log_prefixes['success']} Upload worker pool started (fallback to embedded mode)")
             except Exception as e:
-                logger.error(f"{log_prefixes['error']} Failed to start upload worker pool: {e}")
+                logger.error(
+                    "%s Failed to start upload worker pool: %s",
+                    log_prefixes["error"],
+                    summarize_text_for_log(e, label="error"),
+                )
     elif worker_mode == "disabled":
         logger.info(f"{log_prefixes['info']} Worker mode is 'disabled', skipping worker startup")
         logger.info(f"{log_prefixes['info']} Make sure an external worker service is running")
@@ -654,7 +707,11 @@ async def run_all_startup_tasks(
     try:
         ensure_credentials_dir()
     except OSError as e:
-        logger.error(f"{log_prefixes['error']} Failed to ensure credentials dir: {e}")
+        logger.error(
+            "%s Failed to ensure credentials dir: %s",
+            log_prefixes["error"],
+            summarize_text_for_log(e, label="error"),
+        )
         raise
 
     # 1.6 JWT_SECRET_KEY 前置校验（fail-fast）。

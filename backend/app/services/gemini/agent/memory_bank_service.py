@@ -30,6 +30,7 @@ from ....models.db_models import (
     MessagesImageBackgroundEdit,
     MessagesImageRecontext,
 )
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +204,11 @@ class InMemoryMemoryService(BaseMemoryService):
         }
 
         self._memories.setdefault(user_id, []).append(memory)
-        logger.info("[InMemoryMemoryService] Added session %s to memory for user %s", session_id, user_id)
+        logger.info(
+            "[InMemoryMemoryService] Added session to memory: session=%s user=%s",
+            summarize_text_for_log(session_id, label="session_id"),
+            summarize_text_for_log(user_id, label="user_id"),
+        )
         return [memory]
 
     async def search_memory(
@@ -244,7 +249,11 @@ class InMemoryMemoryService(BaseMemoryService):
             "created_at": int(time.time() * 1000),
         }
         self._memories.setdefault(user_id, []).append(memory)
-        logger.info("[InMemoryMemoryService] Created memory %s for user %s", memory_id, user_id)
+        logger.info(
+            "[InMemoryMemoryService] Created memory: memory=%s user=%s",
+            summarize_text_for_log(memory_id, label="memory_id"),
+            summarize_text_for_log(user_id, label="user_id"),
+        )
         return memory
 
     async def get_memory(
@@ -266,7 +275,11 @@ class InMemoryMemoryService(BaseMemoryService):
         for i, memory in enumerate(memories):
             if memory.get("id") == memory_id:
                 del memories[i]
-                logger.info("[InMemoryMemoryService] Deleted memory %s for user %s", memory_id, user_id)
+                logger.info(
+                    "[InMemoryMemoryService] Deleted memory: memory=%s user=%s",
+                    summarize_text_for_log(memory_id, label="memory_id"),
+                    summarize_text_for_log(user_id, label="user_id"),
+                )
                 return True
         return False
 
@@ -317,14 +330,17 @@ class VertexAiMemoryBankService(BaseMemoryService):
             # 不调 vertexai.init()：它会修改进程级全局 project/location 默认值。
             # 后续 _get_or_create_adk_service 中 ADKMemoryBankService(project=self.project,
             # location=self.location, ...) 显式传参，不需要全局状态。
-        except Exception:
+        except Exception as exc:
             self._vertexai_available = False
-            logger.warning("[VertexAiMemoryBankService] Vertex/ADK memory SDK not available", exc_info=True)
+            logger.warning(
+                "[VertexAiMemoryBankService] Vertex/ADK memory SDK not available: error=%s",
+                summarize_text_for_log(exc, label="vertex_memory_import_error"),
+            )
 
         logger.info(
             "[VertexAiMemoryBankService] Initialized (project=%s, location=%s, vertex_available=%s)",
-            self.project,
-            self.location,
+            summarize_text_for_log(self.project, label="project"),
+            summarize_text_for_log(self.location, label="location"),
             self._vertexai_available,
         )
 
@@ -387,11 +403,11 @@ class VertexAiMemoryBankService(BaseMemoryService):
             )
             self._adk_service_engine_id = target_engine_id
             return self._adk_service
-        except Exception:
+        except Exception as exc:
             logger.warning(
-                "[VertexAiMemoryBankService] Failed to initialize ADK memory service (engine_id=%s)",
-                target_engine_id,
-                exc_info=True,
+                "[VertexAiMemoryBankService] Failed to initialize ADK memory service: engine=%s error=%s",
+                summarize_text_for_log(target_engine_id, label="engine_id"),
+                summarize_text_for_log(exc, label="adk_memory_service_error"),
             )
             self._adk_service = None
             self._adk_service_engine_id = None
@@ -450,7 +466,11 @@ class VertexAiMemoryBankService(BaseMemoryService):
         messages = self._load_session_messages(user_id=user_id, session_id=session_id)
 
         if not messages:
-            logger.warning("[VertexAiMemoryBankService] No messages found for session %s", session_id)
+            logger.warning(
+                "[VertexAiMemoryBankService] No messages found for session: session=%s user=%s",
+                summarize_text_for_log(session_id, label="session_id"),
+                summarize_text_for_log(user_id, label="user_id"),
+            )
             return []
 
         await self._touch_memory_session(
@@ -473,14 +493,17 @@ class VertexAiMemoryBankService(BaseMemoryService):
                     await self._maybe_await(adk_service.add_session_to_memory(adk_session))
                     indexed_by_vertex = True
                     logger.info(
-                        "[VertexAiMemoryBankService] Indexed session %s to Vertex Memory Bank %s",
-                        session_id,
-                        memory_bank.vertex_memory_bank_id,
+                        "[VertexAiMemoryBankService] Indexed session to Vertex Memory Bank: session=%s bank=%s",
+                        summarize_text_for_log(session_id, label="session_id"),
+                        summarize_text_for_log(memory_bank.vertex_memory_bank_id, label="memory_bank_id"),
                     )
-                except Exception:
+                except Exception as exc:
                     logger.error(
-                        "[VertexAiMemoryBankService] ADK add_session_to_memory failed; fallback to DB snapshot",
-                        exc_info=True,
+                        "[VertexAiMemoryBankService] ADK add_session_to_memory failed; fallback to DB snapshot: "
+                        "session=%s bank=%s error=%s",
+                        summarize_text_for_log(session_id, label="session_id"),
+                        summarize_text_for_log(memory_bank.id, label="memory_bank_id"),
+                        summarize_text_for_log(exc, label="adk_add_session_error"),
                     )
 
         return await self._add_session_to_memory_db(
@@ -609,8 +632,14 @@ class VertexAiMemoryBankService(BaseMemoryService):
                 parsed = self._parse_adk_search_results(raw_response, limit=limit)
                 if parsed:
                     return parsed
-            except Exception:
-                logger.error("[VertexAiMemoryBankService] Error searching vertex memory", exc_info=True)
+            except Exception as exc:
+                logger.error(
+                    "[VertexAiMemoryBankService] Error searching vertex memory: user=%s bank=%s query=%s error=%s",
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(memory_bank.id, label="memory_bank_id"),
+                    summarize_text_for_log(query, label="query"),
+                    summarize_text_for_log(exc, label="vertex_memory_search_error"),
+                )
 
         return await self._search_memory_db(user_id, query, memory_bank.id, limit)
 
@@ -654,7 +683,11 @@ class VertexAiMemoryBankService(BaseMemoryService):
         self.db.commit()
         self.db.refresh(memory)
 
-        logger.info("[VertexAiMemoryBankService] Created memory %s for user %s", memory.id, user_id)
+        logger.info(
+            "[VertexAiMemoryBankService] Created memory: memory=%s user=%s",
+            summarize_text_for_log(memory.id, label="memory_id"),
+            summarize_text_for_log(user_id, label="user_id"),
+        )
         return memory.to_dict()
 
     async def get_memory(
@@ -684,7 +717,11 @@ class VertexAiMemoryBankService(BaseMemoryService):
         if memory:
             self.db.delete(memory)
             self.db.commit()
-            logger.info("[VertexAiMemoryBankService] Deleted memory %s for user %s", memory_id, user_id)
+            logger.info(
+                "[VertexAiMemoryBankService] Deleted memory: memory=%s user=%s",
+                summarize_text_for_log(memory_id, label="memory_id"),
+                summarize_text_for_log(user_id, label="user_id"),
+            )
             return True
 
         return False
@@ -725,5 +762,9 @@ class VertexAiMemoryBankService(BaseMemoryService):
         self.db.commit()
         self.db.refresh(memory_bank)
 
-        logger.info("[VertexAiMemoryBankService] Created memory bank %s for user %s", memory_bank.id, user_id)
+        logger.info(
+            "[VertexAiMemoryBankService] Created memory bank: bank=%s user=%s",
+            summarize_text_for_log(memory_bank.id, label="memory_bank_id"),
+            summarize_text_for_log(user_id, label="user_id"),
+        )
         return memory_bank

@@ -6,6 +6,7 @@ It supports caching to improve performance and reduce API calls.
 """
 
 from fastapi import APIRouter, HTTPException, Query, Depends, Header
+from pydantic import BaseModel, Field, RootModel
 from sqlalchemy.orm import Session
 from typing import List, Optional, Tuple, Any, Dict
 import logging
@@ -40,6 +41,7 @@ from ...services.common.tongyi_model_catalog import get_static_tongyi_media_mode
 from ...services.common.openai_model_catalog import get_static_openai_media_model_entries
 from ...core.mode_method_mapper import get_mode_catalog
 from ..system.admin import require_admin_user
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +79,43 @@ MODE_DEFAULT_MODEL_IDS = {
 # while we're inside the freshness window.
 _cache_ttl = 3600  # 1 hour in seconds
 _model_cache: TTLCache = TTLCache(maxsize=200, ttl=_cache_ttl)
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+
+
+class ModelCacheClearResponse(BaseModel):
+    message: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    redis_keys_deleted: int = Field(ge=0, le=1_000_000)
+    pattern: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class ModelCacheStatusEntry(BaseModel):
+    cached: bool
+    model_count: int = Field(ge=0, le=10_000)
+    age_seconds: int = Field(ge=0, le=86_400)
+    expires_in_seconds: int = Field(ge=0, le=_cache_ttl)
+    valid: bool
+
+
+class ModelCacheStatusResponse(RootModel[Dict[str, ModelCacheStatusEntry]]):
+    pass
+
+
+class ModelListResponse(BaseModel):
+    models: List[ModelConfig] = Field(max_length=10_000)
+    cached: bool
+    provider: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    filtered_by_mode: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )
+    profile_scope: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    default_model_id: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )
+    mode_catalog: List[Dict[str, Any]] = Field(max_length=512)
 
 
 # ==================== Helper Functions ====================
@@ -896,7 +935,7 @@ def clear_cache(provider: Optional[str] = None) -> None:
 
 # ==================== API Endpoints ====================
 
-@router.get("/{provider}")
+@router.get("/{provider}", response_model=ModelListResponse)
 @case_conversion_options(always_convert_response=True)
 async def get_available_models(
     provider: str,
@@ -1017,7 +1056,10 @@ async def get_available_models(
                 models = [ModelConfig(**m) for m in cached_models_dict]
                 logger.info(f"[Models] ✅ 返回缓存模型: {len(models)} 个模型 (耗时: {time.time() - start_time:.2f}s)")
             except Exception as e:
-                logger.warning(f"[Models] 缓存获取失败，使用直接查询: {e}")
+                logger.warning(
+                    "[Models] 缓存获取失败，使用直接查询: %s",
+                    summarize_text_for_log(e, label="error"),
+                )
                 models_dict = await fetch_models()
                 models = [ModelConfig(**m) for m in models_dict]
                 logger.info(f"[Models] ✅ 直接查询结果: {len(models)} 个模型")
@@ -1088,11 +1130,15 @@ async def get_available_models(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Models] Error getting models for {provider}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Models] Error getting models for %s: %s",
+            provider,
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to get models")
 
 
-@router.delete("/{provider}/cache")
+@router.delete("/{provider}/cache", response_model=ModelCacheClearResponse)
 async def clear_model_cache(
     provider: str,
     user_id: str = Depends(require_current_user),
@@ -1125,7 +1171,7 @@ async def clear_model_cache(
     }
 
 
-@router.delete("/cache")
+@router.delete("/cache", response_model=ModelCacheClearResponse)
 async def clear_all_model_cache(
     _: str = Depends(require_admin_user),
     cache = Depends(get_cache)
@@ -1155,7 +1201,7 @@ async def clear_all_model_cache(
     }
 
 
-@router.get("/cache/status")
+@router.get("/cache/status", response_model=ModelCacheStatusResponse)
 async def get_cache_status(_: str = Depends(require_current_user)):
     """Get cache status for all providers."""
     current_time = time.time()

@@ -22,6 +22,7 @@
 from typing import Optional, Dict, Any, Union, List
 import logging
 from .common import BaseModel
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -192,19 +193,48 @@ class InteractionsResource:
         
         # Create interaction using official SDK
         try:
-            logger.debug(f"[InteractionsResource.create] Creating interaction with params: agent={agent}, background={background}, has_agent_config={bool(final_agent_config)}, has_tools={bool(tools)}")
+            logger.debug(
+                "[InteractionsResource.create] Creating interaction: agent=%s background=%s "
+                "has_agent_config=%s has_tools=%s",
+                summarize_text_for_log(agent, label="agent"),
+                background,
+                bool(final_agent_config),
+                bool(tools),
+            )
             official_interaction = self._client.interactions.create(**create_params)
-            logger.debug(f"[InteractionsResource.create] Successfully created interaction: id={official_interaction.id if hasattr(official_interaction, 'id') else 'N/A'}, status={official_interaction.status if hasattr(official_interaction, 'status') else 'N/A'}")
+            logger.debug(
+                "[InteractionsResource.create] Successfully created interaction: id=%s status=%s",
+                summarize_text_for_log(
+                    getattr(official_interaction, "id", None),
+                    label="interaction_id",
+                ),
+                summarize_text_for_log(
+                    getattr(official_interaction, "status", None),
+                    label="interaction_status",
+                ),
+            )
         except Exception as e:
-            logger.error(f"[InteractionsResource.create] Failed to create interaction: {type(e).__name__}: {str(e)}", exc_info=True)
+            logger.error(
+                "[InteractionsResource.create] Failed to create interaction: agent=%s error_type=%s error=%s",
+                summarize_text_for_log(agent, label="agent"),
+                type(e).__name__,
+                summarize_text_for_log(e, label="create_interaction_error"),
+            )
             raise
         
         # Convert to compatibility format
         try:
             return Interaction.from_official(official_interaction)
         except Exception as e:
-            logger.error(f"[InteractionsResource.create] Failed to convert interaction: {type(e).__name__}: {str(e)}", exc_info=True)
-            logger.error(f"[InteractionsResource.create] Official interaction type: {type(official_interaction)}, attributes: {dir(official_interaction) if hasattr(official_interaction, '__dict__') else 'N/A'}")
+            attributes = dir(official_interaction) if hasattr(official_interaction, "__dict__") else []
+            logger.error(
+                "[InteractionsResource.create] Failed to convert interaction: official_type=%s "
+                "attribute_count=%s error_type=%s error=%s",
+                type(official_interaction).__name__,
+                len(attributes),
+                type(e).__name__,
+                summarize_text_for_log(e, label="convert_interaction_error"),
+            )
             raise
     
     def get(self, id: str, stream: bool = False, last_event_id: Optional[str] = None) -> Interaction:

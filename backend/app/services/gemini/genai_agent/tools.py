@@ -17,6 +17,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+FILE_SEARCH_ALLOWED_ROOTS_ENV = "GEMINI_TOOL_FILE_SEARCH_ALLOWED_ROOTS"
+LOCAL_CODE_EXECUTION_ENABLED_ENV = "GEMINI_TOOL_LOCAL_CODE_EXECUTION_ENABLED"
+
 
 async def _kill_process_quietly(process: Optional["asyncio.subprocess.Process"]) -> None:
     """Best-effort terminate-and-reap of a subprocess.
@@ -160,6 +163,12 @@ class ToolManager:
     
     def _register_code_execution(self):
         """注册 Code Execution 工具"""
+        if not self._is_local_code_execution_enabled():
+            logger.info(
+                "[ToolManager] Local code execution tool skipped; set %s to enable",
+                LOCAL_CODE_EXECUTION_ENABLED_ENV,
+            )
+            return
         self._registered_tools['code_execution'] = {
             'name': 'code_execution',
             'description': 'Execute Python code',
@@ -174,6 +183,11 @@ class ToolManager:
                 'required': ['code']
             }
         }
+
+    @staticmethod
+    def _is_local_code_execution_enabled() -> bool:
+        raw = str(os.getenv(LOCAL_CODE_EXECUTION_ENABLED_ENV, "") or "").strip().lower()
+        return raw in {"1", "true", "yes", "on"}
     
     def _register_browser_tools(self):
         """注册 Browser 工具（web_search, read_webpage, selenium_browse）"""
@@ -318,12 +332,21 @@ class ToolManager:
             }
 
     def _resolve_local_search_files(self, store_names: List[str]) -> List[Path]:
+        allowed_roots = self._resolve_file_search_allowed_roots()
+        if not allowed_roots:
+            return []
+
         files: List[Path] = []
         for store in store_names:
             value = str(store or "").strip()
             if not value:
                 continue
-            path = Path(value).expanduser()
+            try:
+                path = self._resolve_file_search_path(value)
+            except Exception:
+                continue
+            if not self._is_path_under_allowed_roots(path, allowed_roots):
+                continue
             if not path.exists():
                 continue
             if path.is_file():
@@ -331,9 +354,61 @@ class ToolManager:
                 continue
             if path.is_dir():
                 for candidate in path.rglob("*"):
-                    if candidate.is_file():
-                        files.append(candidate)
+                    try:
+                        resolved_candidate = candidate.resolve()
+                    except Exception:
+                        continue
+                    if (
+                        self._is_path_under_allowed_roots(resolved_candidate, allowed_roots)
+                        and resolved_candidate.is_file()
+                    ):
+                        files.append(resolved_candidate)
         return files
+
+    @staticmethod
+    def _split_file_search_allowed_roots(raw: str) -> List[str]:
+        values = [raw]
+        for separator in {",", os.pathsep}:
+            next_values: List[str] = []
+            for value in values:
+                next_values.extend(value.split(separator))
+            values = next_values
+        return [str(value or "").strip() for value in values if str(value or "").strip()]
+
+    @staticmethod
+    def _resolve_file_search_path(raw_path: str) -> Path:
+        candidate = Path(raw_path).expanduser()
+        if not candidate.is_absolute():
+            from app.core.path_utils import get_project_root
+
+            candidate = Path(get_project_root()) / candidate
+        return candidate.resolve()
+
+    def _resolve_file_search_allowed_roots(self) -> List[Path]:
+        raw = str(os.getenv(FILE_SEARCH_ALLOWED_ROOTS_ENV, "") or "").strip()
+        roots: List[Path] = []
+        seen: set[str] = set()
+        for value in self._split_file_search_allowed_roots(raw):
+            try:
+                root = self._resolve_file_search_path(value)
+            except Exception:
+                continue
+            marker = str(root)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            roots.append(root)
+        return roots
+
+    @staticmethod
+    def _is_path_under_allowed_roots(path: Path, allowed_roots: List[Path]) -> bool:
+        for root in allowed_roots:
+            try:
+                path.relative_to(root)
+                return True
+            except ValueError:
+                continue
+        return False
 
     @staticmethod
     def _normalize_file_filters(metadata_filter: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -515,6 +590,16 @@ class ToolManager:
                 "success": False,
                 "status": "invalid_input",
                 "error": "code is required",
+                "output": "",
+            }
+        if not self._is_local_code_execution_enabled():
+            return {
+                "success": False,
+                "status": "disabled",
+                "error": (
+                    f"Local code execution is disabled; set {LOCAL_CODE_EXECUTION_ENABLED_ENV} "
+                    "for trusted deployments only"
+                ),
                 "output": "",
             }
 

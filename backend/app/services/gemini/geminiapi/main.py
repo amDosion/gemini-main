@@ -38,13 +38,15 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
-from pydantic import BaseModel, Discriminator, Field, Tag, ValidationError
+from pydantic import BaseModel, Discriminator, Field, Tag, ValidationError, model_validator
 from tenacity import (
     retry,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
+
+from app.utils.url_security import get_with_redirect_guard
 
 from google import genai
 from google.genai import types
@@ -66,6 +68,19 @@ DEFAULT_CANVAS_H = int(os.getenv("CANVAS_H", "2000"))
 
 # 字体：生产建议放一份 NotoSansSC/思源黑体到容器里
 FONT_PATH = os.getenv("FONT_PATH", "")
+DEFAULT_CORS_ALLOW_ORIGINS = "http://localhost:21573,http://127.0.0.1:21573"
+MAX_IMAGE_UPLOAD_BYTES = int(os.getenv("GEMINIAPI_MAX_IMAGE_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+MAX_INLINE_IMAGE_BYTES = int(os.getenv("GEMINIAPI_MAX_INLINE_IMAGE_BYTES", str(MAX_IMAGE_UPLOAD_BYTES)))
+MAX_LAYERDOC_CANVAS_DIMENSION = int(os.getenv("GEMINIAPI_MAX_LAYERDOC_CANVAS_DIMENSION", "8192"))
+MAX_LAYERDOC_CANVAS_PIXELS = int(os.getenv("GEMINIAPI_MAX_LAYERDOC_CANVAS_PIXELS", str(16 * 1024 * 1024)))
+MAX_LAYERDOC_LAYERS = int(os.getenv("GEMINIAPI_MAX_LAYERDOC_LAYERS", "256"))
+MAX_LAYERDOC_LOCAL_PIXELS = int(os.getenv("GEMINIAPI_MAX_LAYERDOC_LOCAL_PIXELS", str(16 * 1024 * 1024)))
+MAX_LAYERDOC_TEXT_CHARS = int(os.getenv("GEMINIAPI_MAX_LAYERDOC_TEXT_CHARS", "20000"))
+MAX_LAYERDOC_SVG_PATH_CHARS = int(os.getenv("GEMINIAPI_MAX_LAYERDOC_SVG_PATH_CHARS", "200000"))
+MAX_GENERATE_PROMPT_CHARS = int(os.getenv("GEMINIAPI_MAX_GENERATE_PROMPT_CHARS", "20000"))
+MAX_LAYOUT_GOAL_CHARS = int(os.getenv("GEMINIAPI_MAX_LAYOUT_GOAL_CHARS", "20000"))
+MAX_LAYOUT_TEXT_BOXES = int(os.getenv("GEMINIAPI_MAX_LAYOUT_TEXT_BOXES", "12"))
+MAX_GENERATE_IMAGES = int(os.getenv("GEMINIAPI_MAX_GENERATE_IMAGES", "4"))
 
 # Vectorize 默认参数
 DEFAULT_SIMPLIFY_TOLERANCE = float(os.getenv("SIMPLIFY_TOLERANCE", "2.0"))
@@ -81,6 +96,71 @@ def _b64e(b: bytes) -> str:
 
 def _b64d(s: str) -> bytes:
     return base64.b64decode(s.encode("utf-8"))
+
+
+def _decode_inline_image_base64_limited(value: str, *, field_name: str) -> bytes:
+    raw = str(value or "").strip()
+    max_encoded_chars = ((MAX_INLINE_IMAGE_BYTES + 2) // 3) * 4
+    if len(raw) > max_encoded_chars:
+        raise HTTPException(
+            status_code=413,
+            detail=f"{field_name} exceeds maximum decoded size of {MAX_INLINE_IMAGE_BYTES // (1024 * 1024)}MB",
+        )
+    decoded = _b64d(raw)
+    if len(decoded) > MAX_INLINE_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"{field_name} exceeds maximum decoded size of {MAX_INLINE_IMAGE_BYTES // (1024 * 1024)}MB",
+        )
+    return decoded
+
+
+async def _read_upload_file_limited(upload: UploadFile) -> bytes:
+    data = await upload.read(MAX_IMAGE_UPLOAD_BYTES + 1)
+    if len(data) > MAX_IMAGE_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Image upload exceeds maximum size of {MAX_IMAGE_UPLOAD_BYTES // (1024 * 1024)}MB",
+        )
+    return data
+
+
+def _validate_positive_pixel_area(
+    *,
+    width: int,
+    height: int,
+    max_dimension: int,
+    max_pixels: int,
+    field_name: str,
+) -> None:
+    if width <= 0 or height <= 0:
+        raise ValueError(f"{field_name} dimensions must be positive")
+    if width > max_dimension or height > max_dimension:
+        raise ValueError(f"{field_name} dimensions exceed {max_dimension}px")
+    if width * height > max_pixels:
+        raise ValueError(f"{field_name} area exceeds {max_pixels} pixels")
+
+
+def _ensure_pil_image_size_limits(image: Image.Image, *, field_name: str) -> None:
+    try:
+        width, height = image.size
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"{field_name} has invalid dimensions") from exc
+    try:
+        _validate_positive_pixel_area(
+            width=int(width),
+            height=int(height),
+            max_dimension=MAX_LAYERDOC_CANVAS_DIMENSION,
+            max_pixels=MAX_LAYERDOC_LOCAL_PIXELS,
+            field_name=field_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+
+
+def _validate_text_length(value: Optional[str], *, max_chars: int, field_name: str) -> None:
+    if value is not None and len(value) > max_chars:
+        raise ValueError(f"{field_name} exceeds {max_chars} characters")
 
 
 def _guess_mime(filename: str) -> str:
@@ -714,6 +794,15 @@ class RasterLayer(BaseLayer):
     # 新增：可编辑的 SVG mask path（优先于 mask_png_base64）
     mask_svg_path: Optional[str] = None
 
+    @model_validator(mode="after")
+    def _validate_svg_path_limits(self) -> "RasterLayer":
+        _validate_text_length(
+            self.mask_svg_path,
+            max_chars=MAX_LAYERDOC_SVG_PATH_CHARS,
+            field_name="RasterLayer.mask_svg_path",
+        )
+        return self
+
 
 class TextStyle(BaseModel):
     font_size: int = 64
@@ -738,6 +827,23 @@ class TextLayer(BaseLayer):
     box_radius: int = 24
     box_padding: int = 24
 
+    @model_validator(mode="after")
+    def _validate_bbox_limits(self) -> "TextLayer":
+        _validate_text_length(
+            self.text,
+            max_chars=MAX_LAYERDOC_TEXT_CHARS,
+            field_name="TextLayer.text",
+        )
+        _x, _y, width, height = self.bbox
+        _validate_positive_pixel_area(
+            width=width,
+            height=height,
+            max_dimension=MAX_LAYERDOC_CANVAS_DIMENSION,
+            max_pixels=MAX_LAYERDOC_LOCAL_PIXELS,
+            field_name="TextLayer.bbox",
+        )
+        return self
+
 
 class ShapeStyle(BaseModel):
     fill: Optional[str] = "#FFFFFFFF"
@@ -754,6 +860,23 @@ class ShapeLayer(BaseLayer):
     style: ShapeStyle = Field(default_factory=ShapeStyle)
     # 新增：自定义 SVG path（当 shape="path" 时使用）
     svg_path_d: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate_bbox_limits(self) -> "ShapeLayer":
+        _validate_text_length(
+            self.svg_path_d,
+            max_chars=MAX_LAYERDOC_SVG_PATH_CHARS,
+            field_name="ShapeLayer.svg_path_d",
+        )
+        _x, _y, width, height = self.bbox
+        _validate_positive_pixel_area(
+            width=width,
+            height=height,
+            max_dimension=MAX_LAYERDOC_CANVAS_DIMENSION,
+            max_pixels=MAX_LAYERDOC_LOCAL_PIXELS,
+            field_name="ShapeLayer.bbox",
+        )
+        return self
 
 
 class GradientLayer(BaseLayer):
@@ -782,22 +905,50 @@ class LayerDoc(BaseModel):
     background: Optional[str] = None
     layers: List[Layer]
 
+    @model_validator(mode="after")
+    def _validate_render_limits(self) -> "LayerDoc":
+        _validate_positive_pixel_area(
+            width=self.width,
+            height=self.height,
+            max_dimension=MAX_LAYERDOC_CANVAS_DIMENSION,
+            max_pixels=MAX_LAYERDOC_CANVAS_PIXELS,
+            field_name="LayerDoc canvas",
+        )
+        if len(self.layers) > MAX_LAYERDOC_LAYERS:
+            raise ValueError(f"LayerDoc layers exceed {MAX_LAYERDOC_LAYERS}")
+        return self
+
 
 # =========================
 # Request/Response Models
 # =========================
 class GenerateImageReq(BaseModel):
-    prompt: str
-    number_of_images: int = 1
-    output_mime_type: str = "image/png"
+    prompt: str = Field(..., min_length=1, max_length=MAX_GENERATE_PROMPT_CHARS)
+    number_of_images: int = Field(default=1, ge=1, le=MAX_GENERATE_IMAGES)
+    output_mime_type: Literal["image/png", "image/jpeg"] = "image/png"
 
 
 class LayoutSuggestReq(BaseModel):
-    locale: str = "zh-CN"
-    goal: str = "生成一张适合电商附图的分层布局：底图无字；文字在矩形框内；可编辑；风格统一。"
-    canvas_w: int = DEFAULT_CANVAS_W
-    canvas_h: int = DEFAULT_CANVAS_H
-    max_text_boxes: int = 3
+    locale: str = Field(default="zh-CN", min_length=1, max_length=32)
+    goal: str = Field(
+        default="生成一张适合电商附图的分层布局：底图无字；文字在矩形框内；可编辑；风格统一。",
+        min_length=1,
+        max_length=MAX_LAYOUT_GOAL_CHARS,
+    )
+    canvas_w: int = Field(default=DEFAULT_CANVAS_W, ge=1, le=MAX_LAYERDOC_CANVAS_DIMENSION)
+    canvas_h: int = Field(default=DEFAULT_CANVAS_H, ge=1, le=MAX_LAYERDOC_CANVAS_DIMENSION)
+    max_text_boxes: int = Field(default=3, ge=1, le=MAX_LAYOUT_TEXT_BOXES)
+
+    @model_validator(mode="after")
+    def _validate_canvas_area(self) -> "LayoutSuggestReq":
+        _validate_positive_pixel_area(
+            width=self.canvas_w,
+            height=self.canvas_h,
+            max_dimension=MAX_LAYERDOC_CANVAS_DIMENSION,
+            max_pixels=MAX_LAYERDOC_CANVAS_PIXELS,
+            field_name="LayoutSuggestReq canvas",
+        )
+        return self
 
 
 class VectorizeResponse(BaseModel):
@@ -810,6 +961,15 @@ class VectorizeResponse(BaseModel):
     contours_count: int
 
 
+def _resolve_cors_allow_origins(raw_origins: Optional[str] = None) -> List[str]:
+    raw = raw_origins if raw_origins is not None else os.getenv("CORS_ALLOW_ORIGINS", "")
+    origins = [origin.strip() for origin in str(raw or "").split(",") if origin.strip()]
+    origins = [origin for origin in origins if origin != "*"]
+    if origins:
+        return origins
+    return [origin.strip() for origin in DEFAULT_CORS_ALLOW_ORIGINS.split(",") if origin.strip()]
+
+
 # =========================
 # App Setup
 # =========================
@@ -819,11 +979,11 @@ app = FastAPI(
     version="2.0.0",
 )
 
-_cors_origins = [o for o in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if o]
+_cors_origins = _resolve_cors_allow_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins if _cors_origins else ["*"],
-    allow_credentials=bool(_cors_origins),
+    allow_origins=_cors_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -919,7 +1079,7 @@ async def _preload_raster_assets(
 
     async def fetch_one(url: str) -> Tuple[str, Optional[bytes]]:
         try:
-            r = await http_client.get(url, timeout=30.0)
+            r, _final_url = await get_with_redirect_guard(http_client, url, max_redirects=5)
             r.raise_for_status()
             return (url, r.content)
         except Exception:
@@ -1005,7 +1165,7 @@ async def layout_suggest(
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=f"Invalid req_json: {e}")
 
-    img_bytes = await image.read()
+    img_bytes = await _read_upload_file_limited(image)
     mime = _guess_mime(image.filename)
 
     schema_hint = {
@@ -1105,7 +1265,7 @@ async def layers_decompose(image: UploadFile = File(...)) -> JSONResponse:
             detail="QWEN_LAYERED_ENDPOINT is not set. You must provide a decompose service endpoint.",
         )
 
-    img_bytes = await image.read()
+    img_bytes = await _read_upload_file_limited(image)
     http_client: httpx.AsyncClient = app.state.http_client
 
     try:
@@ -1200,10 +1360,13 @@ async def mask_vectorize(
     - `width`, `height`: 原始尺寸
     - `contours_count`: 轮廓数量
     """
-    img_bytes = await image.read()
+    img_bytes = await _read_upload_file_limited(image)
     
     try:
         mask_img = Image.open(io.BytesIO(img_bytes))
+        _ensure_pil_image_size_limits(mask_img, field_name="mask_vectorize.image")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
     
@@ -1245,10 +1408,28 @@ async def mask_vectorize_batch(
     results = []
     
     for i, image in enumerate(images):
-        img_bytes = await image.read()
+        try:
+            img_bytes = await _read_upload_file_limited(image)
+        except HTTPException as e:
+            results.append({
+                "index": i,
+                "filename": image.filename,
+                "error": str(e.detail),
+                "success": False,
+            })
+            continue
         
         try:
             mask_img = Image.open(io.BytesIO(img_bytes))
+            _ensure_pil_image_size_limits(mask_img, field_name="mask_vectorize_batch.image")
+        except HTTPException as e:
+            results.append({
+                "index": i,
+                "filename": image.filename,
+                "error": str(e.detail),
+                "success": False,
+            })
+            continue
         except Exception as e:
             results.append({
                 "index": i,
@@ -1387,6 +1568,14 @@ def _render_svg_path_to_mask(
     生产环境建议使用 cairosvg 或 svglib。
     """
     if not path_d:
+        return None
+    try:
+        _validate_text_length(
+            path_d,
+            max_chars=MAX_LAYERDOC_SVG_PATH_CHARS,
+            field_name="SVG path",
+        )
+    except ValueError:
         return None
     
     mask = Image.new("L", (width, height), 0)
@@ -1552,12 +1741,23 @@ def _render_layerdoc_to_image(
         if isinstance(layer, RasterLayer):
             # 获取位图
             if layer.png_base64:
-                img = Image.open(io.BytesIO(_b64d(layer.png_base64))).convert("RGBA")
+                img = Image.open(
+                    io.BytesIO(
+                        _decode_inline_image_base64_limited(
+                            layer.png_base64,
+                            field_name="RasterLayer.png_base64",
+                        )
+                    )
+                )
+                _ensure_pil_image_size_limits(img, field_name="RasterLayer.png_base64")
+                img = img.convert("RGBA")
             elif layer.asset_url:
                 asset_bytes = preloaded_assets.get(layer.asset_url)
                 if asset_bytes is None:
                     continue
-                img = Image.open(io.BytesIO(asset_bytes)).convert("RGBA")
+                img = Image.open(io.BytesIO(asset_bytes))
+                _ensure_pil_image_size_limits(img, field_name="RasterLayer.asset_url")
+                img = img.convert("RGBA")
             else:
                 continue
 
@@ -1578,7 +1778,16 @@ def _render_layerdoc_to_image(
             
             if not mask_applied and layer.mask_png_base64:
                 # 使用 PNG mask
-                mask = Image.open(io.BytesIO(_b64d(layer.mask_png_base64))).convert("L")
+                mask = Image.open(
+                    io.BytesIO(
+                        _decode_inline_image_base64_limited(
+                            layer.mask_png_base64,
+                            field_name="RasterLayer.mask_png_base64",
+                        )
+                    )
+                )
+                _ensure_pil_image_size_limits(mask, field_name="RasterLayer.mask_png_base64")
+                mask = mask.convert("L")
                 arr = np.array(img)
                 m = np.array(mask).astype(np.float32) / 255.0
                 arr[..., 3] = (arr[..., 3].astype(np.float32) * m).astype(np.uint8)
@@ -1620,6 +1829,8 @@ async def render_compose(doc_json: str = Form(...)) -> Response:
         img = _render_layerdoc_to_image(doc, preloaded_assets=preloaded)
         png = _pil_to_png_bytes(img)
         return Response(content=png, media_type="image/png")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Render failed: {e}")
 
@@ -1648,6 +1859,8 @@ async def render_compose_base64(doc_json: str = Form(...)) -> JSONResponse:
             "width": doc.width,
             "height": doc.height,
         })
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Render failed: {e}")
 

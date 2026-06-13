@@ -11,10 +11,10 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
-from ..execution_context import ExecutionContext
 from ....utils.attachment_handler import is_base64_url
+from ....utils.url_security import sync_get_with_redirect_guard
+from ..execution_context import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
@@ -110,15 +110,17 @@ def fetch_duckduckgo_results(query: str, region: str) -> List[Dict[str, str]]:
         params["kl"] = region
 
     url = f"https://api.duckduckgo.com/?{urlencode(params)}"
-    request = Request(
-        url=url,
+    response = sync_get_with_redirect_guard(
+        url,
         headers={
             "Accept": "application/json",
             "User-Agent": "Mozilla/5.0 WorkflowEngine/1.0",
-        }
+        },
+        timeout=8,
+        max_redirects=5,
     )
-    with urlopen(request, timeout=8) as response:  # nosec B310
-        raw = response.read()
+    response.raise_for_status()
+    raw = response.content
     payload = json.loads(raw.decode("utf-8", errors="replace"))
     return normalize_search_items(payload, max_items=10)
 
@@ -226,13 +228,13 @@ def load_workflow_mcp_server_config(
     engine: Any,
     requested_server_key: str = "",
 ) -> Tuple[str, Any, str]:
+    from ....core.config import settings as app_settings
     from ....models.db_models import UserMcpConfig
     from ...mcp.types import (
         MCPServerConfig,
         MCPServerType,
         validate_mcp_stdio_command_policy,
     )
-    from ....core.config import settings as app_settings
 
     user_id = engine._get_workflow_user_id()
     if not user_id:

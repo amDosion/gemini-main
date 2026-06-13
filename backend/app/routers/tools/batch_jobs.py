@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 from ...core.dependencies import require_current_user
 from ...services.common.batch_job_orchestrator import (
@@ -18,11 +18,15 @@ from ...services.common.batch_job_orchestrator import (
     create_batch_job_orchestrator,
 )
 from ...services.common.table_analysis_service import analyze_inline_table_content
+from ...utils.log_sanitization import summarize_text_for_log
 from . import pdf as pdf_router_module
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/batch-jobs", tags=["batch-jobs"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+MAX_BATCH_TIMESTAMP_MS = 4_102_444_800_000
+BatchIdText = Annotated[str, Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)]
 
 
 class BatchJobItemRequest(BaseModel):
@@ -60,6 +64,64 @@ class BatchRetryRequest(BaseModel):
 
 class BatchResumeRequest(BaseModel):
     skip_failed: bool = Field(default=True)
+
+
+class BatchCountsResponse(BaseModel):
+    total: int = Field(ge=0, le=10_000)
+    pending: int = Field(ge=0, le=10_000)
+    running: int = Field(ge=0, le=10_000)
+    completed: int = Field(ge=0, le=10_000)
+    failed: int = Field(ge=0, le=10_000)
+    cancelled: int = Field(ge=0, le=10_000)
+
+
+class BatchProgressItemResponse(BaseModel):
+    item_id: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    label: str = Field(max_length=1_000_000)
+    workload: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    attempts: int = Field(ge=0, le=10_000)
+    error: str | None = Field(default=None, max_length=100_000)
+    started_at: int | None = Field(default=None, ge=0, le=MAX_BATCH_TIMESTAMP_MS)
+    completed_at: int | None = Field(default=None, ge=0, le=MAX_BATCH_TIMESTAMP_MS)
+
+
+class BatchProgressResponse(BaseModel):
+    job_id: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    progress_percent: int = Field(ge=0, le=100)
+    stop_on_error: bool
+    cancel_requested: bool
+    item_timeout_seconds: float | None = Field(default=None, ge=0, le=3600)
+    counts: BatchCountsResponse
+    created_at: int = Field(ge=0, le=MAX_BATCH_TIMESTAMP_MS)
+    updated_at: int = Field(ge=0, le=MAX_BATCH_TIMESTAMP_MS)
+    items: list[BatchProgressItemResponse] = Field(max_length=10_000)
+
+
+class BatchSummaryTableMetricsResponse(BaseModel):
+    total_rows: int = Field(ge=0, le=1_000_000_000)
+    total_columns: int = Field(ge=0, le=1_000_000)
+
+
+class BatchCompletedSummaryItemResponse(BaseModel):
+    item_id: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    label: str = Field(max_length=1_000_000)
+    workload: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    summary: JsonValue
+
+
+class BatchSummaryResponse(BaseModel):
+    job_id: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    item_timeout_seconds: float | None = Field(default=None, ge=0, le=3600)
+    created_at: int = Field(ge=0, le=MAX_BATCH_TIMESTAMP_MS)
+    updated_at: int = Field(ge=0, le=MAX_BATCH_TIMESTAMP_MS)
+    counts: BatchCountsResponse
+    failed_item_ids: list[BatchIdText] = Field(max_length=10_000)
+    cancelled_item_ids: list[BatchIdText] = Field(max_length=10_000)
+    table_metrics: BatchSummaryTableMetricsResponse
+    completed_items: list[BatchCompletedSummaryItemResponse] = Field(max_length=10_000)
 
 
 async def _table_analysis_handler(payload: dict[str, Any]) -> dict[str, Any]:
@@ -135,7 +197,7 @@ def _build_batch_submit_item(item: BatchJobItemRequest) -> dict[str, Any]:
     }
 
 
-@router.post("/submit")
+@router.post("/submit", response_model=BatchProgressResponse)
 async def submit_batch_job(
     request_body: BatchSubmitRequest,
     user_id: str = Depends(require_current_user),
@@ -153,11 +215,16 @@ async def submit_batch_job(
     except BatchJobDependencyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error("Unexpected batch submit error: %s", exc, exc_info=True)
+        logger.error(
+            "Unexpected batch submit error: user=%s item_count=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            len(request_body.items),
+            summarize_text_for_log(exc, label="batch_submit_error"),
+        )
         raise HTTPException(status_code=500, detail="Failed to submit batch job.") from exc
 
 
-@router.get("/{job_id}/progress")
+@router.get("/{job_id}/progress", response_model=BatchProgressResponse)
 async def get_batch_job_progress(
     job_id: str,
     user_id: str = Depends(require_current_user),
@@ -167,11 +234,16 @@ async def get_batch_job_progress(
     except BatchJobNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error("Unexpected batch progress error: %s", exc, exc_info=True)
+        logger.error(
+            "Unexpected batch progress error: user=%s job=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(job_id, label="job_id"),
+            summarize_text_for_log(exc, label="batch_progress_error"),
+        )
         raise HTTPException(status_code=500, detail="Failed to query batch progress.") from exc
 
 
-@router.post("/{job_id}/retry")
+@router.post("/{job_id}/retry", response_model=BatchProgressResponse)
 async def retry_batch_job(
     job_id: str,
     request_body: BatchRetryRequest | None = None,
@@ -191,11 +263,16 @@ async def retry_batch_job(
     except BatchJobValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error("Unexpected batch retry error: %s", exc, exc_info=True)
+        logger.error(
+            "Unexpected batch retry error: user=%s job=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(job_id, label="job_id"),
+            summarize_text_for_log(exc, label="batch_retry_error"),
+        )
         raise HTTPException(status_code=500, detail="Failed to retry batch job.") from exc
 
 
-@router.post("/{job_id}/resume")
+@router.post("/{job_id}/resume", response_model=BatchProgressResponse)
 async def resume_batch_job(
     job_id: str,
     request_body: BatchResumeRequest | None = None,
@@ -215,11 +292,16 @@ async def resume_batch_job(
     except BatchJobValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error("Unexpected batch resume error: %s", exc, exc_info=True)
+        logger.error(
+            "Unexpected batch resume error: user=%s job=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(job_id, label="job_id"),
+            summarize_text_for_log(exc, label="batch_resume_error"),
+        )
         raise HTTPException(status_code=500, detail="Failed to resume batch job.") from exc
 
 
-@router.post("/{job_id}/cancel")
+@router.post("/{job_id}/cancel", response_model=BatchProgressResponse)
 async def cancel_batch_job(
     job_id: str,
     user_id: str = Depends(require_current_user),
@@ -229,11 +311,16 @@ async def cancel_batch_job(
     except BatchJobNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error("Unexpected batch cancel error: %s", exc, exc_info=True)
+        logger.error(
+            "Unexpected batch cancel error: user=%s job=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(job_id, label="job_id"),
+            summarize_text_for_log(exc, label="batch_cancel_error"),
+        )
         raise HTTPException(status_code=500, detail="Failed to cancel batch job.") from exc
 
 
-@router.get("/{job_id}/summary")
+@router.get("/{job_id}/summary", response_model=BatchSummaryResponse)
 async def get_batch_job_summary(
     job_id: str,
     user_id: str = Depends(require_current_user),
@@ -243,5 +330,10 @@ async def get_batch_job_summary(
     except BatchJobNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error("Unexpected batch summary error: %s", exc, exc_info=True)
+        logger.error(
+            "Unexpected batch summary error: user=%s job=%s error=%s",
+            summarize_text_for_log(user_id, label="user_id"),
+            summarize_text_for_log(job_id, label="job_id"),
+            summarize_text_for_log(exc, label="batch_summary_error"),
+        )
         raise HTTPException(status_code=500, detail="Failed to build batch summary.") from exc

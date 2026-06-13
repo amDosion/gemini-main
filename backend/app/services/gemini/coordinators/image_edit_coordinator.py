@@ -26,6 +26,7 @@ from ..vertexai.background_edit_service import BackgroundEditService
 from ..vertexai.recontext_service import RecontextService
 from ...common.google_model_catalog import get_static_google_vertex_model_ids_for_family
 from ._config_cache import get_or_load as _cached_load, clear_config_cache  # noqa: F401
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -645,7 +646,12 @@ class ImageEditCoordinator:
 
         Vertex Imagen edit 路径使用统一模式：get_xxx_editor() → editor.edit_image(prompt, reference_images, config)
         """
-        logger.info(f"[ImageEditCoordinator] Image editing request: model={model}, mode={mode}, prompt='{prompt[:50]}...'")
+        logger.info(
+            "[ImageEditCoordinator] Image editing request: model=%s, mode=%s, prompt=%s",
+            model,
+            mode,
+            summarize_text_for_log(prompt, label="prompt"),
+        )
         logger.info(f"[ImageEditCoordinator] Reference images: {list(reference_images.keys())}, additional parameters: {list(kwargs.keys())}")
 
         if mode == 'image-background-edit':

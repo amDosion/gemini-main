@@ -14,14 +14,16 @@
 不包含任何业务逻辑，业务逻辑在服务层。
 """
 from fastapi import APIRouter, HTTPException, Request, Depends, Query
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, Dict, Any, List, Tuple, TypedDict
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from typing import Annotated, Optional, Dict, Any, List, Tuple, TypedDict, Union
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import asyncio
 import json
 import logging
 import time
+from urllib.parse import urlsplit
 
 from ...core.database import get_db, SessionLocal
 from ...core.dependencies import require_current_user, get_cache
@@ -49,7 +51,7 @@ from ...services.common.video_mode_contract import (
 )
 from ...services.common.video_result_derivatives import safe_persist_video_last_frame_derivative
 from ...utils.sse import build_safe_error_chunk, create_sse_response, encode_sse_data
-from ...utils.error_handler import classify_provider_error_code
+from ...utils.error_handler import classify_provider_error_code, _mask_keys_in_text
 from ...utils.message_utils import get_message_table_class_by_name, get_table_name_for_mode
 from ...models.db_models import ChatSession as DBChatSession, MessageIndex
 
@@ -60,6 +62,64 @@ logger.setLevel(logging.INFO)
 logger.propagate = True
 
 router = APIRouter(prefix="/api/modes", tags=["modes"])
+FREE_TEXT_PATTERN = r"^[\s\S]*$"
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+MODE_TEXT_MAX_LENGTH = 200_000
+MODE_SHORT_TEXT_MAX_LENGTH = 512
+MODE_URL_MAX_LENGTH = 4096
+MODE_MAX_ATTACHMENTS = 32
+MODE_MAX_INLINE_BASE64_LENGTH = 28_000_000
+MODE_MAX_SEGMENTATION_CLASSES = 32
+MODE_MAX_STORYBOARD_SEGMENTS = 32
+
+NoControlText = Annotated[
+    str,
+    Field(max_length=MODE_SHORT_TEXT_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN),
+]
+FreeText = Annotated[
+    str,
+    Field(max_length=MODE_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN),
+]
+SegmentationClass = Annotated[int, Field(ge=0, le=10_000)]
+ModeMediaReference = Union[
+    Annotated[str, Field(max_length=MODE_URL_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)],
+    Dict[str, Any],
+]
+
+
+def _safe_log_text(value: Any, *, label: str = "text") -> str:
+    if value is None:
+        return "None"
+    text = str(value)
+    if not text:
+        return f"<empty {label}>"
+    return f"<redacted {label}; length={len(text)}>"
+
+
+def _safe_log_url(value: Any) -> str:
+    if not value:
+        return "None"
+    text = str(value)
+    if is_base64_url(text):
+        return f"Base64 Data URL (长度: {len(text)} 字符)"
+    if is_blob_url(text):
+        return f"Blob URL (长度: {len(text)} 字符)"
+    if is_http_url(text):
+        try:
+            parsed = urlsplit(text)
+            query_count = len([part for part in parsed.query.split("&") if part])
+            fragment = ", fragment=redacted" if parsed.fragment else ""
+            return (
+                f"HTTP URL (scheme={parsed.scheme}, host={parsed.netloc or 'unknown'}, "
+                f"path_length={len(parsed.path)}, query_params={query_count}{fragment}, "
+                f"total_length={len(text)})"
+            )
+        except ValueError:
+            return f"HTTP URL (malformed, total_length={len(text)})"
+    masked = _mask_keys_in_text(text)
+    if masked != text:
+        return masked
+    return f"Non-HTTP reference (长度: {len(text)} 字符)"
 
 
 def _load_session_messages_with_attachments(
@@ -328,8 +388,7 @@ async def _persist_generated_media_message(
             mode,
             session_id,
             message_id,
-            exc,
-            exc_info=True,
+            _safe_log_text(exc, label="error"),
         )
         return False
 
@@ -476,15 +535,21 @@ class Attachment(BaseModel):
     注意：字段名使用 snake_case，因为 CaseConversionMiddleware 会自动
     将前端的 camelCase 转换为 snake_case。
     """
-    id: Optional[str] = None
-    mime_type: Optional[str] = None
-    name: Optional[str] = None
-    url: Optional[str] = None
-    temp_url: Optional[str] = None
-    file_uri: Optional[str] = None
-    base64_data: Optional[str] = None
-    role: Optional[str] = None  # 'mask' for mask images, etc.
-    google_file_uri: Optional[str] = None  # Google Files API URI (48h有效)
+    model_config = ConfigDict(extra="forbid")
+
+    id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    mime_type: Optional[str] = Field(default=None, max_length=255, pattern=NO_CONTROL_CHARS_PATTERN)
+    name: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    url: Optional[str] = Field(default=None, max_length=MODE_URL_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    temp_url: Optional[str] = Field(default=None, max_length=MODE_URL_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    file_uri: Optional[str] = Field(default=None, max_length=MODE_URL_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    base64_data: Optional[str] = Field(default=None, max_length=MODE_MAX_INLINE_BASE64_LENGTH)
+    role: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)  # 'mask' for mask images, etc.
+    google_file_uri: Optional[str] = Field(
+        default=None,
+        max_length=MODE_URL_MAX_LENGTH,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )  # Google Files API URI (48h有效)
 
 
 class ModeOptions(BaseModel):
@@ -495,101 +560,109 @@ class ModeOptions(BaseModel):
     将前端的 camelCase 转换为 snake_case。
     """
     # 基础选项
-    base_url: Optional[str] = None
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    top_p: Optional[float] = None
-    top_k: Optional[int] = None
+    base_url: Optional[str] = Field(default=None, max_length=MODE_URL_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    temperature: Optional[float] = Field(default=None, ge=0, le=2)
+    max_tokens: Optional[int] = Field(default=None, ge=1, le=1_000_000)
+    top_p: Optional[float] = Field(default=None, ge=0, le=1)
+    top_k: Optional[int] = Field(default=None, ge=1, le=10_000)
     enable_search: Optional[bool] = None
     enable_thinking: Optional[bool] = None
-    voice: Optional[str] = None
-    base_steps: Optional[int] = None
-    mask_mode: Optional[str] = None
-    segmentation_classes: Optional[List[int]] = None
-    duration_seconds: Optional[int] = None
-    video_input_strategy: Optional[str] = None
-    video_extension_count: Optional[int] = None
-    storyboard_shot_seconds: Optional[int] = None
+    voice: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    base_steps: Optional[int] = Field(default=None, ge=1, le=150)
+    mask_mode: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    segmentation_classes: Optional[List[SegmentationClass]] = Field(default=None, max_length=MODE_MAX_SEGMENTATION_CLASSES)
+    duration_seconds: Optional[int] = Field(default=None, ge=1, le=600)
+    video_input_strategy: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    video_extension_count: Optional[int] = Field(default=None, ge=0, le=20)
+    storyboard_shot_seconds: Optional[int] = Field(default=None, ge=1, le=60)
     generate_audio: Optional[bool] = None
-    subtitle_mode: Optional[str] = None
-    subtitle_language: Optional[str] = None
-    subtitle_script: Optional[str] = None
-    storyboard_prompt: Optional[str] = None
-    storyboard_segments: Optional[List[str]] = None
-    tracked_feature: Optional[str] = None
-    tracking_overlay_text: Optional[str] = None
-    source_video: Optional[Any] = None
-    source_image: Optional[Any] = None
-    last_frame_image: Optional[Any] = None
-    video_mask_image: Optional[Any] = None
-    video_mask_mode: Optional[str] = None
-    provider_file_name: Optional[str] = None
-    provider_file_uri: Optional[str] = None
-    gcs_uri: Optional[str] = None
-    delete_target: Optional[str] = None
-    pdf_extract_template: Optional[str] = None
-    pdf_additional_instructions: Optional[str] = None
+    subtitle_mode: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    subtitle_language: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    subtitle_script: Optional[str] = Field(default=None, max_length=MODE_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    storyboard_prompt: Optional[str] = Field(default=None, max_length=MODE_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    storyboard_segments: Optional[List[FreeText]] = Field(default=None, max_length=MODE_MAX_STORYBOARD_SEGMENTS)
+    tracked_feature: Optional[str] = Field(default=None, max_length=512, pattern=FREE_TEXT_PATTERN)
+    tracking_overlay_text: Optional[str] = Field(default=None, max_length=4096, pattern=FREE_TEXT_PATTERN)
+    source_video: Optional[ModeMediaReference] = None
+    source_image: Optional[ModeMediaReference] = None
+    last_frame_image: Optional[ModeMediaReference] = None
+    video_mask_image: Optional[ModeMediaReference] = None
+    video_mask_mode: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    provider_file_name: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    provider_file_uri: Optional[str] = Field(default=None, max_length=MODE_URL_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    gcs_uri: Optional[str] = Field(default=None, max_length=MODE_URL_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    delete_target: Optional[str] = Field(default=None, max_length=MODE_URL_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    pdf_extract_template: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    pdf_additional_instructions: Optional[str] = Field(default=None, max_length=MODE_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
     # Image generation options
-    size: Optional[str] = None
-    quality: Optional[str] = None
-    style: Optional[str] = None
-    background: Optional[str] = None
-    moderation: Optional[str] = None
-    output_format: Optional[str] = None
-    output_compression: Optional[int] = None
-    resolution: Optional[str] = None
-    seconds: Optional[str] = None
-    number_of_images: Optional[int] = None
-    aspect_ratio: Optional[str] = None
-    image_aspect_ratio: Optional[str] = None
-    image_resolution: Optional[str] = None
-    image_style: Optional[str] = None
+    size: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    quality: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    style: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    background: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    moderation: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    output_format: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    output_compression: Optional[int] = Field(default=None, ge=0, le=100)
+    resolution: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    seconds: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    number_of_images: Optional[int] = Field(default=None, ge=1, le=8)
+    aspect_ratio: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    image_aspect_ratio: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    image_resolution: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    image_style: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
     # Image editing options
-    edit_mode: Optional[str] = None
-    frontend_session_id: Optional[str] = None
-    session_id: Optional[str] = None  # Alias for frontend_session_id
-    message_id: Optional[str] = None  # 消息ID（用于附件关联）
+    edit_mode: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    frontend_session_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    session_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)  # Alias for frontend_session_id
+    message_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)  # 消息ID（用于附件关联）
     # Edit模式新增字段
-    active_image_url: Optional[str] = None  # CONTINUITY LOGIC用
+    active_image_url: Optional[str] = Field(
+        default=None,
+        max_length=MODE_URL_MAX_LENGTH,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )  # CONTINUITY LOGIC用
     # Other options
-    negative_prompt: Optional[str] = None
-    guidance_scale: Optional[float] = None
-    mask_dilation: Optional[float] = None  # Mask 编辑特有参数：掩码膨胀系数 (0.0-1.0)
-    seed: Optional[int] = None
+    negative_prompt: Optional[str] = Field(default=None, max_length=MODE_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    guidance_scale: Optional[float] = Field(default=None, ge=0, le=30)
+    mask_dilation: Optional[float] = Field(default=None, ge=0, le=1)  # Mask 编辑特有参数：掩码膨胀系数 (0.0-1.0)
+    seed: Optional[int] = Field(default=None, ge=0, le=2_147_483_647)
     # Google Imagen 高级参数
-    output_mime_type: Optional[str] = None
-    output_compression_quality: Optional[int] = None
+    output_mime_type: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    output_compression_quality: Optional[int] = Field(default=None, ge=1, le=100)
     enhance_prompt: Optional[bool] = None
-    enhance_prompt_model: Optional[str] = None
-    enhance_prompt_thinking_level: Optional[str] = None
+    enhance_prompt_model: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    enhance_prompt_thinking_level: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
     # TongYi 专用参数
     prompt_extend: Optional[bool] = None  # AI 增强提示词
     add_magic_suffix: Optional[bool] = None  # 魔法词组
     thinking_mode: Optional[bool] = None  # Wan 2.7 Image 思考模式
     enable_sequential: Optional[bool] = None  # Wan 2.7 Image 组图模式
     # Outpainting 参数（image-outpainting 模式）
-    outpaint_mode: Optional[str] = None  # 扩图模式：ratio | scale | offset | upscale
-    x_scale: Optional[float] = None  # 水平缩放倍数 (scale 模式)
-    y_scale: Optional[float] = None  # 垂直缩放倍数 (scale 模式)
-    left_offset: Optional[int] = None  # 左侧偏移像素 (offset 模式)
-    right_offset: Optional[int] = None  # 右侧偏移像素 (offset 模式)
-    top_offset: Optional[int] = None  # 顶部偏移像素 (offset 模式)
-    bottom_offset: Optional[int] = None  # 底部偏移像素 (offset 模式)
-    output_ratio: Optional[str] = None  # 目标比例 (ratio 模式)
-    upscale_factor: Optional[str] = None  # 放大倍数：x2 | x3 | x4 (upscale 模式)
+    outpaint_mode: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )  # 扩图模式：ratio | scale | offset | upscale
+    x_scale: Optional[float] = Field(default=None, ge=1, le=4)  # 水平缩放倍数 (scale 模式)
+    y_scale: Optional[float] = Field(default=None, ge=1, le=4)  # 垂直缩放倍数 (scale 模式)
+    left_offset: Optional[int] = Field(default=None, ge=0, le=8192)  # 左侧偏移像素 (offset 模式)
+    right_offset: Optional[int] = Field(default=None, ge=0, le=8192)  # 右侧偏移像素 (offset 模式)
+    top_offset: Optional[int] = Field(default=None, ge=0, le=8192)  # 顶部偏移像素 (offset 模式)
+    bottom_offset: Optional[int] = Field(default=None, ge=0, le=8192)  # 底部偏移像素 (offset 模式)
+    output_ratio: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)  # 目标比例 (ratio 模式)
+    upscale_factor: Optional[str] = Field(default=None, max_length=16, pattern=NO_CONTROL_CHARS_PATTERN)  # 放大倍数：x2 | x3 | x4 (upscale 模式)
     # Layered Design 参数
-    layers: Optional[int] = None  # 图层分解数量 (2-10)
-    canvas_w: Optional[int] = None  # 画布宽度
-    canvas_h: Optional[int] = None  # 画布高度
-    max_text_boxes: Optional[int] = None  # 最大文本框数量
-    locale: Optional[str] = None  # 语言区域
+    layers: Optional[int] = Field(default=None, ge=2, le=10)  # 图层分解数量 (2-10)
+    canvas_w: Optional[int] = Field(default=None, ge=64, le=8192)  # 画布宽度
+    canvas_h: Optional[int] = Field(default=None, ge=64, le=8192)  # 画布高度
+    max_text_boxes: Optional[int] = Field(default=None, ge=0, le=100)  # 最大文本框数量
+    locale: Optional[str] = Field(default=None, max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)  # 语言区域
     layer_doc: Optional[Dict[str, Any]] = None  # LayerDoc 渲染用
-    simplify_tolerance: Optional[float] = None  # 矢量化简化容差
-    smooth_iterations: Optional[int] = None  # 平滑迭代次数
+    simplify_tolerance: Optional[float] = Field(default=None, ge=0, le=10)  # 矢量化简化容差
+    smooth_iterations: Optional[int] = Field(default=None, ge=0, le=20)  # 平滑迭代次数
     use_bezier: Optional[bool] = None  # 使用贝塞尔曲线
-    bezier_smoothness: Optional[float] = None  # 贝塞尔平滑度
-    threshold: Optional[int] = None  # 二值化阈值
-    blur_radius: Optional[float] = None  # 模糊半径
+    bezier_smoothness: Optional[float] = Field(default=None, ge=0, le=1)  # 贝塞尔平滑度
+    threshold: Optional[int] = Field(default=None, ge=0, le=255)  # 二值化阈值
+    blur_radius: Optional[float] = Field(default=None, ge=0, le=100)  # 模糊半径
     # Allow additional fields
     model_config = ConfigDict(extra="allow")
 
@@ -601,11 +674,17 @@ class ModeRequest(BaseModel):
     注意：字段名使用 snake_case，因为 CaseConversionMiddleware 会自动
     将前端的 camelCase 转换为 snake_case。
     """
-    model_id: str
-    prompt: str
-    attachments: Optional[List[Attachment]] = None
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: str = Field(min_length=1, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    prompt: str = Field(max_length=MODE_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    attachments: Optional[List[Attachment]] = Field(default=None, max_length=MODE_MAX_ATTACHMENTS)
     options: Optional[ModeOptions] = None
-    api_key: Optional[str] = None  # Optional, will try to get from database
+    api_key: Optional[str] = Field(
+        default=None,
+        max_length=4096,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )  # Optional, will try to get from database
     extra: Optional[Dict[str, Any]] = None  # Additional parameters
 
 
@@ -613,9 +692,40 @@ class ModeResponse(BaseModel):
     """统一模式响应"""
     success: bool
     data: Any
-    provider: str
-    mode: str
-    error: Optional[str] = None
+    provider: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    mode: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    error: Optional[str] = Field(default=None, max_length=4096)
+
+
+class ModeControlsResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    success: bool
+    provider: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    mode: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    model_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    controls_schema: Dict[str, JsonValue] = Field(default_factory=dict, alias="schema")
+
+
+class ProviderModeCapability(BaseModel):
+    id: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    label: Optional[str] = Field(default=None, max_length=256)
+    group: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    visible_in_navigation: bool
+    service_method: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    runtime_enabled: bool
+    reason_code: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    reason: Optional[str] = Field(default=None, max_length=512)
+    required_api_mode: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class ProviderModeCapabilitiesResponse(BaseModel):
+    success: bool
+    provider: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    normalized_provider: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    api_mode: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    vertex_ready: Optional[bool] = None
+    capabilities: List[ProviderModeCapability] = Field(max_length=512)
 
 
 # ==================== Helper Functions ====================
@@ -1297,7 +1407,7 @@ async def _execute_multi_agent_mode(
 
 # ==================== API Endpoints ====================
 
-@router.get("/{provider}/{mode}/controls")
+@router.get("/{provider}/{mode}/controls", response_model=ModeControlsResponse)
 async def get_mode_controls_schema(
     provider: str,
     mode: str,
@@ -1333,13 +1443,16 @@ async def get_mode_controls_schema(
         raise
     except Exception as e:
         logger.error(
-            f"[Modes] Failed to resolve controls schema: provider={provider}, mode={mode}, model_id={model_id}, error={e}",
-            exc_info=True
+            "[Modes] Failed to resolve controls schema: provider=%s, mode=%s, model_id=%s, error=%s",
+            provider,
+            mode,
+            model_id,
+            _safe_log_text(e, label="error"),
         )
-        raise HTTPException(status_code=500, detail=f"Failed to resolve controls schema: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to resolve controls schema")
 
 
-@router.get("/{provider}/capabilities")
+@router.get("/{provider}/capabilities", response_model=ProviderModeCapabilitiesResponse)
 async def get_provider_mode_capabilities(
     provider: str,
     include_internal: bool = Query(False, description="Include internal (non-navigation) modes"),
@@ -1391,12 +1504,14 @@ async def get_provider_mode_capabilities(
         }
     except Exception as e:
         logger.error(
-            f"[Modes] Failed to probe mode capabilities: provider={provider}, include_internal={include_internal}, error={e}",
-            exc_info=True,
+            "[Modes] Failed to probe mode capabilities: provider=%s, include_internal=%s, error=%s",
+            provider,
+            include_internal,
+            _safe_log_text(e, label="error"),
         )
-        raise HTTPException(status_code=500, detail=f"Failed to probe mode capabilities: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to probe mode capabilities")
 
-@router.post("/{provider}/{mode}")
+@router.post("/{provider}/{mode}", response_model=ModeResponse)
 async def handle_mode(
     provider: str,
     mode: str,
@@ -1507,7 +1622,7 @@ async def handle_mode(
         credential_time = (time.time() - credential_start) * 1000
         logger.info(f"[Modes] ✅ [步骤2] 凭证获取完成 (耗时: {credential_time:.2f}ms)")
         logger.debug(f"[Modes]     - api_key: {'已设置' if api_key else 'None'}")
-        logger.debug(f"[Modes]     - api_url: {api_url[:80] + '...' if api_url and len(api_url) > 80 else api_url or 'None'}")
+        logger.debug(f"[Modes]     - api_url: {_safe_log_url(api_url)}")
 
         # ✅ 3. 创建提供商服务（如 GoogleService）
         logger.info(f"[Modes] 🔄 [步骤3] 创建提供商服务...")
@@ -1650,15 +1765,7 @@ async def handle_mode(
                     logger.debug(f"[Modes]     - attachment_id: {resolved['attachment_id']}")  # ✅ 不截断 ID，显示完整 ID
                     logger.debug(f"[Modes]     - status: {resolved['status']}")
                     logger.debug(f"[Modes]     - hasCloudUrl: {has_cloud_url}")
-                    # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
-                    if resolved.get('url'):
-                        if is_base64_url(resolved['url']):
-                            url_display = f"Base64 Data URL (长度: {len(resolved['url'])} 字符)"
-                        else:
-                            url_display = resolved['url'][:80] + '...' if len(resolved['url']) > 80 else resolved['url']
-                    else:
-                        url_display = 'None'
-                    logger.debug(f"[Modes]     - url: {url_display}")
+                    logger.debug(f"[Modes]     - url: {_safe_log_url(resolved.get('url'))}")
                     task_id_display = resolved.get('task_id') or 'None'  # ✅ 不截断 task_id，显示完整 ID
                     logger.debug(f"[Modes]     - taskId: {task_id_display}")
                     logger.debug(f"[Modes]     - 已添加到 reference_images.raw")
@@ -1718,19 +1825,11 @@ async def handle_mode(
                             # ✅ 如果已上传完成，优先使用 url（云端永久 URL）
                             if db_attachment.upload_status == 'completed' and db_attachment.url:
                                 raw_data['url'] = db_attachment.url
-                                # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
-                                if is_base64_url(db_attachment.url):
-                                    logger.debug(f"[Modes]     - 使用云存储 URL: Base64 Data URL (长度: {len(db_attachment.url)} 字符)")
-                                else:
-                                    logger.debug(f"[Modes]     - 使用云存储 URL: {db_attachment.url[:80] + '...' if len(db_attachment.url) > 80 else db_attachment.url}")
+                                logger.debug(f"[Modes]     - 使用云存储 URL: {_safe_log_url(db_attachment.url)}")
                             # ✅ 如果未上传完成，使用 temp_url（Base64）
                             elif db_attachment.temp_url:
                                 raw_data['url'] = db_attachment.temp_url
-                                # ✅ 对于 BASE64 URL，只输出类型和长度，不输出完整内容
-                                if is_base64_url(db_attachment.temp_url):
-                                    logger.debug(f"[Modes]     - 使用临时 URL: Base64 Data URL (长度: {len(db_attachment.temp_url)} 字符)")
-                                else:
-                                    logger.debug(f"[Modes]     - 使用临时 URL: {db_attachment.temp_url[:80] + '...' if len(db_attachment.temp_url) > 80 else db_attachment.temp_url}")
+                                logger.debug(f"[Modes]     - 使用临时 URL: {_safe_log_url(db_attachment.temp_url)}")
 
                             # 更新 reference_images
                             reference_images['raw'] = raw_data
@@ -1824,7 +1923,7 @@ async def handle_mode(
         logger.debug(f"[Modes]     - 参数数量: {len(params)}")
         logger.debug(f"[Modes]     - 关键参数:")
         logger.debug(f"[Modes]         - model: {params.get('model', 'None')}")
-        logger.debug(f"[Modes]         - prompt: {params.get('prompt', 'None')[:100] + '...' if params.get('prompt') and len(params.get('prompt', '')) > 100 else params.get('prompt', 'None')}")
+        logger.debug(f"[Modes]         - prompt: {_safe_log_text(params.get('prompt'), label='prompt')}")
         if 'number_of_images' in params:
             logger.debug(f"[Modes]         - number_of_images: {params.get('number_of_images')}")
         if 'aspect_ratio' in params:
@@ -1841,7 +1940,11 @@ async def handle_mode(
         except Exception as method_error:
             # ✅ 捕获图片生成/编辑时的错误（如 API Key 过期、API 错误等）
             method_time = (time.time() - method_start) * 1000
-            logger.error(f"[Modes] ❌ [步骤6] 服务方法调用失败 (耗时: {method_time:.2f}ms): {method_error}")
+            logger.error(
+                "[Modes] ❌ [步骤6] 服务方法调用失败 (耗时: %.2fms): %s",
+                method_time,
+                _safe_log_text(method_error, label="error"),
+            )
 
             if isinstance(method_error, NotImplementedError):
                 raise HTTPException(
@@ -2124,10 +2227,11 @@ async def handle_mode(
                         underlying_error_message: Optional[str] = None
                         if isinstance(persist_result, Exception):
                             underlying_error_type = type(persist_result).__name__
-                            underlying_error_message = str(persist_result)[:500]
+                            underlying_error_message = _mask_keys_in_text(str(persist_result))[:500]
                             logger.error(
                                 "[Modes] 第 %s 张图片持久化抛出异常: %s",
-                                idx + 1, persist_result,
+                                idx + 1,
+                                underlying_error_message,
                                 exc_info=persist_result,
                             )
                         else:
@@ -2162,13 +2266,16 @@ async def handle_mode(
                     text = extras.get("text")
                     if enhanced_prompt:
                         image_result["enhanced_prompt"] = enhanced_prompt
-                        logger.debug(f"[Modes]     - enhanced_prompt: {enhanced_prompt}")
+                        logger.debug(
+                            "[Modes]     - enhanced_prompt: %s",
+                            _safe_log_text(enhanced_prompt, label="enhanced_prompt"),
+                        )
                     if thoughts:
                         image_result["thoughts"] = thoughts
                         logger.debug(f"[Modes]     - thoughts: {len(thoughts) if isinstance(thoughts, list) else 'N/A'} items")
                     if text:
                         image_result["text"] = text
-                        logger.debug(f"[Modes]     - text: {text[:100]}..." if len(text) > 100 else f"[Modes]     - text: {text}")
+                        logger.debug("[Modes]     - text: %s", _safe_log_text(text, label="text"))
                     openai_response_id = extras.get("openai_response_id")
                     if openai_response_id:
                         image_result["openai_response_id"] = openai_response_id
@@ -2477,18 +2584,39 @@ async def handle_mode(
     except ProviderParamValidationError as e:
         raise HTTPException(status_code=400, detail=e.to_http_detail())
     except ValueError as e:
-        logger.warning(f"[Modes] Invalid request: {e}")
+        logger.warning("[Modes] Invalid request: %s", _safe_log_text(e, label="error"))
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Modes] Error: provider={provider}, mode={mode}, error={e}", exc_info=True)
+        logger.error(
+            "[Modes] Error: provider=%s, mode=%s, error=%s",
+            provider,
+            mode,
+            _safe_log_text(e, label="error"),
+        )
         error_text = str(e or "")
         status_code = classify_provider_error_code(error_text)
-        raise HTTPException(status_code=status_code, detail=error_text)
+        raise HTTPException(status_code=status_code, detail="Mode request failed")
 
 
-@router.post("/{provider}/{mode}/stream")
+@router.post(
+    "/{provider}/{mode}/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Server-sent mode events",
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "type": "string",
+                        "maxLength": 1_000_000,
+                    }
+                }
+            },
+        }
+    },
+)
 async def handle_mode_stream(
     provider: str,
     mode: str,
@@ -2584,7 +2712,7 @@ async def handle_mode_stream(
                 async for chunk in method(**params):
                     yield encode_sse_data(chunk, camel_case=True)
             except Exception as e:
-                logger.error(f"[Modes] Stream error: {e}", exc_info=True)
+                logger.error("[Modes] Stream error: %s", _safe_log_text(e, label="error"))
                 error_chunk = build_safe_error_chunk(
                     code="stream_error",
                     message="Mode streaming failed",
@@ -2601,5 +2729,5 @@ async def handle_mode_stream(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Modes] Stream error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("[Modes] Stream error: %s", _safe_log_text(e, label="error"))
+        raise HTTPException(status_code=500, detail="Mode stream failed")

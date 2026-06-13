@@ -16,7 +16,7 @@ import json
 import base64
 import requests
 from typing import Optional, List, Dict, Any, Union
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import parse_qs, parse_qsl, unquote, urlparse, urlsplit
 from bs4 import BeautifulSoup
 
 from ....utils.url_security import (
@@ -24,6 +24,7 @@ from ....utils.url_security import (
     sync_get_with_redirect_guard,
     validate_outbound_http_url,
 )
+from ....utils.log_sanitization import summarize_query_for_log, summarize_text_for_log
 
 
 def _http_get_with_ssrf_guard(url: str, *, headers: Dict[str, str], timeout: int,
@@ -37,6 +38,28 @@ def _http_get_with_ssrf_guard(url: str, *, headers: Dict[str, str], timeout: int
     return sync_get_with_redirect_guard(
         url, headers=headers, timeout=timeout, max_redirects=max_redirects
     )
+
+
+def _summarize_url_for_log(url: object) -> str:
+    try:
+        parsed = urlsplit(str(url))
+    except Exception:
+        return f"invalid-url(len={len(str(url))})"
+
+    host = parsed.netloc or "unknown-host"
+    scheme = parsed.scheme or "unknown"
+    query_count = len(parse_qsl(parsed.query, keep_blank_values=True))
+    fragment = "yes" if parsed.fragment else "no"
+    return (
+        f"{scheme}://{host} "
+        f"path_len={len(parsed.path)} "
+        f"query_params={query_count} "
+        f"fragment={fragment}"
+    )
+
+
+def _redact_url_in_log_text(text: object, url: object, summary: str) -> str:
+    return str(text).replace(str(url), summary)
 
 # Logger initialised first so optional-import warnings can use it below.
 try:
@@ -90,7 +113,11 @@ def web_search(query: str) -> str:
     Returns:
         A JSON string containing search results (title/url/snippet)
     """
-    logger.info(f"{LOG_PREFIXES['search']} Executing web_search for: '{query}'")
+    logger.info(
+        "%s Executing web_search for: %s",
+        LOG_PREFIXES["search"],
+        summarize_query_for_log(query),
+    )
     clean_query = (query or "").strip()
     if not clean_query:
         return json.dumps([], ensure_ascii=False, indent=2)
@@ -151,11 +178,15 @@ def web_search(query: str) -> str:
             logger.warning(
                 "%s No results parsed for query: %s",
                 LOG_PREFIXES["warning"],
-                clean_query,
+                summarize_query_for_log(clean_query),
             )
         return json.dumps(entries, ensure_ascii=False, indent=2)
     except Exception as e:
-        logger.error("%s web_search failed: %s", LOG_PREFIXES["error"], e, exc_info=True)
+        logger.error(
+            "%s web_search failed: %s",
+            LOG_PREFIXES["error"],
+            summarize_text_for_log(e, label="web_search_error"),
+        )
         return json.dumps(
             [{
                 "title": f"Search failed for query: {clean_query}",
@@ -185,7 +216,8 @@ def read_webpage(url: str, max_length: int = 50000) -> str:
     Returns:
         The extracted content in Markdown format, or an error message
     """
-    logger.info(f"{LOG_PREFIXES['webpage']} Executing read_webpage for: '{url}'")
+    log_url = _summarize_url_for_log(url)
+    logger.info("%s Executing read_webpage for: %s", LOG_PREFIXES["webpage"], log_url)
 
     try:
         # Set a user agent to avoid being blocked by some websites
@@ -214,27 +246,39 @@ def read_webpage(url: str, max_length: int = 50000) -> str:
 
         # Truncate if too long
         if len(content) > max_length:
-            logger.warning(f"Content truncated from {len(content)} to {max_length} characters")
+            logger.warning(
+                "Content truncated from %s to %s characters",
+                len(content),
+                max_length,
+            )
             content = content[:max_length] + f"\n\n[Content truncated at {max_length} characters]"
 
-        logger.info(f"{LOG_PREFIXES['success']} Successfully read webpage: {url} ({len(content)} characters)")
+        logger.info(
+            "%s Successfully read webpage: %s (%s characters)",
+            LOG_PREFIXES["success"],
+            log_url,
+            len(content),
+        )
         return content
 
     except UnsafeURLError as e:
         error_msg = f"Error: URL 被 SSRF 防护拒绝 ({url}): {e}"
-        logger.warning(error_msg)
+        safe_error = _redact_url_in_log_text(e, url, log_url)
+        logger.warning("Error: URL 被 SSRF 防护拒绝 (%s): %s", log_url, safe_error)
         return error_msg
     except requests.exceptions.Timeout:
         error_msg = f"Error: Request timeout while reading webpage {url}"
-        logger.error(error_msg)
+        logger.error("Error: Request timeout while reading webpage %s", log_url)
         return error_msg
     except requests.exceptions.RequestException as e:
         error_msg = f"Error reading webpage {url}: {str(e)}"
-        logger.error(error_msg)
+        safe_error = _redact_url_in_log_text(e, url, log_url)
+        logger.error("Error reading webpage %s: %s", log_url, safe_error)
         return error_msg
     except Exception as e:
         error_msg = f"An unexpected error occurred while reading {url}: {str(e)}"
-        logger.exception(error_msg)
+        safe_error = _redact_url_in_log_text(e, url, log_url)
+        logger.error("An unexpected error occurred while reading %s: %s", log_url, safe_error)
         return error_msg
 
 
@@ -271,11 +315,11 @@ def create_browser_driver() -> Optional[webdriver.Chrome]:
         A Chrome WebDriver instance, or None if initialization fails
     """
     if not SELENIUM_AVAILABLE:
-        logger.error(f"{LOG_PREFIXES['error']} Selenium is not available. Please install it first.")
+        logger.error("%s Selenium is not available. Please install it first.", LOG_PREFIXES["error"])
         return None
 
     try:
-        logger.info(f"{LOG_PREFIXES['startup']} Initializing Chrome WebDriver...")
+        logger.info("%s Initializing Chrome WebDriver...", LOG_PREFIXES["startup"])
         chrome_options = Options()
         chrome_options.add_argument("--headless")  # Run Chrome in headless mode
         chrome_options.add_argument("--no-sandbox")
@@ -288,11 +332,15 @@ def create_browser_driver() -> Optional[webdriver.Chrome]:
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=chrome_options)
 
-        logger.info(f"{LOG_PREFIXES['success']} Chrome WebDriver initialized successfully")
+        logger.info("%s Chrome WebDriver initialized successfully", LOG_PREFIXES["success"])
         return driver
 
     except Exception as e:
-        logger.exception(f"{LOG_PREFIXES['error']} Error initializing WebDriver: {e}")
+        logger.error(
+            "%s Error initializing WebDriver: %s",
+            LOG_PREFIXES["error"],
+            summarize_text_for_log(e, label="webdriver_error"),
+        )
         return None
 
 
@@ -311,7 +359,11 @@ def get_driver(user_id: str = "default") -> Optional[webdriver.Chrome]:
         if user_id in _user_drivers:
             session = _user_drivers[user_id]
             session.last_used = datetime.now()
-            logger.info(f"{LOG_PREFIXES['info']} Reusing browser session for user: {user_id}")
+            logger.info(
+                "%s Reusing browser session for user=%s",
+                LOG_PREFIXES["info"],
+                summarize_text_for_log(user_id, label="user_id"),
+            )
             return session.driver
 
         # Create new session for user
@@ -323,7 +375,11 @@ def get_driver(user_id: str = "default") -> Optional[webdriver.Chrome]:
                 created_at=datetime.now(),
                 last_used=datetime.now()
             )
-            logger.info(f"{LOG_PREFIXES['info']} Created new browser session for user: {user_id}")
+            logger.info(
+                "%s Created new browser session for user=%s",
+                LOG_PREFIXES["info"],
+                summarize_text_for_log(user_id, label="user_id"),
+            )
         return driver
 
 
@@ -339,13 +395,26 @@ def close_driver(user_id: str = "default"):
             session = _user_drivers[user_id]
             try:
                 session.driver.quit()
-                logger.info(f"{LOG_PREFIXES['success']} Selenium WebDriver closed for user: {user_id}")
+                logger.info(
+                    "%s Selenium WebDriver closed for user=%s",
+                    LOG_PREFIXES["success"],
+                    summarize_text_for_log(user_id, label="user_id"),
+                )
             except Exception as e:
-                logger.error(f"{LOG_PREFIXES['error']} Error closing WebDriver for user {user_id}: {e}")
+                logger.error(
+                    "%s Error closing WebDriver for user=%s: %s",
+                    LOG_PREFIXES["error"],
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(e, label="webdriver_close_error"),
+                )
             finally:
                 del _user_drivers[user_id]
         else:
-            logger.warning(f"{LOG_PREFIXES['warning']} No browser session found for user: {user_id}")
+            logger.warning(
+                "%s No browser session found for user=%s",
+                LOG_PREFIXES["warning"],
+                summarize_text_for_log(user_id, label="user_id"),
+            )
 
 
 def close_all_drivers():
@@ -357,11 +426,20 @@ def close_all_drivers():
             session = _user_drivers[user_id]
             try:
                 session.driver.quit()
-                logger.info(f"{LOG_PREFIXES['success']} Selenium WebDriver closed for user: {user_id}")
+                logger.info(
+                    "%s Selenium WebDriver closed for user=%s",
+                    LOG_PREFIXES["success"],
+                    summarize_text_for_log(user_id, label="user_id"),
+                )
             except Exception as e:
-                logger.error(f"{LOG_PREFIXES['error']} Error closing WebDriver for user {user_id}: {e}")
+                logger.error(
+                    "%s Error closing WebDriver for user=%s: %s",
+                    LOG_PREFIXES["error"],
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(e, label="webdriver_close_error"),
+                )
         _user_drivers.clear()
-        logger.info(f"{LOG_PREFIXES['info']} All browser sessions closed")
+        logger.info("%s All browser sessions closed", LOG_PREFIXES["info"])
 
 
 def cleanup_idle_sessions():
@@ -377,18 +455,32 @@ def cleanup_idle_sessions():
             idle_seconds = (now - session.last_used).total_seconds()
             if idle_seconds > SESSION_TIMEOUT_SECONDS:
                 expired_users.append(user_id)
-                logger.info(f"{LOG_PREFIXES['info']} Session expired for user {user_id} (idle {idle_seconds:.0f}s)")
+                logger.info(
+                    "%s Session expired for user=%s (idle %.0fs)",
+                    LOG_PREFIXES["info"],
+                    summarize_text_for_log(user_id, label="user_id"),
+                    idle_seconds,
+                )
 
         for user_id in expired_users:
             session = _user_drivers[user_id]
             try:
                 session.driver.quit()
             except Exception as e:
-                logger.error(f"{LOG_PREFIXES['error']} Error closing expired session for {user_id}: {e}")
+                logger.error(
+                    "%s Error closing expired session for user=%s: %s",
+                    LOG_PREFIXES["error"],
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(e, label="webdriver_close_error"),
+                )
             del _user_drivers[user_id]
 
         if expired_users:
-            logger.info(f"{LOG_PREFIXES['info']} Cleaned up {len(expired_users)} idle browser session(s)")
+            logger.info(
+                "%s Cleaned up %s idle browser session(s)",
+                LOG_PREFIXES["info"],
+                len(expired_users),
+            )
 
 
 def get_active_sessions() -> Dict[str, dict]:
@@ -444,9 +536,15 @@ def selenium_browse(
         - screenshot: Base64-encoded PNG screenshot (if capture_screenshot=True)
         - error: Error message if any
     """
-    logger.info(f"{LOG_PREFIXES['selenium']} Executing selenium_browse for: '{url}' (user: {user_id})")
+    log_url = _summarize_url_for_log(url)
+    logger.info(
+        "%s Executing selenium_browse for: %s (user=%s)",
+        LOG_PREFIXES["selenium"],
+        log_url,
+        summarize_text_for_log(user_id, label="user_id"),
+    )
     if steps:
-        logger.debug(f"Steps to perform: {steps}")
+        logger.debug("Steps to perform: %d", len(steps))
 
     result = {"content": "", "screenshot": None, "error": None}
 
@@ -454,21 +552,23 @@ def selenium_browse(
     # driver work, regardless of selenium availability.
     try:
         url = validate_outbound_http_url(url)
+        log_url = _summarize_url_for_log(url)
     except UnsafeURLError as e:
         result["error"] = f"Error: URL 被 SSRF 防护拒绝: {e}"
-        logger.warning(f"{LOG_PREFIXES['error']} {result['error']}")
+        safe_error = _redact_url_in_log_text(e, url, log_url)
+        logger.warning("%s Error: URL 被 SSRF 防护拒绝: %s", LOG_PREFIXES["error"], safe_error)
         return result
 
     if not SELENIUM_AVAILABLE:
         result["error"] = "Error: Selenium is not available. Please install selenium and webdriver-manager."
-        logger.error(f"{LOG_PREFIXES['error']} {result['error']}")
+        logger.error("%s %s", LOG_PREFIXES["error"], result["error"])
         return result
 
     driver = get_driver(user_id=user_id)
 
     if driver is None:
         result["error"] = "Error: Selenium WebDriver not initialized. Please check setup."
-        logger.error(f"{LOG_PREFIXES['error']} {result['error']}")
+        logger.error("%s %s", LOG_PREFIXES["error"], result["error"])
         return result
 
     try:
@@ -476,7 +576,7 @@ def selenium_browse(
         driver.set_window_size(1024, 2048)
 
         # Navigate to the URL
-        logger.info(f"{LOG_PREFIXES['navigate']} Navigating to: {url}")
+        logger.info("%s Navigating to: %s", LOG_PREFIXES["navigate"], log_url)
         driver.get(url)
 
         # Wait for the page to load
@@ -489,7 +589,7 @@ def selenium_browse(
 
         # Auto-scroll to load lazy content (infinite scroll, lazy loading images, etc.)
         if auto_scroll:
-            logger.info(f"{LOG_PREFIXES['action']} Auto-scrolling to load lazy content...")
+            logger.info("%s Auto-scrolling to load lazy content...", LOG_PREFIXES["action"])
             last_height = driver.execute_script("return document.body.scrollHeight")
 
             for scroll_count in range(max_scrolls):
@@ -501,11 +601,21 @@ def selenium_browse(
                 new_height = driver.execute_script("return document.body.scrollHeight")
                 current_position = driver.execute_script("return window.pageYOffset + window.innerHeight")
 
-                logger.debug(f"  Scroll {scroll_count + 1}/{max_scrolls}: position={current_position}, total_height={new_height}")
+                logger.debug(
+                    "  Scroll %s/%s: position=%s, total_height=%s",
+                    scroll_count + 1,
+                    max_scrolls,
+                    current_position,
+                    new_height,
+                )
 
                 # Check if we've reached the bottom
                 if current_position >= new_height:
-                    logger.info(f"{LOG_PREFIXES['success']} Reached bottom of page after {scroll_count + 1} scrolls")
+                    logger.info(
+                        "%s Reached bottom of page after %s scrolls",
+                        LOG_PREFIXES["success"],
+                        scroll_count + 1,
+                    )
                     break
 
                 # Check if page height hasn't changed (no new content loaded)
@@ -515,7 +625,11 @@ def selenium_browse(
                     time.sleep(scroll_pause)
                     final_height = driver.execute_script("return document.body.scrollHeight")
                     if final_height == new_height:
-                        logger.info(f"{LOG_PREFIXES['success']} No more content to load after {scroll_count + 1} scrolls")
+                        logger.info(
+                            "%s No more content to load after %s scrolls",
+                            LOG_PREFIXES["success"],
+                            scroll_count + 1,
+                        )
                         break
 
                 last_height = new_height
@@ -526,15 +640,23 @@ def selenium_browse(
 
         # Perform the steps if provided
         if steps:
-            logger.info(f"{LOG_PREFIXES['action']} Performing {len(steps)} interaction step(s)")
+            logger.info(
+                "%s Performing %s interaction step(s)",
+                LOG_PREFIXES["action"],
+                len(steps),
+            )
             for i, step in enumerate(steps, 1):
                 action = step.get('action', '').lower()
-                logger.debug(f"Step {i}/{len(steps)}: {action}")
+                logger.debug("Step %s/%s: %s", i, len(steps), summarize_text_for_log(action, label="action"))
 
                 if action == 'click':
                     by = getattr(By, step['by'].upper())
                     value = step['value']
-                    logger.debug(f"  Clicking element: {step['by']}={value}")
+                    logger.debug(
+                        "  Clicking element: by=%s value=%s",
+                        summarize_text_for_log(step.get("by"), label="selector_type"),
+                        summarize_text_for_log(value, label="selector_value"),
+                    )
                     element = WebDriverWait(driver, 10).until(
                         EC.element_to_be_clickable((by, value))
                     )
@@ -545,7 +667,12 @@ def selenium_browse(
                     by = getattr(By, step['by'].upper())
                     value = step['value']
                     keys = step['keys']
-                    logger.debug(f"  Sending keys to element: {step['by']}={value}")
+                    logger.debug(
+                        "  Sending keys to element: by=%s value=%s keys=%s",
+                        summarize_text_for_log(step.get("by"), label="selector_type"),
+                        summarize_text_for_log(value, label="selector_value"),
+                        summarize_text_for_log(keys, label="input_keys"),
+                    )
                     element = WebDriverWait(driver, 10).until(
                         EC.presence_of_element_located((by, value))
                     )
@@ -555,7 +682,7 @@ def selenium_browse(
 
                 elif action == 'wait':
                     seconds = step.get('seconds', 1)
-                    logger.debug(f"  Waiting {seconds} second(s)")
+                    logger.debug("  Waiting %s second(s)", seconds)
                     time.sleep(seconds)
 
                 elif action == 'scroll_to_end':
@@ -566,7 +693,11 @@ def selenium_browse(
                 elif action == 'scroll_to_element':
                     by = getattr(By, step['by'].upper())
                     value = step['value']
-                    logger.debug(f"  Scrolling to element: {step['by']}={value}")
+                    logger.debug(
+                        "  Scrolling to element: by=%s value=%s",
+                        summarize_text_for_log(step.get("by"), label="selector_type"),
+                        summarize_text_for_log(value, label="selector_value"),
+                    )
                     element = WebDriverWait(driver, 10).until(
                         EC.presence_of_element_located((by, value))
                     )
@@ -574,7 +705,12 @@ def selenium_browse(
                     time.sleep(1)
 
                 else:
-                    logger.warning(f"{LOG_PREFIXES['warning']} Unknown action '{action}' in step: {step}")
+                    logger.warning(
+                        "%s Unknown action=%s in step=%s",
+                        LOG_PREFIXES["warning"],
+                        summarize_text_for_log(action, label="action"),
+                        summarize_text_for_log(step, label="interaction_step"),
+                    )
 
         # Capture full-page screenshot if requested
         if capture_screenshot:
@@ -588,7 +724,12 @@ def selenium_browse(
                 total_width = min(total_width, max_dimension)
                 total_height = min(total_height, max_dimension)
 
-                logger.info(f"{LOG_PREFIXES['screenshot']} Capturing full-page screenshot: {total_width}x{total_height}")
+                logger.info(
+                    "%s Capturing full-page screenshot: %sx%s",
+                    LOG_PREFIXES["screenshot"],
+                    total_width,
+                    total_height,
+                )
 
                 # Save original window size
                 original_size = driver.get_window_size()
@@ -608,16 +749,24 @@ def selenium_browse(
                 # Restore original window size
                 driver.set_window_size(original_size['width'], original_size['height'])
 
-                logger.info(f"{LOG_PREFIXES['screenshot']} Full-page screenshot captured successfully")
+                logger.info("%s Full-page screenshot captured successfully", LOG_PREFIXES["screenshot"])
             except Exception as e:
-                logger.warning(f"{LOG_PREFIXES['warning']} Failed to capture full-page screenshot: {e}")
+                logger.warning(
+                    "%s Failed to capture full-page screenshot: %s",
+                    LOG_PREFIXES["warning"],
+                    summarize_text_for_log(e, label="screenshot_error"),
+                )
                 # Fallback to regular screenshot
                 try:
                     screenshot_data = driver.get_screenshot_as_base64()
                     result["screenshot"] = screenshot_data
-                    logger.info(f"{LOG_PREFIXES['screenshot']} Fallback viewport screenshot captured")
+                    logger.info("%s Fallback viewport screenshot captured", LOG_PREFIXES["screenshot"])
                 except Exception as e2:
-                    logger.warning(f"{LOG_PREFIXES['warning']} Failed to capture fallback screenshot: {e2}")
+                    logger.warning(
+                        "%s Failed to capture fallback screenshot: %s",
+                        LOG_PREFIXES["warning"],
+                        summarize_text_for_log(e2, label="screenshot_error"),
+                    )
 
         # Convert page content to Markdown
         if MARKDOWNIFY_AVAILABLE:
@@ -634,16 +783,31 @@ def selenium_browse(
 
         # Truncate if too long
         if len(content) > max_length:
-            logger.warning(f"Content truncated from {len(content)} to {max_length} characters")
+            logger.warning(
+                "Content truncated from %s to %s characters",
+                len(content),
+                max_length,
+            )
             content = content[:max_length] + f"\n\n[Content truncated at {max_length} characters]"
 
         result["content"] = content
-        logger.info(f"{LOG_PREFIXES['success']} Successfully browsed with Selenium: {url} ({len(content)} characters)")
+        logger.info(
+            "%s Successfully browsed with Selenium: %s (%s characters)",
+            LOG_PREFIXES["success"],
+            log_url,
+            len(content),
+        )
         return result
 
     except Exception as e:
         result["error"] = f"Error during selenium_browse for {url}: {str(e)}"
-        logger.exception(f"{LOG_PREFIXES['error']} {result['error']}")
+        safe_error = _redact_url_in_log_text(e, url, log_url)
+        logger.error(
+            "%s Error during selenium_browse for %s: %s",
+            LOG_PREFIXES["error"],
+            log_url,
+            safe_error,
+        )
         return result
 
 

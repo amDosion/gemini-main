@@ -17,6 +17,7 @@ import { useVideoPlayerControls } from '../../hooks/views/useVideoPlayerControls
 import type { ActionMenuAnchor, HoverPromptPreview } from './video/types';
 import { VideoHistorySidebar } from './video/VideoHistorySidebar';
 import { VideoMainCanvas } from './video/VideoMainCanvas';
+import { downloadSourceUrlInBrowser } from '../../services/downloadService';
 
 interface VideoGenViewProps {
   messages: Message[];
@@ -468,12 +469,12 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
   }, [clearCopiedResetTimer, hoverPreview]);
 
   const handleDownload = useCallback((url: string) => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `gemini-video-${Date.now()}.mp4`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    void downloadSourceUrlInBrowser({
+      sourceUrl: url,
+      fileName: `gemini-video-${Date.now()}.mp4`,
+    }).catch((error) => {
+      console.warn('[VideoGenView] Download blocked or failed:', error);
+    });
   }, []);
 
   const isInteractiveKeyboardTarget = useCallback((target: EventTarget | null): boolean => {

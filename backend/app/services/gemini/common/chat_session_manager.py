@@ -9,7 +9,6 @@ Chat Session Manager - 管理 Google Chat SDK 会话生命周期
 
 import logging
 import json
-import re
 import time
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
@@ -23,7 +22,10 @@ from ....models.db_models import (
     MessageAttachment
 )
 from ....utils.message_utils import get_message_table_class_by_name
-from ....utils.attachment_handler import is_base64_url
+from .message_converter import (
+    extract_inline_data_url_payload,
+    is_allowed_provider_file_uri,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -226,20 +228,37 @@ class ChatSessionManager:
             for att in attachments:
                 if att.google_file_uri:
                     # 使用 Google File URI
+                    if not is_allowed_provider_file_uri(att.google_file_uri):
+                        logger.warning(
+                            "[ChatSessionManager] Skipping unsupported google_file_uri"
+                        )
+                        continue
                     parts.append({
                         'file_data': {
                             'file_uri': att.google_file_uri,
                             'mime_type': att.mime_type or 'image/png'
                         }
                     })
-                elif att.url and is_base64_url(att.url):
+                elif att.url:
                     # Base64 Data URL
-                    match = re.match(r'^data:(.*?);base64,(.*)$', att.url)
-                    if match:
+                    try:
+                        data_url_payload = extract_inline_data_url_payload(
+                            att.url,
+                            fallback_mime_type=att.mime_type or 'image/png',
+                            source="chat history attachment data URL",
+                        )
+                    except ValueError as exc:
+                        logger.warning(
+                            "[ChatSessionManager] Skipping attachment data URL: %s",
+                            exc,
+                        )
+                        continue
+                    if data_url_payload:
+                        actual_mime, base64_data = data_url_payload
                         parts.append({
                             'inline_data': {
-                                'mime_type': match.group(1),
-                                'data': match.group(2)
+                                'mime_type': actual_mime,
+                                'data': base64_data
                             }
                         })
             

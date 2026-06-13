@@ -14,6 +14,8 @@ import uuid
 from typing import Dict, Any, List, Optional, Iterator, AsyncIterator
 from sqlalchemy.orm import Session
 
+from ....utils.log_sanitization import summarize_text_for_log
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,11 +70,19 @@ class ADKAgent:
                 name=name,
                 root_agent=self._adk_agent,
             )
-        except Exception:
+        except Exception as exc:
             self._adk_available = False
-            logger.warning("[ADKAgent] ADK SDK not available, strict fail-closed mode enabled", exc_info=True)
+            logger.warning(
+                "[ADKAgent] ADK SDK not available, strict fail-closed mode enabled: error=%s",
+                summarize_text_for_log(exc, label="adk_import_error"),
+            )
         
-        logger.info("[ADKAgent] Initialized name=%s model=%s adk=%s", name, model, self._adk_available)
+        logger.info(
+            "[ADKAgent] Initialized name=%s model=%s adk=%s",
+            summarize_text_for_log(name, label="agent_name"),
+            model,
+            self._adk_available,
+        )
 
     @property
     def is_available(self) -> bool:
@@ -113,7 +123,10 @@ class ADKAgent:
         
         在部署时调用，用于加载模型、数据库连接等
         """
-        logger.info(f"[ADKAgent] Setting up agent: {self.name}")
+        logger.info(
+            "[ADKAgent] Setting up agent: %s",
+            summarize_text_for_log(self.name, label="agent_name"),
+        )
         # 实际应该在这里进行重初始化
 
     @staticmethod
@@ -226,7 +239,10 @@ class ADKAgent:
         Yields:
             响应块
         """
-        logger.info(f"[ADKAgent] Bidi stream started for agent: {self.name}")
+        logger.info(
+            "[ADKAgent] Bidi stream started for agent: %s",
+            summarize_text_for_log(self.name, label="agent_name"),
+        )
         
         while True:
             try:
@@ -246,7 +262,11 @@ class ADKAgent:
             except asyncio.TimeoutError:
                 yield {"type": "heartbeat"}
             except Exception as e:
-                logger.error(f"[ADKAgent] Error in bidi stream: {e}", exc_info=True)
+                logger.error(
+                    "[ADKAgent] Error in bidi stream: agent=%s error=%s",
+                    summarize_text_for_log(self.name, label="agent_name"),
+                    summarize_text_for_log(e, label="bidi_stream_error"),
+                )
                 yield {"error": str(e)}
                 break
     
@@ -256,5 +276,8 @@ class ADKAgent:
         
         定义智能体支持的操作（query、stream_query、bidi_stream_query）
         """
-        logger.info(f"[ADKAgent] Registering operations for agent: {self.name}")
+        logger.info(
+            "[ADKAgent] Registering operations for agent: %s",
+            summarize_text_for_log(self.name, label="agent_name"),
+        )
         # 实际应该注册操作到 Agent Engine

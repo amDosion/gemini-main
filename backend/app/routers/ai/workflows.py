@@ -21,15 +21,17 @@ import re
 import io
 import mimetypes
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Annotated, Optional, List, Dict, Any, Tuple
 from pathlib import Path
 from urllib.parse import urlparse
 
 from cachetools import LRUCache
 
 from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from fastapi.routing import APIRoute
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -48,6 +50,7 @@ from ...models.db_models import (
     generate_uuid,
 )
 from ...utils.case_converter import to_camel_case
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 from ...services.agent.agent_llm_service import AgentLLMService
 from ...services.agent.workflow_engine import WorkflowEngine
 from ...services.agent.workflow_history_image_service import (
@@ -80,6 +83,8 @@ from ...services.agent.workflow_runtime_helpers import (
 )
 from ...services.gemini.base.video_common import is_google_provider_video_uri
 from ...services.agent.workflow_payload_normalizer import (
+    MAX_WORKFLOW_EDGES,
+    MAX_WORKFLOW_NODES,
     _clamp_optional_int,
     _normalize_agent_default_task_type,
     _normalize_agent_task_type,
@@ -104,49 +109,243 @@ from ...utils.attachment_handler import is_base64_url, is_blob_url, is_base64_im
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["workflows"])
+
+class WorkflowAPIRoute(APIRoute):
+    def get_route_handler(self):
+        original_route_handler = super().get_route_handler()
+
+        async def custom_route_handler(request: Request):
+            try:
+                return await original_route_handler(request)
+            except RequestValidationError as exc:
+                if request.url.path == "/api/workflows/execute" and _is_empty_execute_nodes_error(
+                    exc.errors()
+                ):
+                    raise HTTPException(status_code=400, detail=exc.errors()) from exc
+                raise
+
+        return custom_route_handler
+
+
+router = APIRouter(tags=["workflows"], route_class=WorkflowAPIRoute)
+FREE_TEXT_PATTERN = r"^[\s\S]*$"
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+AGENT_TEXT_MAX_LENGTH = 100_000
+AGENT_DESCRIPTION_MAX_LENGTH = 4096
+AGENT_ID_MAX_LENGTH = 256
+AGENT_ICON_MAX_LENGTH = 64
+AGENT_LIST_MAX_ITEMS = 10_000
+AGENT_MODEL_LIST_MAX_ITEMS = 1_000
+WORKFLOW_EXECUTION_FAILED_MESSAGE = "Workflow execution failed"
+
+
+def _is_empty_execute_nodes_error(errors: List[Dict[str, Any]]) -> bool:
+    for error in errors:
+        if tuple(error.get("loc") or ()) != ("body", "nodes"):
+            continue
+        if error.get("type") in {"too_short", "list_too_short"}:
+            return True
+    return False
 
 
 # ==================== Request Models ====================
 
 class WorkflowExecuteRequest(BaseModel):
-    nodes: List[Dict[str, Any]]
-    edges: List[Dict[str, Any]]
+    model_config = ConfigDict(extra="forbid")
+
+    nodes: List[Dict[str, Any]] = Field(min_length=1, max_length=MAX_WORKFLOW_NODES)
+    edges: List[Dict[str, Any]] = Field(max_length=MAX_WORKFLOW_EDGES)
     input: Optional[Dict[str, Any]] = None
     meta: Optional[Dict[str, Any]] = None
     async_mode: Optional[bool] = False
 
 
-class CreateAgentRequest(BaseModel):
-    model_config = ConfigDict(protected_namespaces=("model_validate", "model_dump"))
+class WorkflowExecutionPolicyResponse(BaseModel):
+    sse_idle_threshold_ms: int = Field(ge=100, le=300_000)
+    polling_interval_ms: int = Field(ge=100, le=300_000)
+    hard_timeout_ms: int = Field(ge=1_000, le=86_400_000)
 
-    name: str
-    description: Optional[str] = ""
-    agent_type: Optional[str] = "custom"
-    provider_id: str
-    model_id: str
-    system_prompt: Optional[str] = ""
-    temperature: Optional[float] = 0.7
-    max_tokens: Optional[int] = 4096
-    icon: Optional[str] = "🤖"
-    color: Optional[str] = "#14b8a6"
+
+class WorkflowDeleteResponse(BaseModel):
+    success: bool
+
+
+class AgentDeleteResponse(BaseModel):
+    success: bool
+    deleted_mode: str = Field(max_length=16, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class AgentRuntimeResponse(BaseModel):
+    kind: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    label: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    supports_run: bool
+    supports_live_run: bool
+    supports_sessions: bool
+    supports_memory: bool
+    supports_official_orchestration: bool
+
+
+class AgentSourceResponse(BaseModel):
+    kind: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    label: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    is_system: bool
+
+
+class AgentResponse(BaseModel):
+    id: str = Field(max_length=AGENT_ID_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    user_id: str = Field(max_length=AGENT_ID_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    name: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    description: str = Field(max_length=AGENT_DESCRIPTION_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    agent_type: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    agent_card: Optional[Dict[str, Any]] = None
+    endpoint_url: Optional[str] = Field(default=None, max_length=2048, pattern=NO_CONTROL_CHARS_PATTERN)
+    provider_id: Optional[str] = Field(default=None, max_length=AGENT_ID_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    model_id: Optional[str] = Field(default=None, max_length=AGENT_ID_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    system_prompt: str = Field(max_length=AGENT_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    temperature: Optional[float] = Field(default=None, ge=0, le=2)
+    max_tokens: Optional[int] = Field(default=None, ge=1, le=1_000_000)
+    icon: str = Field(max_length=AGENT_ICON_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    color: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    created_at: int = Field(ge=0, le=4_102_444_800_000)
+    updated_at: int = Field(ge=0, le=4_102_444_800_000)
+    runtime: AgentRuntimeResponse
+    source: AgentSourceResponse
+    supports_runtime_sessions: bool
+    supports_runtime_live_run: bool
+    supports_runtime_memory: bool
+    supports_official_orchestration: bool
+
+
+class AgentListResponse(BaseModel):
+    agents: List[AgentResponse] = Field(max_length=AGENT_LIST_MAX_ITEMS)
+    count: int = Field(ge=0, le=AGENT_LIST_MAX_ITEMS)
+    active_count: int = Field(ge=0, le=AGENT_LIST_MAX_ITEMS)
+    inactive_count: int = Field(ge=0, le=AGENT_LIST_MAX_ITEMS)
+    task_counts: Dict[str, int]
+    include_inactive: bool
+    search: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    task_type: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class AgentRestoreResponse(BaseModel):
+    success: bool
+    agent: AgentResponse
+
+
+class AgentModelResponse(BaseModel):
+    id: str = Field(max_length=AGENT_ID_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    name: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    supported_tasks: List[str] = Field(max_length=16)
+    capabilities: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentProviderModelsResponse(BaseModel):
+    provider_id: str = Field(max_length=AGENT_ID_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    provider_name: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    all_models: List[AgentModelResponse] = Field(max_length=AGENT_MODEL_LIST_MAX_ITEMS)
+    models: List[AgentModelResponse] = Field(max_length=AGENT_MODEL_LIST_MAX_ITEMS)
+    image_generation_models: List[AgentModelResponse] = Field(max_length=AGENT_MODEL_LIST_MAX_ITEMS)
+    image_edit_models: List[AgentModelResponse] = Field(max_length=AGENT_MODEL_LIST_MAX_ITEMS)
+    video_generation_models: List[AgentModelResponse] = Field(max_length=AGENT_MODEL_LIST_MAX_ITEMS)
+    audio_generation_models: List[AgentModelResponse] = Field(max_length=AGENT_MODEL_LIST_MAX_ITEMS)
+    default_models_by_task: Dict[str, str]
+
+
+class AgentModelSelectionPolicyResponse(BaseModel):
+    strategy: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    tasks: List[str] = Field(max_length=16)
+
+
+class AvailableAgentModelsResponse(BaseModel):
+    providers: List[AgentProviderModelsResponse] = Field(max_length=AGENT_LIST_MAX_ITEMS)
+    selection_policy: AgentModelSelectionPolicyResponse
+
+
+class WorkflowHistoryClearResponse(BaseModel):
+    success: bool
+    execution_deleted_count: int = Field(ge=0, le=1_000_000)
+    node_deleted_count: int = Field(ge=0, le=10_000_000)
+    running_execution_count: int = Field(ge=0, le=1_000_000)
+    cancelled_running_count: int = Field(ge=0, le=1_000_000)
+
+
+class WorkflowCheckpointSummaryResponse(BaseModel):
+    version: int = Field(ge=1, le=100)
+    strategy: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    captured_at: int = Field(ge=0, le=4_102_444_800_000)
+    reason: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    event_count: int = Field(ge=0, le=1_000_000)
+    last_event_type: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class WorkflowExecutionStatePushMetricsResponse(BaseModel):
+    emitted: int = Field(ge=0, le=1_000_000_000)
+    dropped: int = Field(ge=0, le=1_000_000_000)
+    skipped: int = Field(ge=0, le=1_000_000_000)
+    last_emitted_at: int = Field(ge=0, le=4_102_444_800_000)
+    last_dropped_at: int = Field(ge=0, le=4_102_444_800_000)
+    last_skipped_at: int = Field(ge=0, le=4_102_444_800_000)
+
+
+class WorkflowRuntimeMetricsResponse(BaseModel):
+    subscriber_count: int = Field(ge=0, le=1_000_000)
+    emitted_event_count: int = Field(ge=0, le=1_000_000_000)
+    delivered_event_count: int = Field(ge=0, le=1_000_000_000)
+    dropped_event_count: int = Field(ge=0, le=1_000_000_000)
+    backpressure_count: int = Field(ge=0, le=1_000_000_000)
+    last_emitted_at: int = Field(ge=0, le=4_102_444_800_000)
+    last_dropped_at: int = Field(ge=0, le=4_102_444_800_000)
+    execution_state_push: WorkflowExecutionStatePushMetricsResponse
+
+
+class WorkflowControlResponse(BaseModel):
+    success: bool
+    execution_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    already_terminal: Optional[bool] = None
+    already_paused: Optional[bool] = None
+    already_running: Optional[bool] = None
+    pause_requested: Optional[bool] = None
+    cancel_transitioned: Optional[bool] = None
+    task_cancelled: Optional[bool] = None
+    resume_strategy: Optional[str] = Field(default=None, max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    recovered_from_stale_running: Optional[bool] = None
+    checkpoint: Optional[WorkflowCheckpointSummaryResponse] = None
+    runtime_metrics: Optional[WorkflowRuntimeMetricsResponse] = None
+
+
+class CreateAgentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", protected_namespaces=("model_validate", "model_dump"))
+
+    name: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    description: Optional[str] = Field(default="", max_length=AGENT_DESCRIPTION_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    agent_type: Optional[str] = Field(default="custom", max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    provider_id: str = Field(max_length=AGENT_ID_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    model_id: str = Field(max_length=AGENT_ID_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    system_prompt: Optional[str] = Field(default="", max_length=AGENT_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    temperature: Optional[float] = Field(default=0.7, ge=0, le=2)
+    max_tokens: Optional[int] = Field(default=4096, ge=1, le=1_000_000)
+    icon: Optional[str] = Field(default="🤖", max_length=AGENT_ICON_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    color: Optional[str] = Field(default="#14b8a6", max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
     agent_card: Optional[Dict[str, Any]] = None
 
 
 class UpdateAgentRequest(BaseModel):
-    model_config = ConfigDict(protected_namespaces=("model_validate", "model_dump"))
+    model_config = ConfigDict(extra="forbid", protected_namespaces=("model_validate", "model_dump"))
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    agent_type: Optional[str] = None
-    provider_id: Optional[str] = None
-    model_id: Optional[str] = None
-    system_prompt: Optional[str] = None
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    icon: Optional[str] = None
-    color: Optional[str] = None
-    status: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    description: Optional[str] = Field(default=None, max_length=AGENT_DESCRIPTION_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    agent_type: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    provider_id: Optional[str] = Field(default=None, max_length=AGENT_ID_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    model_id: Optional[str] = Field(default=None, max_length=AGENT_ID_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    system_prompt: Optional[str] = Field(default=None, max_length=AGENT_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    temperature: Optional[float] = Field(default=None, ge=0, le=2)
+    max_tokens: Optional[int] = Field(default=None, ge=1, le=1_000_000)
+    icon: Optional[str] = Field(default=None, max_length=AGENT_ICON_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    color: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: Optional[str] = Field(default=None, max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
     agent_card: Optional[Dict[str, Any]] = None
 
 
@@ -184,6 +383,256 @@ class WorkflowTemplateRebuildRequest(BaseModel):
 
 class WorkflowResetRequest(BaseModel):
     recreate_starters: Optional[bool] = True
+
+
+WorkflowJsonObject = Annotated[Dict[str, JsonValue], Field(max_length=256)]
+WorkflowNoControlText = Annotated[str, Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)]
+WorkflowFreeText = Annotated[str, Field(max_length=100_000, pattern=FREE_TEXT_PATTERN)]
+
+
+class WorkflowDynamicObjectResponse(RootModel[WorkflowJsonObject]):
+    root: WorkflowJsonObject
+
+
+class WorkflowNodeSummaryResponse(BaseModel):
+    pending: int = Field(ge=0, le=10_000)
+    running: int = Field(ge=0, le=10_000)
+    completed: int = Field(ge=0, le=10_000)
+    failed: int = Field(ge=0, le=10_000)
+    skipped: int = Field(ge=0, le=10_000)
+    total: int = Field(ge=0, le=10_000)
+
+
+class WorkflowResultSummaryResponse(BaseModel):
+    has_result: bool
+    text_preview: str = Field(max_length=100_000, pattern=FREE_TEXT_PATTERN)
+    image_count: int = Field(ge=0, le=10_000)
+    image_urls: List[WorkflowNoControlText] = Field(default_factory=list, max_length=10_000)
+    audio_count: int = Field(ge=0, le=10_000)
+    audio_urls: List[WorkflowNoControlText] = Field(default_factory=list, max_length=10_000)
+    video_count: int = Field(ge=0, le=10_000)
+    video_urls: List[WorkflowNoControlText] = Field(default_factory=list, max_length=10_000)
+    runtime_hints: List[WorkflowNoControlText] = Field(default_factory=list, max_length=64)
+    primary_runtime: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    trace: WorkflowJsonObject = Field(default_factory=dict)
+    cost: WorkflowJsonObject = Field(default_factory=dict)
+    continuation_strategy: str = Field(default="", max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    video_extension_count: int = Field(default=0, ge=0, le=10_000)
+    video_extension_applied: int = Field(default=0, ge=0, le=10_000)
+    total_duration_seconds: int = Field(default=0, ge=0, le=86_400)
+    continued_from_video: bool = False
+    subtitle_mode: str = Field(default="none", max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    subtitle_file_count: int = Field(default=0, ge=0, le=10_000)
+
+
+class WorkflowExecuteResponse(BaseModel):
+    execution_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    result: Optional[JsonValue] = None
+    resultSummary: Optional[WorkflowResultSummaryResponse] = None
+    resultPreviewAudioUrls: List[WorkflowNoControlText] = Field(default_factory=list, max_length=10_000)
+    resultPreviewVideoUrls: List[WorkflowNoControlText] = Field(default_factory=list, max_length=10_000)
+    events: List[WorkflowJsonObject] = Field(default_factory=list, max_length=10_000)
+    checkpoint: Optional[WorkflowCheckpointSummaryResponse] = None
+    error: Optional[WorkflowFreeText] = None
+
+
+class WorkflowExecutionStateResponse(BaseModel):
+    executionId: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    startedAt: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+    completedAt: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+    error: Optional[WorkflowFreeText] = None
+    result: Optional[JsonValue] = None
+    nodeStatuses: Dict[str, WorkflowNoControlText] = Field(default_factory=dict, max_length=10_000)
+    nodeProgress: Dict[str, int] = Field(default_factory=dict, max_length=10_000)
+    nodeResults: Dict[str, JsonValue] = Field(default_factory=dict, max_length=10_000)
+    nodeErrors: Dict[str, WorkflowFreeText] = Field(default_factory=dict, max_length=10_000)
+    runtimeMetrics: WorkflowRuntimeMetricsResponse
+    finalStatus: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    isTerminal: bool
+    stateVersion: int = Field(ge=0, le=4_102_444_800_000)
+    clientPolicy: WorkflowExecutionPolicyResponse
+    checkpoint: Optional[WorkflowCheckpointSummaryResponse] = None
+    pausedAt: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+
+
+class WorkflowExecutionStateRuntimeDebugResponse(BaseModel):
+    execution_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    runtime_active: bool
+    execution_state_runtime: WorkflowJsonObject
+
+
+class WorkflowHistoryExecutionSummaryResponse(BaseModel):
+    id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    title: str = Field(max_length=256, pattern=FREE_TEXT_PATTERN)
+    source: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    task: str = Field(max_length=100_000, pattern=FREE_TEXT_PATTERN)
+    started_at: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+    completed_at: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+    duration_ms: Optional[int] = Field(default=None, ge=0, le=86_400_000)
+    error: Optional[WorkflowFreeText] = None
+    node_summary: WorkflowNodeSummaryResponse
+    workflow_summary: WorkflowJsonObject
+    result_summary: WorkflowResultSummaryResponse
+
+
+class WorkflowHistoryListResponse(BaseModel):
+    executions: List[WorkflowHistoryExecutionSummaryResponse] = Field(default_factory=list, max_length=100)
+    count: int = Field(ge=0, le=100)
+    total: int = Field(ge=0, le=1_000_000)
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0, le=1_000_000)
+
+
+class WorkflowGraphResponse(BaseModel):
+    schema_version: int = Field(ge=1, le=100)
+    nodes: List[WorkflowJsonObject] = Field(default_factory=list, max_length=MAX_WORKFLOW_NODES)
+    edges: List[WorkflowJsonObject] = Field(default_factory=list, max_length=MAX_WORKFLOW_EDGES)
+
+
+class WorkflowNodeExecutionResponse(BaseModel):
+    id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    node_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    node_type: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    input: Optional[JsonValue] = None
+    output: Optional[JsonValue] = None
+    error: Optional[WorkflowFreeText] = None
+    started_at: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+    completed_at: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+
+
+class WorkflowHistoryDetailResponse(BaseModel):
+    id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    title: str = Field(max_length=256, pattern=FREE_TEXT_PATTERN)
+    task: str = Field(max_length=100_000, pattern=FREE_TEXT_PATTERN)
+    started_at: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+    completed_at: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+    duration_ms: Optional[int] = Field(default=None, ge=0, le=86_400_000)
+    error: Optional[WorkflowFreeText] = None
+    meta: WorkflowJsonObject = Field(default_factory=dict)
+    workflow: WorkflowGraphResponse
+    input: WorkflowJsonObject = Field(default_factory=dict)
+    result: Optional[JsonValue] = None
+    result_summary: WorkflowResultSummaryResponse
+    node_summary: WorkflowNodeSummaryResponse
+    node_executions: List[WorkflowNodeExecutionResponse] = Field(default_factory=list, max_length=10_000)
+
+
+class WorkflowMediaPreviewResponse(WorkflowDynamicObjectResponse):
+    pass
+
+
+class WorkflowTemplateRebuildResponse(BaseModel):
+    success: bool
+    deleted_count: int = Field(ge=0, le=10_000)
+    created_count: int = Field(ge=0, le=10_000)
+    templates: List[WorkflowJsonObject] = Field(default_factory=list, max_length=10_000)
+
+
+class WorkflowResetHistorySummaryResponse(BaseModel):
+    execution_deleted_count: int = Field(ge=0, le=1_000_000)
+    node_deleted_count: int = Field(ge=0, le=10_000_000)
+    running_execution_count: int = Field(ge=0, le=1_000_000)
+    cancelled_running_count: int = Field(ge=0, le=1_000_000)
+
+
+class WorkflowResetTemplatesSummaryResponse(BaseModel):
+    deleted_count: int = Field(ge=0, le=10_000)
+    created_count: int = Field(ge=0, le=10_000)
+    items: List[WorkflowJsonObject] = Field(default_factory=list, max_length=10_000)
+
+
+class WorkflowResetResponse(BaseModel):
+    success: bool
+    history: WorkflowResetHistorySummaryResponse
+    templates: WorkflowResetTemplatesSummaryResponse
+
+
+class WorkflowModePresetSummaryResponse(BaseModel):
+    id: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    mode: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    name: str = Field(max_length=256, pattern=FREE_TEXT_PATTERN)
+    description: str = Field(max_length=4096, pattern=FREE_TEXT_PATTERN)
+    requires_image: bool
+    prompt_hint: str = Field(max_length=4096, pattern=FREE_TEXT_PATTERN)
+    prompt_example: Optional[JsonValue] = None
+    node_count: int = Field(ge=0, le=MAX_WORKFLOW_NODES)
+    edge_count: int = Field(ge=0, le=MAX_WORKFLOW_EDGES)
+
+
+class WorkflowModePresetListResponse(BaseModel):
+    items: List[WorkflowModePresetSummaryResponse] = Field(default_factory=list, max_length=64)
+    count: int = Field(ge=0, le=64)
+
+
+class WorkflowTemplateListResponse(BaseModel):
+    templates: List[WorkflowJsonObject] = Field(default_factory=list, max_length=10_000)
+    count: int = Field(ge=0, le=10_000)
+
+
+class WorkflowTemplateCategoriesResponse(BaseModel):
+    categories: List[JsonValue] = Field(default_factory=list, max_length=1_000)
+    count: int = Field(ge=0, le=1_000)
+
+
+class WorkflowTemplateCoverageTemplatesResponse(BaseModel):
+    count: int = Field(ge=0, le=10_000)
+
+
+class WorkflowTemplateCoverageResponse(BaseModel):
+    coverage: WorkflowJsonObject
+    templates: WorkflowTemplateCoverageTemplatesResponse
+
+
+class WorkflowTemplateSeedResponse(BaseModel):
+    created_count: int = Field(ge=0, le=10_000)
+    templates: List[WorkflowJsonObject] = Field(default_factory=list, max_length=10_000)
+
+
+def _workflow_json_response(model: Any, description: str) -> dict[int, dict[str, Any]]:
+    return {200: {"model": model, "description": description}}
+
+
+def _workflow_binary_response(
+    media_type: str,
+    description: str,
+    *,
+    max_length: int,
+) -> dict[int, dict[str, Any]]:
+    return {
+        200: {
+            "description": description,
+            "content": {
+                media_type: {
+                    "schema": {
+                        "type": "string",
+                        "format": "binary",
+                        "maxLength": max_length,
+                    }
+                }
+            },
+        }
+    }
+
+
+def _workflow_sse_response(description: str) -> dict[int, dict[str, Any]]:
+    return {
+        200: {
+            "description": description,
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "type": "string",
+                        "maxLength": 1_000_000,
+                    }
+                }
+            },
+        }
+    }
 
 
 ALLOWED_AGENT_DEFAULT_TASK_TYPES = {
@@ -1220,12 +1669,12 @@ def _schedule_runtime_store_sync(
     async def _runner() -> None:
         try:
             await awaitable
-        except Exception:
+        except Exception as e:
             logger.debug(
-                "[Workflow] background runtime-store %s failed for execution=%s",
+                "[Workflow] background runtime-store %s failed for execution=%s error=%s",
                 action,
                 execution_id,
-                exc_info=True,
+                summarize_text_for_log(e, label="error"),
             )
 
     try:
@@ -1249,8 +1698,12 @@ async def _cleanup_execution_runtime(
     if clear_store:
         try:
             await _workflow_runtime_store.clear(execution_id)
-        except Exception:
-            logger.debug("[Workflow] runtime store clear failed for execution=%s", execution_id, exc_info=True)
+        except Exception as e:
+            logger.debug(
+                "[Workflow] runtime store clear failed for execution=%s error=%s",
+                execution_id,
+                summarize_text_for_log(e, label="error"),
+            )
 
     if clear_local_runtime:
         _execution_runtime_local.pop(execution_id, None)
@@ -1270,8 +1723,12 @@ async def _publish_runtime_event(execution_id: str, event_type: str, data: Dict[
 
     try:
         await _workflow_runtime_store.touch(execution_id)
-    except Exception:
-        logger.debug("[Workflow] runtime store touch failed for execution=%s", execution_id, exc_info=True)
+    except Exception as e:
+        logger.debug(
+            "[Workflow] runtime store touch failed for execution=%s error=%s",
+            execution_id,
+            summarize_text_for_log(e, label="error"),
+        )
 
     execution_state_payload = _build_execution_state_from_runtime_event(
         execution_id,
@@ -1449,8 +1906,11 @@ def _serialize_workflow_result(payload: Any) -> Any:
         return payload
     try:
         return to_camel_case(payload)
-    except Exception:
-        logger.warning("[Workflow] Failed to serialize result payload to camelCase", exc_info=True)
+    except Exception as e:
+        logger.warning(
+            "[Workflow] Failed to serialize result payload to camelCase: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         return payload
 
 
@@ -2162,7 +2622,7 @@ async def _persist_workflow_result_media(
         # 的共享 wrapper:成功 → ProcessAIResultDict,失败 → None(walker 保留原 source URL)
         processed = await safe_persist_ai_result(
             attachment_service,
-            log_label=f"workflow {normalized_kind} (source={source[:60]}...)",
+            log_label=f"workflow {normalized_kind} (source={summarize_url_for_log(source)})",
             log_with_traceback=False,
             ai_url=source,
             mime_type=str(entry.get("mime_type") or "").strip() or _guess_workflow_media_mime_type(source, normalized_kind),
@@ -2485,7 +2945,7 @@ async def _persist_workflow_result_images(
         # 单张持久化失败保留原 URL,不让整个 workflow 5xx
         processed = await safe_persist_ai_result(
             attachment_service,
-            log_label=f"workflow image #{index} ({image_url[:60]}...)",
+            log_label=f"workflow image #{index} ({summarize_url_for_log(image_url)})",
             log_with_traceback=False,
             ai_url=image_url,
             mime_type=_guess_image_mime_type(image_url),
@@ -2564,6 +3024,7 @@ def _build_workflow_media_previews(
     request_base_url: str,
     preview_path_template: str,
     limit: Optional[int] = None,
+    max_bytes_per_item: Optional[int] = None,
 ) -> Dict[str, Any]:
     return _build_workflow_media_previews_shared(
         execution_id=execution_id,
@@ -2572,6 +3033,7 @@ def _build_workflow_media_previews(
         trusted_base_url=request_base_url,
         preview_path_template=preview_path_template,
         limit=limit,
+        max_bytes_per_item=max_bytes_per_item,
     )
 
 
@@ -3895,8 +4357,7 @@ async def _execute_workflow_internal(
             logger.warning(
                 "[Workflow] Failed to sync template sample result (execution=%s): %s",
                 execution_id,
-                sync_exc,
-                exc_info=True,
+                summarize_text_for_log(sync_exc, label="error"),
             )
 
         if publish_events:
@@ -4014,9 +4475,12 @@ async def _execute_workflow_internal(
         )
         raise
     except Exception as e:
-        logger.error(f"[Workflow] Execution failed: {e}", exc_info=True)
+        logger.error(
+            "[Workflow] Execution failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         failure_status = "failed"
-        failure_error = str(e)
+        failure_error = WORKFLOW_EXECUTION_FAILED_MESSAGE
         completed_at = int(time.time() * 1000)
         execution = db.query(WorkflowExecution).filter(
             WorkflowExecution.id == execution_id,
@@ -4074,12 +4538,12 @@ async def _run_workflow_in_background(
             request_payload=request_payload,
             publish_events=True,
         )
-    except Exception:
+    except Exception as e:
         # 错误已在 _execute_workflow_internal 中记录和发布
         logger.error(
-            "[Workflow] Unhandled exception in background execution=%s",
+            "[Workflow] Unhandled exception in background execution=%s error=%s",
             execution_id,
-            exc_info=True,
+            summarize_text_for_log(e, label="error"),
         )
     finally:
         done_flag = True
@@ -4090,11 +4554,11 @@ async def _run_workflow_in_background(
             ).first()
             latest_status = _normalize_workflow_status(getattr(latest, "status", None), default="failed")
             done_flag = latest_status in WORKFLOW_TERMINAL_STATUSES
-        except SQLAlchemyError:
+        except SQLAlchemyError as e:
             logger.warning(
-                "[Workflow] DB query for terminal status failed, marking done; execution=%s",
+                "[Workflow] DB query for terminal status failed, marking done; execution=%s error=%s",
                 execution_id,
-                exc_info=True,
+                summarize_text_for_log(e, label="error"),
             )
             done_flag = True
         await _workflow_runtime_store.mark_done(
@@ -4114,7 +4578,10 @@ async def _run_workflow_in_background(
 
 # ==================== Workflow Execution ====================
 
-@router.post("/api/workflows/execute")
+@router.post(
+    "/api/workflows/execute",
+    responses=_workflow_json_response(WorkflowExecuteResponse, "Workflow execution result"),
+)
 async def execute_workflow(
     request: WorkflowExecuteRequest,
     raw_request: Request,
@@ -4270,7 +4737,7 @@ async def execute_workflow(
             status_code=500,
             detail={
                 "code": "workflow_execution_failed",
-                "message": f"Workflow execution failed: {str(e) or 'unknown error'}",
+                "message": WORKFLOW_EXECUTION_FAILED_MESSAGE,
             },
         ) from e
     sync_status = _normalize_workflow_status(sync_result.get("status"), default="failed")
@@ -4289,7 +4756,10 @@ async def execute_workflow(
     return sync_result
 
 
-@router.get("/api/workflows/{execution_id}/state")
+@router.get(
+    "/api/workflows/{execution_id}/state",
+    responses=_workflow_json_response(WorkflowExecutionStateResponse, "Workflow execution state"),
+)
 async def get_workflow_execution_state(
     execution_id: str,
     user_id: str = Depends(require_current_user),
@@ -4312,8 +4782,12 @@ async def get_workflow_execution_state(
         runtime_updated_at = int(runtime_state.updated_at or 0)
         if isinstance(runtime_state.checkpoint, dict):
             checkpoint_payload = runtime_state.checkpoint
-    except Exception:
-        logger.debug("[Workflow] load runtime state failed for execution=%s", execution_id, exc_info=True)
+    except Exception as e:
+        logger.debug(
+            "[Workflow] load runtime state failed for execution=%s error=%s",
+            execution_id,
+            summarize_text_for_log(e, label="error"),
+        )
 
     response = _build_execution_state_payload(
         snapshot,
@@ -4323,7 +4797,13 @@ async def get_workflow_execution_state(
     return response
 
 
-@router.get("/api/workflows/{execution_id}/debug/execution-state-runtime")
+@router.get(
+    "/api/workflows/{execution_id}/debug/execution-state-runtime",
+    responses=_workflow_json_response(
+        WorkflowExecutionStateRuntimeDebugResponse,
+        "Workflow execution state runtime diagnostics",
+    ),
+)
 async def get_workflow_execution_state_runtime_debug(
     execution_id: str,
     user_id: str = Depends(require_current_user),
@@ -4356,7 +4836,11 @@ async def get_workflow_execution_state_runtime_debug(
     }
 
 
-@router.get("/api/workflows/{execution_id}/status")
+@router.get(
+    "/api/workflows/{execution_id}/status",
+    response_class=StreamingResponse,
+    responses=_workflow_sse_response("Workflow execution state event stream"),
+)
 async def workflow_status_stream(
     execution_id: str,
     request: Request,
@@ -4385,8 +4869,12 @@ async def workflow_status_stream(
             runtime_updated_at = _safe_int(runtime_state.updated_at, default=0)
             if isinstance(runtime_state.checkpoint, dict):
                 checkpoint_payload = runtime_state.checkpoint
-        except Exception:
-            logger.debug("[Workflow] load runtime state failed for execution=%s", execution_id, exc_info=True)
+        except Exception as e:
+            logger.debug(
+                "[Workflow] load runtime state failed for execution=%s error=%s",
+                execution_id,
+                summarize_text_for_log(e, label="error"),
+            )
 
         execution_state_payload = _build_execution_state_payload(
             snapshot,
@@ -4492,7 +4980,10 @@ async def workflow_status_stream(
     )
 
 
-@router.get("/api/workflows/history")
+@router.get(
+    "/api/workflows/history",
+    responses=_workflow_json_response(WorkflowHistoryListResponse, "Workflow execution history list"),
+)
 @case_conversion_options(always_convert_response=True)
 async def list_workflow_history(
     limit: int = 20,
@@ -4575,7 +5066,10 @@ async def list_workflow_history(
     }
 
 
-@router.get("/api/workflows/history/{execution_id}")
+@router.get(
+    "/api/workflows/history/{execution_id}",
+    responses=_workflow_json_response(WorkflowHistoryDetailResponse, "Workflow execution history detail"),
+)
 @case_conversion_options(always_convert_response=True)
 async def get_workflow_history_detail(
     execution_id: str,
@@ -4667,7 +5161,15 @@ def _load_workflow_history_result_payload(execution: WorkflowExecution) -> Any:
     return _serialize_workflow_result(parsed_result) if parsed_result is not None else None
 
 
-@router.get("/api/workflows/history/{execution_id}/images/download")
+@router.get(
+    "/api/workflows/history/{execution_id}/images/download",
+    response_class=StreamingResponse,
+    responses=_workflow_binary_response(
+        "application/zip",
+        "Workflow images ZIP archive",
+        max_length=536_870_912,
+    ),
+)
 async def download_workflow_history_images(
     execution_id: str,
     request: Request,
@@ -4720,7 +5222,10 @@ async def download_workflow_history_images(
     )
 
 
-@router.get("/api/workflows/history/{execution_id}/images/preview")
+@router.get(
+    "/api/workflows/history/{execution_id}/images/preview",
+    responses=_workflow_json_response(WorkflowMediaPreviewResponse, "Workflow image previews"),
+)
 async def preview_workflow_history_images(
     execution_id: str,
     request: Request,
@@ -4755,7 +5260,15 @@ async def preview_workflow_history_images(
     return preview_payload
 
 
-@router.get("/api/workflows/history/{execution_id}/audio/download")
+@router.get(
+    "/api/workflows/history/{execution_id}/audio/download",
+    response_class=StreamingResponse,
+    responses=_workflow_binary_response(
+        "application/zip",
+        "Workflow audio ZIP archive",
+        max_length=536_870_912,
+    ),
+)
 async def download_workflow_history_audio(
     execution_id: str,
     request: Request,
@@ -4809,7 +5322,15 @@ async def download_workflow_history_audio(
     )
 
 
-@router.get("/api/workflows/history/{execution_id}/video/download")
+@router.get(
+    "/api/workflows/history/{execution_id}/video/download",
+    response_class=StreamingResponse,
+    responses=_workflow_binary_response(
+        "application/zip",
+        "Workflow video ZIP archive",
+        max_length=536_870_912,
+    ),
+)
 async def download_workflow_history_video(
     execution_id: str,
     request: Request,
@@ -4863,7 +5384,10 @@ async def download_workflow_history_video(
     )
 
 
-@router.get("/api/workflows/history/{execution_id}/audio/preview")
+@router.get(
+    "/api/workflows/history/{execution_id}/audio/preview",
+    responses=_workflow_json_response(WorkflowMediaPreviewResponse, "Workflow audio previews"),
+)
 async def preview_workflow_history_audio(
     execution_id: str,
     request: Request,
@@ -4890,11 +5414,15 @@ async def preview_workflow_history_audio(
         trusted_base_url,
         f"/api/workflows/history/{execution_id}/audio/items/{{index}}",
         int(limit) if limit is not None else None,
+        WORKFLOW_HISTORY_AUDIO_PREVIEW_MAX_BYTES,
     )
     return preview_payload
 
 
-@router.get("/api/workflows/history/{execution_id}/video/preview")
+@router.get(
+    "/api/workflows/history/{execution_id}/video/preview",
+    responses=_workflow_json_response(WorkflowMediaPreviewResponse, "Workflow video previews"),
+)
 async def preview_workflow_history_video(
     execution_id: str,
     request: Request,
@@ -4921,11 +5449,20 @@ async def preview_workflow_history_video(
         trusted_base_url,
         f"/api/workflows/history/{execution_id}/video/items/{{index}}",
         int(limit) if limit is not None else None,
+        WORKFLOW_HISTORY_VIDEO_PREVIEW_MAX_BYTES,
     )
     return preview_payload
 
 
-@router.get("/api/workflows/history/{execution_id}/audio/items/{item_index}")
+@router.get(
+    "/api/workflows/history/{execution_id}/audio/items/{item_index}",
+    response_class=StreamingResponse,
+    responses=_workflow_binary_response(
+        "application/octet-stream",
+        "Workflow audio preview binary",
+        max_length=67_108_864,
+    ),
+)
 async def stream_workflow_history_audio_item(
     execution_id: str,
     item_index: int,
@@ -4972,7 +5509,15 @@ async def stream_workflow_history_audio_item(
     )
 
 
-@router.get("/api/workflows/history/{execution_id}/video/items/{item_index}")
+@router.get(
+    "/api/workflows/history/{execution_id}/video/items/{item_index}",
+    response_class=StreamingResponse,
+    responses=_workflow_binary_response(
+        "application/octet-stream",
+        "Workflow video preview binary",
+        max_length=134_217_728,
+    ),
+)
 async def stream_workflow_history_video_item(
     execution_id: str,
     item_index: int,
@@ -5019,7 +5564,15 @@ async def stream_workflow_history_video_item(
     )
 
 
-@router.get("/api/workflows/history/{execution_id}/analysis/download")
+@router.get(
+    "/api/workflows/history/{execution_id}/analysis/download",
+    response_class=StreamingResponse,
+    responses=_workflow_binary_response(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Workflow analysis workbook",
+        max_length=536_870_912,
+    ),
+)
 async def download_workflow_history_analysis_excel(
     execution_id: str,
     user_id: str = Depends(require_current_user),
@@ -5050,7 +5603,14 @@ async def download_workflow_history_analysis_excel(
             node_executions,
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error(
+            "[Workflow] analysis workbook generation failed: %s",
+            summarize_text_for_log(exc, label="error"),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Workflow analysis workbook generation failed",
+        )
 
     file_name = f"workflow-{execution_id[:8]}-analysis.xlsx"
     return StreamingResponse(
@@ -5063,7 +5623,7 @@ async def download_workflow_history_analysis_excel(
     )
 
 
-@router.delete("/api/workflows/history/{execution_id}")
+@router.delete("/api/workflows/history/{execution_id}", response_model=WorkflowDeleteResponse)
 async def delete_workflow_history(
     execution_id: str,
     user_id: str = Depends(require_current_user),
@@ -5096,7 +5656,11 @@ async def delete_workflow_history(
     return {"success": True}
 
 
-@router.post("/api/workflows/history/{execution_id}/pause")
+@router.post(
+    "/api/workflows/history/{execution_id}/pause",
+    response_model=WorkflowControlResponse,
+    response_model_exclude_none=True,
+)
 async def pause_workflow_history_execution(
     execution_id: str,
     user_id: str = Depends(require_current_user),
@@ -5141,8 +5705,12 @@ async def pause_workflow_history_execution(
             "status": "running",
             "pauseRequestedAt": now,
         })
-    except Exception:
-        logger.debug("[Workflow] publish pause-requested event failed for execution=%s", execution_id, exc_info=True)
+    except Exception as e:
+        logger.debug(
+            "[Workflow] publish pause-requested event failed for execution=%s error=%s",
+            execution_id,
+            summarize_text_for_log(e, label="error"),
+        )
 
     return {
         "success": True,
@@ -5152,7 +5720,11 @@ async def pause_workflow_history_execution(
     }
 
 
-@router.post("/api/workflows/history/{execution_id}/resume")
+@router.post(
+    "/api/workflows/history/{execution_id}/resume",
+    response_model=WorkflowControlResponse,
+    response_model_exclude_none=True,
+)
 async def resume_workflow_history_execution(
     execution_id: str,
     user_id: str = Depends(require_current_user),
@@ -5241,8 +5813,12 @@ async def resume_workflow_history_execution(
                 clear_checkpoint=True,
                 updated_at=now,
             )
-        except Exception:
-            logger.debug("[Workflow] runtime mark_running failed for execution=%s", execution_id, exc_info=True)
+        except Exception as e:
+            logger.debug(
+                "[Workflow] runtime mark_running failed for execution=%s error=%s",
+                execution_id,
+                summarize_text_for_log(e, label="error"),
+            )
 
         try:
             await _publish_runtime_event(execution_id, "workflow_resumed", {
@@ -5252,8 +5828,12 @@ async def resume_workflow_history_execution(
                 "checkpoint": _build_checkpoint_summary(state.checkpoint),
                 "resumeStrategy": "restart",
             })
-        except Exception:
-            logger.debug("[Workflow] publish resumed event failed for execution=%s", execution_id, exc_info=True)
+        except Exception as e:
+            logger.debug(
+                "[Workflow] publish resumed event failed for execution=%s error=%s",
+                execution_id,
+                summarize_text_for_log(e, label="error"),
+            )
 
         return {
             "success": True,
@@ -5264,7 +5844,11 @@ async def resume_workflow_history_execution(
         }
 
 
-@router.post("/api/workflows/history/{execution_id}/cancel")
+@router.post(
+    "/api/workflows/history/{execution_id}/cancel",
+    response_model=WorkflowControlResponse,
+    response_model_exclude_none=True,
+)
 async def cancel_workflow_history_execution(
     execution_id: str,
     user_id: str = Depends(require_current_user),
@@ -5326,8 +5910,12 @@ async def cancel_workflow_history_execution(
                 "error": execution.error if execution else "Execution cancelled by user.",
                 "completedAt": now,
             })
-        except Exception:
-            logger.debug("[Workflow] publish cancel event failed for execution=%s", execution_id, exc_info=True)
+        except Exception as e:
+            logger.debug(
+                "[Workflow] publish cancel event failed for execution=%s error=%s",
+                execution_id,
+                summarize_text_for_log(e, label="error"),
+            )
 
     return {
         "success": True,
@@ -5413,7 +6001,7 @@ async def _rebuild_workflow_templates_for_user(
     }
 
 
-@router.delete("/api/workflows/history")
+@router.delete("/api/workflows/history", response_model=WorkflowHistoryClearResponse)
 async def clear_workflow_history(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
@@ -5429,7 +6017,10 @@ async def clear_workflow_history(
     }
 
 
-@router.post("/api/workflows/templates/rebuild")
+@router.post(
+    "/api/workflows/templates/rebuild",
+    responses=_workflow_json_response(WorkflowTemplateRebuildResponse, "Workflow template rebuild summary"),
+)
 async def rebuild_workflow_templates(
     request: Optional[WorkflowTemplateRebuildRequest] = None,
     user_id: str = Depends(require_current_user),
@@ -5450,7 +6041,10 @@ async def rebuild_workflow_templates(
     }
 
 
-@router.post("/api/workflows/reset")
+@router.post(
+    "/api/workflows/reset",
+    responses=_workflow_json_response(WorkflowResetResponse, "Workflow data reset summary"),
+)
 async def reset_workflow_data(
     request: Optional[WorkflowResetRequest] = None,
     user_id: str = Depends(require_current_user),
@@ -5482,7 +6076,10 @@ async def reset_workflow_data(
 
 # ==================== Mode Workflow Presets ====================
 
-@router.get("/api/workflows/mode-presets")
+@router.get(
+    "/api/workflows/mode-presets",
+    responses=_workflow_json_response(WorkflowModePresetListResponse, "Mode workflow preset summaries"),
+)
 async def list_mode_workflow_presets(
     user_id: str = Depends(require_current_user),
 ):
@@ -5495,7 +6092,10 @@ async def list_mode_workflow_presets(
     }
 
 
-@router.get("/api/workflows/mode-presets/{mode_id}")
+@router.get(
+    "/api/workflows/mode-presets/{mode_id}",
+    responses=_workflow_json_response(WorkflowDynamicObjectResponse, "Mode workflow preset detail"),
+)
 async def get_mode_workflow_preset(
     mode_id: str,
     user_id: str = Depends(require_current_user),
@@ -5764,7 +6364,7 @@ def _load_provider_models(user_id: str, db: Session) -> List[Dict[str, Any]]:
 
 # ==================== Agent CRUD ====================
 
-@router.get("/api/agents")
+@router.get("/api/agents", response_model=AgentListResponse)
 @case_conversion_options(always_convert_response=True)
 async def list_agents(
     include_inactive: bool = False,
@@ -5831,7 +6431,7 @@ async def list_agents(
     }
 
 
-@router.post("/api/agents")
+@router.post("/api/agents", response_model=AgentResponse)
 async def create_agent(
     request: CreateAgentRequest,
     user_id: str = Depends(require_current_user),
@@ -5890,7 +6490,7 @@ async def create_agent(
     return agent.to_dict()
 
 
-@router.put("/api/agents/{agent_id}")
+@router.put("/api/agents/{agent_id}", response_model=AgentResponse)
 async def update_agent(
     agent_id: str,
     request: UpdateAgentRequest,
@@ -5907,7 +6507,7 @@ async def update_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    update_data = request.dict(exclude_unset=True, exclude_none=True)
+    update_data = request.model_dump(exclude_unset=True, exclude_none=True)
     if "name" in update_data:
         normalized_name = str(update_data["name"]).strip()
         if not normalized_name:
@@ -5970,7 +6570,7 @@ async def update_agent(
     return agent.to_dict()
 
 
-@router.delete("/api/agents/{agent_id}")
+@router.delete("/api/agents/{agent_id}", response_model=AgentDeleteResponse)
 async def delete_agent(
     agent_id: str,
     hard_delete: bool = False,
@@ -5998,7 +6598,7 @@ async def delete_agent(
     return {"success": True, "deleted_mode": "soft"}
 
 
-@router.post("/api/agents/{agent_id}/restore")
+@router.post("/api/agents/{agent_id}/restore", response_model=AgentRestoreResponse)
 async def restore_agent(
     agent_id: str,
     rename_on_conflict: bool = False,
@@ -6049,7 +6649,7 @@ async def restore_agent(
 
 # ==================== Agent Available Models ====================
 
-@router.get("/api/workflows/execution-policy")
+@router.get("/api/workflows/execution-policy", response_model=WorkflowExecutionPolicyResponse)
 async def get_workflow_execution_policy(
     user_id: str = Depends(require_current_user),
 ):
@@ -6058,7 +6658,7 @@ async def get_workflow_execution_policy(
     return dict(WORKFLOW_EXECUTION_CLIENT_POLICY)
 
 
-@router.get("/api/agents/available-models")
+@router.get("/api/agents/available-models", response_model=AvailableAgentModelsResponse)
 @case_conversion_options(always_convert_response=True)
 async def get_available_models_for_agents(
     user_id: str = Depends(require_current_user),
@@ -6078,7 +6678,7 @@ async def get_available_models_for_agents(
     }
 
 
-@router.get("/api/agents/{agent_id}")
+@router.get("/api/agents/{agent_id}", response_model=AgentResponse)
 async def get_agent(
     agent_id: str,
     user_id: str = Depends(require_current_user),
@@ -6096,7 +6696,10 @@ async def get_agent(
 
 # ==================== Workflow Templates ====================
 
-@router.post("/api/workflows/templates")
+@router.post(
+    "/api/workflows/templates",
+    responses=_workflow_json_response(WorkflowDynamicObjectResponse, "Created workflow template"),
+)
 @case_conversion_options(always_convert_response=True)
 async def create_workflow_template(
     request: WorkflowTemplateCreateRequest,
@@ -6122,7 +6725,10 @@ async def create_workflow_template(
         raise HTTPException(status_code=status_code, detail=message)
 
 
-@router.get("/api/workflows/templates")
+@router.get(
+    "/api/workflows/templates",
+    responses=_workflow_json_response(WorkflowTemplateListResponse, "Workflow template list"),
+)
 @case_conversion_options(always_convert_response=True)
 async def list_workflow_templates(
     category: Optional[str] = None,
@@ -6143,7 +6749,10 @@ async def list_workflow_templates(
     return {"templates": templates, "count": len(templates)}
 
 
-@router.get("/api/workflows/template-categories")
+@router.get(
+    "/api/workflows/template-categories",
+    responses=_workflow_json_response(WorkflowTemplateCategoriesResponse, "Workflow template categories"),
+)
 async def list_workflow_template_categories(
     include_public: bool = True,
     ensure_defaults: bool = True,
@@ -6159,7 +6768,10 @@ async def list_workflow_template_categories(
     return {"categories": categories, "count": len(categories)}
 
 
-@router.post("/api/workflows/template-categories")
+@router.post(
+    "/api/workflows/template-categories",
+    responses=_workflow_json_response(WorkflowDynamicObjectResponse, "Created workflow template category"),
+)
 async def create_workflow_template_category(
     request: WorkflowTemplateCategoryCreateRequest,
     user_id: str = Depends(require_current_user),
@@ -6178,7 +6790,10 @@ async def create_workflow_template_category(
         raise HTTPException(status_code=status_code, detail=message)
 
 
-@router.get("/api/workflows/templates/coverage")
+@router.get(
+    "/api/workflows/templates/coverage",
+    responses=_workflow_json_response(WorkflowTemplateCoverageResponse, "Workflow template coverage report"),
+)
 async def get_workflow_template_coverage(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db),
@@ -6200,7 +6815,10 @@ async def get_workflow_template_coverage(
     }
 
 
-@router.post("/api/workflows/templates/seed")
+@router.post(
+    "/api/workflows/templates/seed",
+    responses=_workflow_json_response(WorkflowTemplateSeedResponse, "Workflow starter template seed summary"),
+)
 async def seed_workflow_templates(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
@@ -6213,7 +6831,10 @@ async def seed_workflow_templates(
     }
 
 
-@router.get("/api/workflows/templates/{template_id}")
+@router.get(
+    "/api/workflows/templates/{template_id}",
+    responses=_workflow_json_response(WorkflowDynamicObjectResponse, "Workflow template detail"),
+)
 @case_conversion_options(always_convert_response=True)
 async def get_workflow_template(
     template_id: str,
@@ -6227,7 +6848,10 @@ async def get_workflow_template(
     return template
 
 
-@router.post("/api/workflows/templates/{template_id}/copy")
+@router.post(
+    "/api/workflows/templates/{template_id}/copy",
+    responses=_workflow_json_response(WorkflowDynamicObjectResponse, "Copied workflow template"),
+)
 @case_conversion_options(always_convert_response=True)
 async def copy_workflow_template(
     template_id: str,
@@ -6253,7 +6877,10 @@ async def copy_workflow_template(
         raise HTTPException(status_code=400, detail=message)
 
 
-@router.put("/api/workflows/templates/{template_id}")
+@router.put(
+    "/api/workflows/templates/{template_id}",
+    responses=_workflow_json_response(WorkflowDynamicObjectResponse, "Updated workflow template"),
+)
 @case_conversion_options(always_convert_response=True)
 async def update_workflow_template(
     template_id: str,
@@ -6285,7 +6912,7 @@ async def update_workflow_template(
         raise HTTPException(status_code=400, detail=message)
 
 
-@router.delete("/api/workflows/templates/{template_id}")
+@router.delete("/api/workflows/templates/{template_id}", response_model=WorkflowDeleteResponse)
 async def delete_workflow_template(
     template_id: str,
     user_id: str = Depends(require_current_user),

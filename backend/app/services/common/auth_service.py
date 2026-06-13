@@ -23,6 +23,7 @@ from ...core.jwt_utils import (
 from .system_config_service import get_system_config, get_client_ip
 
 logger = logging.getLogger(__name__)
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
 
 
 # ============================================
@@ -36,31 +37,37 @@ class AuthConfigResponse(BaseModel):
 
 class RegisterRequest(BaseModel):
     """注册请求"""
-    email: EmailStr
-    password: str = Field(min_length=8)
-    confirm_password: str
-    name: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr = Field(max_length=254)
+    password: str = Field(min_length=8, max_length=1024, pattern=r"^[^\x00-\x1F\x7F]+$")
+    confirm_password: str = Field(min_length=8, max_length=1024, pattern=r"^[^\x00-\x1F\x7F]+$")
+    name: Optional[str] = Field(default=None, max_length=128, pattern=r"^[^\x00-\x1F\x7F]*$")
 
 
 class LoginRequest(BaseModel):
     """登录请求"""
-    email: EmailStr
-    password: str
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr = Field(max_length=254)
+    password: str = Field(min_length=1, max_length=1024, pattern=r"^[^\x00-\x1F\x7F]+$")
 
 
 class ChangePasswordRequest(BaseModel):
     """修改密码请求"""
-    current_password: str
-    new_password: str = Field(min_length=8)
-    confirm_password: str
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=1, max_length=1024, pattern=r"^[^\x00-\x1F\x7F]+$")
+    new_password: str = Field(min_length=8, max_length=1024, pattern=r"^[^\x00-\x1F\x7F]+$")
+    confirm_password: str = Field(min_length=8, max_length=1024, pattern=r"^[^\x00-\x1F\x7F]+$")
 
 
 class UserResponse(BaseModel):
     """用户响应（不包含敏感信息）"""
-    id: str
-    email: str
-    name: Optional[str]
-    status: str
+    id: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    email: str = Field(max_length=254, pattern=NO_CONTROL_CHARS_PATTERN)
+    name: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
     is_admin: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -553,6 +560,47 @@ class AuthService:
         self.db.commit()
 
 
+    def _get_usable_refresh_token_row(
+        self,
+        refresh_token: str,
+        *,
+        for_update: bool = False,
+    ) -> tuple[TokenPayload, RefreshToken]:
+        payload = self.validate_token(refresh_token)
+        if payload.type != 'refresh':
+            raise InvalidTokenError()
+
+        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+        query = self.db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash)
+        if for_update:
+            # W02R-001: lock the row so concurrent refreshes of the same token serialize
+            # (single-use rotation). On backends without row locking this is a no-op.
+            query = query.with_for_update()
+
+        db_token = query.first()
+        if db_token is None or db_token.revoked_at is not None:
+            raise InvalidTokenError()
+
+        expires_at = db_token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= datetime.now(timezone.utc):
+            raise TokenExpiredError()
+
+        # W02R-001: 绝不为非活跃账户铸发新的会话凭据（与 access-token 校验路径一致）。
+        user = self.get_user_by_id(payload.sub)
+        if user is None or getattr(user, "status", None) != "active":
+            raise InvalidTokenError()
+
+        return payload, db_token
+
+    def is_refresh_token_usable(self, refresh_token: str) -> bool:
+        try:
+            self._get_usable_refresh_token_row(refresh_token)
+            return True
+        except (InvalidTokenError, TokenExpiredError):
+            return False
+
     def refresh_tokens(self, refresh_token: str) -> TokenPair:
         """
         刷新令牌
@@ -566,27 +614,9 @@ class AuthService:
             InvalidTokenError: 无效令牌
             TokenExpiredError: 令牌已过期
         """
-        # 验证 refresh_token
-        payload = self.validate_token(refresh_token)
-        if payload.type != 'refresh':
-            raise InvalidTokenError()
-
         # W02R-001: 失败闭合。仅当 refresh JWT 对应一个“已存储且未撤销”的 DB 行时才接受。
         # 缺失行（已轮换/已清理）或已撤销行都不得铸发新令牌，否则服务端撤销无法生效。
-        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
-        # W02R-001: lock the row so concurrent refreshes of the same token serialize
-        # (single-use rotation). On backends without row locking this is a no-op,
-        # but on Postgres it prevents two workers each minting a fresh pair.
-        db_token = self.db.query(RefreshToken).filter(
-            RefreshToken.token_hash == token_hash
-        ).with_for_update().first()
-        if db_token is None or db_token.revoked_at is not None:
-            raise InvalidTokenError()
-
-        # W02R-001: 绝不为非活跃账户铸发新的会话凭据（与 access-token 校验路径一致）。
-        user = self.get_user_by_id(payload.sub)
-        if user is None or getattr(user, "status", None) != "active":
-            raise InvalidTokenError()
+        payload, db_token = self._get_usable_refresh_token_row(refresh_token, for_update=True)
 
         # ✅ 撤销当前使用的 refresh_token（单次使用 + 轮换）
         db_token.revoked_at = datetime.now(timezone.utc)

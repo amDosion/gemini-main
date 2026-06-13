@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 import httpx
 
-from ...utils.url_security import validate_outbound_http_url_async
+from ...utils.url_security import get_with_redirect_guard, validate_outbound_http_url_async
 from ._shared import build_async_client, read_field
 
 logger = logging.getLogger(__name__)
@@ -135,10 +135,16 @@ class OpenAIPDFExtractor:
 
         pdf_url = str(reference_images.get("pdf_url") or kwargs.get("pdf_url") or "").strip()
         if pdf_url:
-            # CANON-010: pdf_url is attachment/user-controlled — enforce SSRF policy.
+            # CANON-010: pdf_url is attachment/user-controlled. Validate the
+            # initial URL asynchronously, then use the shared guarded GET so the
+            # actual connection is pinned and every redirect hop is re-checked.
             safe_pdf_url = await validate_outbound_http_url_async(pdf_url)
             async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.get(safe_pdf_url)
+                response, _final_url = await get_with_redirect_guard(
+                    client,
+                    safe_pdf_url,
+                    max_redirects=5,
+                )
                 response.raise_for_status()
                 return response.content
 

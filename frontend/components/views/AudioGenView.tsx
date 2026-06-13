@@ -17,6 +17,8 @@ import { useControlsState } from '../../hooks/useControlsState';
 import { ModeControlsCoordinator } from '../../coordinators/ModeControlsCoordinator';
 import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { RetainedAudio } from '../common/RetainedMedia';
+import { openSafeUrlInNewTab } from '../../utils/safeOpen';
+import { downloadSourceUrlInBrowser } from '../../services/downloadService';
 
 interface AudioGenViewProps {
   messages: Message[];
@@ -511,12 +513,12 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
   );
 
   const handleDownload = useCallback((url: string) => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `gemini-audio-${Date.now()}.wav`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    void downloadSourceUrlInBrowser({
+      sourceUrl: url,
+      fileName: `gemini-audio-${Date.now()}.wav`,
+    }).catch((error) => {
+      console.warn('[AudioGenView] Download blocked or failed:', error);
+    });
   }, []);
 
   // ✅ ChatEditInputArea 已经处理了附件和参数，这里只需要直接转发
@@ -745,7 +747,13 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
           {activeAudioUrl && (
             <div className="absolute bottom-4 right-4 z-20 flex gap-2 relative">
               <button
-                onClick={() => window.open(activeAudioUrl, '_blank', 'noopener,noreferrer')}
+                onClick={() =>
+                  openSafeUrlInNewTab(activeAudioUrl, {
+                    allowBlob: true,
+                    allowInlineAudioData: true,
+                    allowRelative: true,
+                  })
+                }
                 className="p-2.5 bg-black/60 backdrop-blur-md hover:bg-black/80 text-white rounded-xl border border-white/10 transition-colors shadow-lg"
                 title="Open in new tab"
                 aria-label="Open audio in new tab"

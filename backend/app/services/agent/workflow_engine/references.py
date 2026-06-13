@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from urllib.error import HTTPError
 from urllib.parse import urljoin, urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 class _NoFollowRedirect(HTTPRedirectHandler):
@@ -32,10 +32,23 @@ from ....utils.attachment_handler import is_base64_url
 
 logger = logging.getLogger(__name__)
 
-try:
-    import pandas as pd  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
-    pd = None  # type: ignore
+_pd: Any | None = None
+_pd_import_attempted = False
+
+
+def _get_pandas() -> Any | None:
+    """Import pandas only when table parsing actually needs it."""
+
+    global _pd, _pd_import_attempted
+    if not _pd_import_attempted:
+        _pd_import_attempted = True
+        try:
+            import pandas as pandas_module  # type: ignore
+        except Exception:  # pragma: no cover - optional dependency
+            _pd = None
+        else:
+            _pd = pandas_module
+    return _pd
 
 
 def validate_remote_reference_url(engine: Any, ref_text: str) -> str:
@@ -161,6 +174,7 @@ def load_binary_from_reference(
 
 
 def normalize_dataframe(engine: Any, frame: Any) -> Any:
+    pd = _get_pandas()
     if pd is None:
         return frame
     df = frame.copy()
@@ -177,6 +191,7 @@ def normalize_dataframe(engine: Any, frame: Any) -> Any:
 
 
 def text_to_dataframe(engine: Any, text: str, source_hint: str = "") -> Any:
+    pd = _get_pandas()
     if pd is None:
         raise ValueError("pandas 未安装，无法解析结构化表格")
 
@@ -230,6 +245,7 @@ def text_to_dataframe(engine: Any, text: str, source_hint: str = "") -> Any:
 
 
 def bytes_to_dataframe(engine: Any, raw: bytes, mime_type: str = "", file_name: str = "") -> Any:
+    pd = _get_pandas()
     if pd is None:
         raise ValueError("pandas 未安装，无法解析 Excel/CSV")
     if not raw:
@@ -247,6 +263,7 @@ def bytes_to_dataframe(engine: Any, raw: bytes, mime_type: str = "", file_name: 
 
 
 def table_payload_to_dataframe(engine: Any, payload: Any) -> Tuple[Any, str]:
+    pd = _get_pandas()
     if pd is None:
         raise ValueError("pandas 未安装，无法解析表格输入")
 
@@ -306,6 +323,7 @@ def table_payload_to_dataframe(engine: Any, payload: Any) -> Tuple[Any, str]:
 
 
 def table_payload_to_text(engine: Any, payload: Any) -> Tuple[str, str]:
+    pd = _get_pandas()
     if pd is not None:
         try:
             frame, source = table_payload_to_dataframe(engine, payload)
@@ -391,6 +409,7 @@ def build_file_reference_context(engine: Any, file_ref: str) -> str:
         or "csv" in normalized_mime
         or "tab-separated-values" in normalized_mime
     )
+    pd = _get_pandas() if table_like else None
     if table_like and pd is not None:
         try:
             frame = bytes_to_dataframe(engine, raw=raw, mime_type=normalized_mime, file_name=normalized_name)

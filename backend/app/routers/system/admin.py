@@ -25,6 +25,8 @@ from ...services.common.system_config_service import get_system_config, update_s
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/system/admin", tags=["system-admin"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+MAX_RUNTIME_BYTES = 9_000_000_000_000_000
 
 PROCESS_START_TIME = time.time()
 _NETWORK_SNAPSHOT_LOCK = threading.Lock()
@@ -46,15 +48,136 @@ class SystemConfigUpdateRequest(BaseModel):
 class SystemConfigField(BaseModel):
     """Schema metadata for frontend dynamic form rendering."""
 
-    key: str
-    label: str
+    key: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    label: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
     type: Literal["boolean", "number", "string"]
-    description: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
     editable: bool = True
     min: Optional[int] = None
     max: Optional[int] = None
     step: Optional[int] = None
-    unit: Optional[str] = None
+    unit: Optional[str] = Field(default=None, max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class SystemConfigValuesResponse(BaseModel):
+    allowRegistration: bool
+    maxLoginAttempts: int = Field(ge=1, le=100)
+    maxLoginAttemptsPerIp: int = Field(ge=1, le=200)
+    loginLockoutDuration: int = Field(ge=60, le=86400)
+    enableLogging: bool
+
+
+class SystemConfigResponse(BaseModel):
+    values: SystemConfigValuesResponse
+    fields: List[SystemConfigField] = Field(max_length=32)
+    updated_at: Optional[str] = Field(default=None, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class SystemHostResponse(BaseModel):
+    hostname: str = Field(max_length=255, pattern=NO_CONTROL_CHARS_PATTERN)
+    platform: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    python_version: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    cpu_count: int = Field(ge=1, le=4096)
+    process_uptime_seconds: int = Field(ge=0, le=31_536_000_000)
+
+
+class SystemCpuMetricsResponse(BaseModel):
+    usage_percent: Optional[float] = Field(default=None, ge=0, le=100)
+
+
+class SystemMemoryMetricsResponse(BaseModel):
+    usage_percent: Optional[float] = Field(default=None, ge=0, le=100)
+    used_bytes: Optional[int] = Field(default=None, ge=0, le=MAX_RUNTIME_BYTES)
+    total_bytes: Optional[int] = Field(default=None, ge=0, le=MAX_RUNTIME_BYTES)
+    available_bytes: Optional[int] = Field(default=None, ge=0, le=MAX_RUNTIME_BYTES)
+
+
+class SystemDiskMetricsResponse(BaseModel):
+    path: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    usage_percent: Optional[float] = Field(default=None, ge=0, le=100)
+    used_bytes: Optional[int] = Field(default=None, ge=0, le=MAX_RUNTIME_BYTES)
+    total_bytes: Optional[int] = Field(default=None, ge=0, le=MAX_RUNTIME_BYTES)
+    free_bytes: Optional[int] = Field(default=None, ge=0, le=MAX_RUNTIME_BYTES)
+    read_bytes: Optional[int] = Field(default=None, ge=0, le=MAX_RUNTIME_BYTES)
+    write_bytes: Optional[int] = Field(default=None, ge=0, le=MAX_RUNTIME_BYTES)
+    read_rate_bps: Optional[float] = Field(default=None, ge=0, le=1_000_000_000_000_000)
+    write_rate_bps: Optional[float] = Field(default=None, ge=0, le=1_000_000_000_000_000)
+
+
+class SystemNetworkMetricsResponse(BaseModel):
+    usage_percent: Optional[float] = Field(default=None, ge=0, le=100)
+    bytes_sent: Optional[int] = Field(default=None, ge=0, le=MAX_RUNTIME_BYTES)
+    bytes_recv: Optional[int] = Field(default=None, ge=0, le=MAX_RUNTIME_BYTES)
+    tx_rate_bps: Optional[float] = Field(default=None, ge=0, le=1_000_000_000_000_000)
+    rx_rate_bps: Optional[float] = Field(default=None, ge=0, le=1_000_000_000_000_000)
+    max_link_speed_mbps: Optional[float] = Field(default=None, ge=0, le=1_000_000)
+
+
+class SystemMetricsResponse(BaseModel):
+    cpu: SystemCpuMetricsResponse
+    memory: SystemMemoryMetricsResponse
+    disk: SystemDiskMetricsResponse
+    network: SystemNetworkMetricsResponse
+
+
+class SystemStatusResponse(BaseModel):
+    timestamp: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    host: SystemHostResponse
+    collector: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    metrics: SystemMetricsResponse
+
+
+class AdminHealthComponentResponse(BaseModel):
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    latency_ms: float = Field(ge=0, le=3_600_000)
+    error: Optional[str] = Field(default=None, max_length=1024, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class AdminGeminiPoolHealthResponse(BaseModel):
+    initialized: bool
+    sdk_available: bool
+    active_clients: int = Field(ge=0, le=10_000)
+    max_size: int = Field(ge=0, le=10_000)
+    error: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class AdminHealthResponse(BaseModel):
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    components: Dict[str, AdminHealthComponentResponse]
+    selenium: bool
+    pdf_extraction: bool
+    embedding: bool
+    upload_worker_pool: bool
+    gemini_pool: AdminGeminiPoolHealthResponse
+    version: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class GeminiPoolClientMetadataResponse(BaseModel):
+    created_at: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    api_key_configured: bool
+    vertexai: bool
+    project: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    location: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    client_type: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    http_timeout: Optional[int] = Field(default=None, ge=0, le=3_600_000)
+    http_retry_attempts: Optional[int] = Field(default=None, ge=0, le=100)
+
+
+class GeminiPoolStatsResponse(BaseModel):
+    total_clients: int = Field(ge=0, le=10_000_000)
+    active_clients: int = Field(ge=0, le=10_000)
+    max_size: int = Field(ge=0, le=10_000)
+    cache_hits: int = Field(ge=0, le=10_000_000_000)
+    cache_misses: int = Field(ge=0, le=10_000_000_000)
+    rejected_due_to_max_size: int = Field(ge=0, le=10_000_000_000)
+    total_requests: int = Field(ge=0, le=10_000_000_000)
+    hit_rate: float = Field(ge=0, le=1)
+    clients: Dict[str, GeminiPoolClientMetadataResponse]
+
+
+class SystemCleanupResponse(BaseModel):
+    cleaned: Dict[str, int]
+    freed_bytes: int = Field(ge=0, le=MAX_RUNTIME_BYTES)
 
 
 SYSTEM_CONFIG_FIELDS: List[SystemConfigField] = [
@@ -342,7 +465,7 @@ def _collect_system_status() -> Dict[str, Any]:
     return status
 
 
-@router.get("/config")
+@router.get("/config", response_model=SystemConfigResponse)
 async def get_admin_system_config(
     _: str = Depends(require_admin_user),
     db: Session = Depends(get_db),
@@ -357,7 +480,7 @@ async def get_admin_system_config(
     }
 
 
-@router.patch("/config")
+@router.patch("/config", response_model=SystemConfigResponse)
 async def patch_admin_system_config(
     payload: SystemConfigUpdateRequest,
     _: str = Depends(require_admin_user),
@@ -379,14 +502,14 @@ async def patch_admin_system_config(
     }
 
 
-@router.get("/status")
+@router.get("/status", response_model=SystemStatusResponse)
 async def get_admin_system_status(_: str = Depends(require_admin_user)):
     """Get runtime host resource metrics (admin only)."""
 
     return _collect_system_status()
 
 
-@router.get("/health")
+@router.get("/health", response_model=AdminHealthResponse)
 async def get_admin_health_details(_: str = Depends(require_admin_user)):
     """Get health check details (admin only, includes internal component errors)."""
     from . import health as health_module
@@ -394,7 +517,7 @@ async def get_admin_health_details(_: str = Depends(require_admin_user)):
     return await health_module.build_health_payload(include_internal_errors=True)
 
 
-@router.get("/gemini-pool/stats")
+@router.get("/gemini-pool/stats", response_model=GeminiPoolStatsResponse)
 async def get_gemini_pool_stats(_: str = Depends(require_admin_user)):
     """GeminiClientPool 运行时统计（admin only）。
 
@@ -415,7 +538,7 @@ async def get_gemini_pool_stats(_: str = Depends(require_admin_user)):
     return get_client_pool().get_stats()
 
 
-@router.post("/cleanup")
+@router.post("/cleanup", response_model=SystemCleanupResponse)
 async def cleanup_system(
     _: str = Depends(require_admin_user),
     db: Session = Depends(get_db),

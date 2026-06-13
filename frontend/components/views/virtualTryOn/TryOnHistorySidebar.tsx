@@ -4,6 +4,20 @@ import { Message, Role } from '../../../types/types';
 import { CachedImage } from '../../common/CachedImage';
 import { getAttachmentStableKey, mapDisplayImageAttachments } from './tryOnAttachments';
 
+const TRY_ON_HISTORY_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  hour: '2-digit',
+  minute: '2-digit',
+};
+const TRY_ON_HISTORY_TIME_FORMATTER = new Intl.DateTimeFormat([], TRY_ON_HISTORY_TIME_OPTIONS);
+
+const formatTryOnHistoryTime = (timestamp: Message['timestamp']) => {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return date.toLocaleTimeString([], TRY_ON_HISTORY_TIME_OPTIONS);
+  }
+  return TRY_ON_HISTORY_TIME_FORMATTER.format(date);
+};
+
 interface TryOnHistorySidebarProps {
   scrollRef: React.Ref<HTMLDivElement>;
   messages: Message[];
@@ -114,10 +128,7 @@ export const TryOnHistorySidebar = React.memo(function TryOnHistorySidebar({
               )}
             </div>
             <div className="text-[10px] text-slate-500 px-1">
-              {new Date(msg.timestamp).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
+              {formatTryOnHistoryTime(msg.timestamp)}
             </div>
           </div>
         );

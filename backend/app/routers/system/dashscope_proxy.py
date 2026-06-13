@@ -2,13 +2,14 @@
 DashScope API 代理路由
 用于转发前端请求到阿里云 DashScope API，解决 CORS 跨域问题
 """
-from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import Response, JSONResponse
-import httpx
-from typing import Optional
 import logging
 
-from ...utils.url_security import validate_outbound_http_url
+import httpx
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
+
+from ...utils.log_sanitization import summarize_text_for_log
+from ...utils.url_security import UnsafeURLError, _ensure_client_pinned, validate_outbound_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,30 @@ router = APIRouter(prefix="/api/dashscope", tags=["dashscope-proxy"])
 # DashScope 官方 API 地址
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com"
 
+DASHSCOPE_JSON_RESPONSE_SCHEMA = {
+    "type": "object",
+    "maxProperties": 256,
+    "additionalProperties": {"$ref": "#/components/schemas/JsonValue"},
+}
+DASHSCOPE_JSON_RESPONSE = {
+    "description": "DashScope upstream JSON response",
+    "content": {"application/json": {"schema": DASHSCOPE_JSON_RESPONSE_SCHEMA}},
+}
+DASHSCOPE_PROXY_RESPONSE = {
+    "description": "DashScope upstream JSON response or server-sent events",
+    "content": {
+        "application/json": {"schema": DASHSCOPE_JSON_RESPONSE_SCHEMA},
+        "text/event-stream": {
+            "schema": {
+                "type": "string",
+                "maxLength": 1_000_000,
+            }
+        },
+    },
+}
 
-@router.post("/api/v1/files")
+
+@router.post("/api/v1/files", responses={200: DASHSCOPE_JSON_RESPONSE})
 async def upload_file_to_dashscope(request: Request):
     """
     处理文件上传到 DashScope OSS
@@ -88,12 +111,18 @@ async def upload_file_to_dashscope(request: Request):
                 'file': (file_name, file_content, file.content_type)
             }
             
-            # Validate upload_host to prevent SSRF
-            validate_outbound_http_url(policy_data['upload_host'])
+            # Validate and pin the dynamic upload host to prevent SSRF and DNS
+            # rebinding between policy validation and the actual OSS POST.
+            try:
+                upload_host = validate_outbound_http_url(policy_data['upload_host'])
+                _ensure_client_pinned(client)
+            except UnsafeURLError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
 
             oss_response = await client.post(
-                policy_data['upload_host'],
-                files=oss_files
+                upload_host,
+                files=oss_files,
+                follow_redirects=False,
             )
             
             if oss_response.status_code != 200:
@@ -121,10 +150,43 @@ async def upload_file_to_dashscope(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+        logger.error(
+            "[DashScope Proxy] Upload failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Upload failed")
 
 
-@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+@router.get(
+    "/{path:path}",
+    operation_id="proxy_dashscope_get",
+    response_class=Response,
+    responses={200: DASHSCOPE_PROXY_RESPONSE},
+)
+@router.post(
+    "/{path:path}",
+    operation_id="proxy_dashscope_post",
+    response_class=Response,
+    responses={200: DASHSCOPE_PROXY_RESPONSE},
+)
+@router.put(
+    "/{path:path}",
+    operation_id="proxy_dashscope_put",
+    response_class=Response,
+    responses={200: DASHSCOPE_PROXY_RESPONSE},
+)
+@router.delete(
+    "/{path:path}",
+    operation_id="proxy_dashscope_delete",
+    response_class=Response,
+    responses={200: DASHSCOPE_PROXY_RESPONSE},
+)
+@router.patch(
+    "/{path:path}",
+    operation_id="proxy_dashscope_patch",
+    response_class=Response,
+    responses={200: DASHSCOPE_PROXY_RESPONSE},
+)
 async def proxy_dashscope(path: str, request: Request):
     """
     代理所有 /api/dashscope/* 请求到 DashScope API
@@ -275,6 +337,14 @@ async def proxy_dashscope(path: str, request: Request):
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="DashScope API 请求超时")
     except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"无法连接到 DashScope API: {str(e)}")
+        logger.error(
+            "[DashScope Proxy] Request failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=502, detail="无法连接到 DashScope API")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"代理请求失败: {str(e)}")
+        logger.error(
+            "[DashScope Proxy] Proxy request failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="代理请求失败")

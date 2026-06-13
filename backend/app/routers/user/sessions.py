@@ -8,13 +8,13 @@ v3 架构采用"按模式分表 + 消息索引表"设计：
 """
 from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any, Set, Optional
+from typing import Annotated, List, Dict, Any, Set, Optional
 from datetime import datetime
 from collections import defaultdict
 import json
 import copy
 import logging
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, JsonValue, RootModel
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +37,22 @@ from ...middleware.case_conversion_middleware import case_conversion_options
 from ...core.user_scoped_query import UserScopedQuery
 from ...utils.message_assembly import assemble_messages_v3
 from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
+from ...utils.log_sanitization import summarize_text_for_log
 
 
 router = APIRouter(prefix="/api", tags=["sessions"])
+
+
+def _summarize_url_for_log(value: Optional[str]) -> str:
+    if not value:
+        return "none"
+    if is_base64_url(value):
+        return f"base64(len={len(value)})"
+    if is_blob_url(value):
+        return f"blob(len={len(value)})"
+    if is_http_url(value):
+        return f"http(len={len(value)})"
+    return f"other(len={len(value)})"
 
 
 class HistoryStateUpdateRequest(BaseModel):
@@ -50,6 +63,62 @@ class HistoryPreferenceUpdateRequest(BaseModel):
     show_favorites_only: Optional[bool] = None
 
 
+TimestampMs = Annotated[int, Field(ge=0, le=4_102_444_800_000)]
+SessionDynamicObject = Annotated[Dict[str, JsonValue], Field(max_length=256)]
+
+
+class SessionResponse(BaseModel):
+    id: str = Field(min_length=1, max_length=512)
+    title: str = Field(max_length=512)
+    messages: List[SessionDynamicObject] = Field(default_factory=list, max_length=10_000)
+    created_at: TimestampMs
+    persona_id: Optional[str] = Field(default=None, max_length=256)
+    mode: Optional[str] = Field(default=None, max_length=128)
+
+
+class SessionListResponse(RootModel[List[SessionResponse]]):
+    root: List[SessionResponse] = Field(max_length=10_000)
+
+
+class DeleteSessionResponse(BaseModel):
+    success: bool
+
+
+class SessionHistoryStateResponse(BaseModel):
+    message_id: str = Field(min_length=1, max_length=512)
+    is_favorite: bool
+    updated_at: TimestampMs
+
+
+class SessionHistoryStatesResponse(BaseModel):
+    states: List[SessionHistoryStateResponse] = Field(default_factory=list, max_length=10_000)
+
+
+class SessionHistoryPreferenceResponse(BaseModel):
+    show_favorites_only: bool
+    updated_at: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+
+
+class SessionAttachmentResponse(BaseModel):
+    id: str = Field(min_length=1, max_length=512)
+    message_id: str = Field(min_length=1, max_length=512)
+    user_id: str = Field(min_length=1, max_length=256)
+    session_id: str = Field(min_length=1, max_length=512)
+    mime_type: Optional[str] = Field(default=None, max_length=128)
+    name: Optional[str] = Field(default=None, max_length=512)
+    url: Optional[str] = Field(default=None, max_length=4096)
+    temp_url: Optional[str] = Field(default=None, max_length=4096)
+    file_uri: Optional[str] = Field(default=None, max_length=4096)
+    upload_status: Optional[str] = Field(default=None, max_length=64)
+    upload_task_id: Optional[str] = Field(default=None, max_length=512)
+    upload_error: Optional[str] = Field(default=None, max_length=4096)
+    google_file_uri: Optional[str] = Field(default=None, max_length=4096)
+    google_file_expiry: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+    size: Optional[int] = Field(default=None, ge=0, le=10_000_000_000)
+    task_id: Optional[str] = Field(default=None, max_length=512)
+    task_status: Optional[str] = Field(default=None, max_length=64)
+
+
 # ==================== v3 辅助函数（已移至 utils/message_assembly.py）====================
 
 # 已删除重复的 assemble_messages_v3 函数
@@ -58,7 +127,10 @@ class HistoryPreferenceUpdateRequest(BaseModel):
 
 # ==================== 会话管理 ====================
 
-@router.get("/sessions")
+@router.get(
+    "/sessions",
+    responses={200: {"model": SessionListResponse, "description": "User chat sessions"}},
+)
 @case_conversion_options(always_convert_response=True)
 async def get_sessions(
     mode: Optional[str] = Query(None, description="按 mode 过滤；不传则返回该用户所有 session"),
@@ -129,7 +201,11 @@ async def get_sessions(
                 ).all()
                 messages_by_table[table_name] = {msg.id: msg for msg in messages}
             except ValueError as e:
-                logger.warning(f"[Sessions] 未知表名: {table_name}, 错误: {e}")
+                logger.warning(
+                    "[Sessions] 未知表名: %s, 错误: %s",
+                    summarize_text_for_log(table_name, label="table"),
+                    summarize_text_for_log(e, label="error"),
+                )
                 continue
         
         # 5. 批量查询所有附件
@@ -184,13 +260,19 @@ async def get_sessions(
         )
         return sessions
     except Exception as e:
-        logger.warning(f"[Sessions] 缓存获取失败，使用直接查询: {e}")
+        logger.warning(
+            "[Sessions] 缓存获取失败，使用直接查询: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         # 缓存失败时，直接查询数据库
         return await fetch_sessions()
 
 
 
-@router.post("/sessions")
+@router.post(
+    "/sessions",
+    responses={200: {"model": SessionResponse, "description": "Created or updated session"}},
+)
 async def create_or_update_session(
     session_data: dict,
     user_id: str = Depends(require_current_user),
@@ -357,7 +439,11 @@ async def create_or_update_session(
         except ValueError as e:
             # 未知 mode 名 → 此 table 的预加载跳过；下游会回落到逐条 INSERT。
             # 保留 warning 让运维感知不合规的 mode 值，避免重复数据沉默写入。
-            logger.warning(f"[sessions] skip preload for unknown mode table {_tn!r}: {e}")
+            logger.warning(
+                "[sessions] skip preload for unknown mode table %s: %s",
+                summarize_text_for_log(_tn, label="table"),
+                summarize_text_for_log(e, label="error"),
+            )
 
     # 预加载附件（按 (message_id, att_id) 索引）
     _preloaded_atts: Dict[tuple, MessageAttachment] = {}
@@ -580,14 +666,20 @@ async def create_or_update_session(
         await cache_service.delete(cache_pattern)
         logger.debug(f"[Sessions] 已清除缓存(通配): {cache_pattern}")
     except Exception as e:
-        logger.warning(f"[Sessions] 清除缓存失败: {e}")
+        logger.warning(
+            "[Sessions] 清除缓存失败: %s",
+            summarize_text_for_log(e, label="error"),
+        )
     
     # 返回更新后的会话（使用 v3 查询逻辑）
     return await get_session_by_id(session_id, user_id, db)
 
 
 
-@router.get("/sessions/{session_id}")
+@router.get(
+    "/sessions/{session_id}",
+    responses={200: {"model": SessionResponse, "description": "Session detail"}},
+)
 @case_conversion_options(always_convert_response=True)
 async def get_session(
     session_id: str,
@@ -680,7 +772,10 @@ async def get_session_by_id(session_id: str, user_id: str, db: Session) -> Dict[
 
 
 
-@router.delete("/sessions/{session_id}")
+@router.delete(
+    "/sessions/{session_id}",
+    responses={200: {"model": DeleteSessionResponse, "description": "Session deleted"}},
+)
 async def delete_session(
     session_id: str,
     user_id: str = Depends(require_current_user),
@@ -769,12 +864,20 @@ async def delete_session(
         await cache_service.delete(cache_pattern)
         logger.debug(f"[Sessions] 已清除缓存(通配): {cache_pattern}")
     except Exception as e:
-        logger.warning(f"[Sessions] 清除缓存失败: {e}")
+        logger.warning(
+            "[Sessions] 清除缓存失败: %s",
+            summarize_text_for_log(e, label="error"),
+        )
 
     return {"success": True}
 
 
-@router.get("/sessions/{session_id}/history-states")
+@router.get(
+    "/sessions/{session_id}/history-states",
+    responses={
+        200: {"model": SessionHistoryStatesResponse, "description": "Session history states"}
+    },
+)
 @case_conversion_options(always_convert_response=True)
 async def get_session_history_states(
     session_id: str,
@@ -807,7 +910,12 @@ async def get_session_history_states(
     }
 
 
-@router.patch("/sessions/{session_id}/history-states/{message_id}")
+@router.patch(
+    "/sessions/{session_id}/history-states/{message_id}",
+    responses={
+        200: {"model": SessionHistoryStateResponse, "description": "Updated history state"}
+    },
+)
 async def update_session_history_state(
     session_id: str,
     message_id: str,
@@ -870,7 +978,15 @@ async def update_session_history_state(
     }
 
 
-@router.get("/sessions/{session_id}/history-preferences")
+@router.get(
+    "/sessions/{session_id}/history-preferences",
+    responses={
+        200: {
+            "model": SessionHistoryPreferenceResponse,
+            "description": "Session history preferences",
+        }
+    },
+)
 async def get_session_history_preferences(
     session_id: str,
     user_id: str = Depends(require_current_user),
@@ -901,7 +1017,15 @@ async def get_session_history_preferences(
     }
 
 
-@router.patch("/sessions/{session_id}/history-preferences")
+@router.patch(
+    "/sessions/{session_id}/history-preferences",
+    responses={
+        200: {
+            "model": SessionHistoryPreferenceResponse,
+            "description": "Updated session history preferences",
+        }
+    },
+)
 async def update_session_history_preferences(
     session_id: str,
     payload: HistoryPreferenceUpdateRequest,
@@ -947,7 +1071,12 @@ async def update_session_history_preferences(
 
 
 
-@router.get("/sessions/{session_id}/attachments/{attachment_id}")
+@router.get(
+    "/sessions/{session_id}/attachments/{attachment_id}",
+    responses={
+        200: {"model": SessionAttachmentResponse, "description": "Session attachment detail"}
+    },
+)
 async def get_attachment(
     session_id: str,
     attachment_id: str,
@@ -1004,7 +1133,12 @@ async def get_attachment(
     if task:
         result["task_id"] = task.id
         result["task_status"] = task.status
-        logger.debug(f"[Sessions] 找到上传任务: task_id={task.id}, status={task.status}, target_url={task.target_url if task.target_url else 'None'}")
+        logger.debug(
+            "[Sessions] 找到上传任务: task_id=%s, status=%s, target_url=%s",
+            task.id,
+            task.status,
+            _summarize_url_for_log(task.target_url),
+        )
         
         # 如果任务已完成且有目标 URL，优先使用任务的 URL
         if task.status == 'completed' and task.target_url:
@@ -1012,5 +1146,10 @@ async def get_attachment(
             result["upload_status"] = 'completed'
             logger.debug("[Sessions] 使用任务的 target_url 作为最终 URL")
     
-    logger.debug(f"[Sessions] 查询附件: {attachment_id} -> url: {result.get('url') if result.get('url') else 'None'}, upload_status: {result.get('upload_status')}")
+    logger.debug(
+        "[Sessions] 查询附件: %s -> url=%s, upload_status=%s",
+        attachment_id,
+        _summarize_url_for_log(result.get("url")),
+        result.get("upload_status"),
+    )
     return result

@@ -24,6 +24,7 @@ from ..base.imagen_common import (
     VALID_ASPECT_RATIOS,
     VALID_IMAGE_SIZES
 )
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,7 @@ class VertexAIImageGenerator(BaseImageGenerator):
         logger.info(f"[VertexAIImageGenerator] ========== 开始生成图片 ==========")
         logger.info(f"[VertexAIImageGenerator] 📥 请求参数:")
         logger.info(f"[VertexAIImageGenerator]     - model: {model}")
-        logger.info(f"[VertexAIImageGenerator]     - prompt: {prompt[:100] + '...' if len(prompt) > 100 else prompt}")
+        logger.info(f"[VertexAIImageGenerator]     - prompt: {summarize_text_for_log(prompt, label='prompt')}")
         logger.info(f"[VertexAIImageGenerator]     - prompt长度: {len(prompt)}")
         for key, value in kwargs.items():
             if key in ['number_of_images', 'aspect_ratio', 'image_size', 'output_mime_type', 'image_style']:
@@ -489,11 +490,17 @@ class VertexAIImageGenerator(BaseImageGenerator):
                 enhanced_prompt_value = None
                 if hasattr(generated_image, 'enhanced_prompt') and generated_image.enhanced_prompt:
                     enhanced_prompt_value = generated_image.enhanced_prompt
-                    logger.info(f"[VertexAIImageGenerator] ✅ Found enhanced_prompt: {enhanced_prompt_value[:100]}...")
+                    logger.info(
+                        "[VertexAIImageGenerator] ✅ Found enhanced_prompt: %s",
+                        summarize_text_for_log(enhanced_prompt_value, label="enhanced_prompt"),
+                    )
                 elif hasattr(generated_image, 'prompt') and generated_image.prompt:
                     # REST API 返回的字段名可能是 'prompt'
                     enhanced_prompt_value = generated_image.prompt
-                    logger.info(f"[VertexAIImageGenerator] ✅ Found prompt: {enhanced_prompt_value[:100]}...")
+                    logger.info(
+                        "[VertexAIImageGenerator] ✅ Found prompt: %s",
+                        summarize_text_for_log(enhanced_prompt_value, label="prompt"),
+                    )
                 else:
                     logger.info(f"[VertexAIImageGenerator] ⚠️ No enhanced_prompt found in response")
                 

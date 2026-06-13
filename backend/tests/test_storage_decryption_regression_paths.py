@@ -1,7 +1,6 @@
+import importlib
 import sys
 import types
-
-import pytest
 
 
 class _FakeStorageConfig:
@@ -73,6 +72,65 @@ def _fake_decrypt_config(config):
     if config.get("broken_credentials"):
         raise ConfigDecryptionError("access_key_id")
     return dict(config)
+
+
+class _FakeCeleryTaskContext:
+    def update_state(self, **_kwargs):
+        return None
+
+
+def _import_upload_tasks_with_fake_celery(monkeypatch):
+    class FakeCeleryConf:
+        def update(self, *_args, **_kwargs):
+            return None
+
+    class FakeCelery:
+        def __init__(self, *_args, **_kwargs):
+            self.conf = FakeCeleryConf()
+
+        def task(self, *_args, **_kwargs):
+            def decorator(func):
+                return types.SimpleNamespace(run=func)
+
+            return decorator
+
+    celery_module = types.ModuleType("celery")
+    celery_module.Celery = FakeCelery
+    monkeypatch.setitem(sys.modules, "celery", celery_module)
+    sys.modules.pop("app.core.celery_app", None)
+    sys.modules.pop("app.tasks.upload_tasks", None)
+    tasks_pkg = sys.modules.get("app.tasks")
+    if tasks_pkg is not None and hasattr(tasks_pkg, "upload_tasks"):
+        delattr(tasks_pkg, "upload_tasks")
+    return importlib.import_module("app.tasks.upload_tasks")
+
+
+def _make_upload_task_session(task, config):
+    class FakeModelQuery:
+        def __init__(self, model):
+            self._model = model
+
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            if self._model.__name__ == "UploadTask":
+                return task
+            if self._model.__name__ == "StorageConfig":
+                return config
+            return None
+
+    class FakeSession:
+        def query(self, model):
+            return FakeModelQuery(model)
+
+        def commit(self):
+            return None
+
+        def close(self):
+            return None
+
+    return FakeSession()
 
 
 def test_storage_manager_get_all_configs_marks_unreadable_credentials(monkeypatch):
@@ -175,27 +233,7 @@ def test_celery_upload_task_fails_closed_when_storage_credentials_unreadable(
 ):
     from app.core.encryption import ConfigDecryptionError
 
-    class FakeCeleryConf:
-        def update(self, *_args, **_kwargs):
-            return None
-
-    class FakeCelery:
-        def __init__(self, *_args, **_kwargs):
-            self.conf = FakeCeleryConf()
-
-        def task(self, *_args, **_kwargs):
-            def decorator(func):
-                return types.SimpleNamespace(run=func)
-
-            return decorator
-
-    celery_module = types.ModuleType("celery")
-    celery_module.Celery = FakeCelery
-    monkeypatch.setitem(sys.modules, "celery", celery_module)
-    sys.modules.pop("app.core.celery_app", None)
-    sys.modules.pop("app.tasks.upload_tasks", None)
-
-    from app.tasks import upload_tasks
+    upload_tasks = _import_upload_tasks_with_fake_celery(monkeypatch)
 
     source_file = tmp_path / "source.png"
     source_file.write_bytes(b"image")
@@ -220,34 +258,6 @@ def test_celery_upload_task_fails_closed_when_storage_credentials_unreadable(
         config={"access_key_id": "gAAAAABdummyUnreadableAccessKeyId"},
     )
 
-    class FakeTaskContext:
-        def update_state(self, **_kwargs):
-            return None
-
-    class FakeModelQuery:
-        def __init__(self, model):
-            self._model = model
-
-        def filter(self, *_args):
-            return self
-
-        def first(self):
-            if self._model.__name__ == "UploadTask":
-                return task
-            if self._model.__name__ == "StorageConfig":
-                return config
-            return None
-
-    class FakeSession:
-        def query(self, model):
-            return FakeModelQuery(model)
-
-        def commit(self):
-            return None
-
-        def close(self):
-            return None
-
     upload_calls = []
 
     def fake_decrypt_config(_config):
@@ -257,7 +267,7 @@ def test_celery_upload_task_fails_closed_when_storage_credentials_unreadable(
         upload_calls.append((_args, _kwargs))
         return {"success": True, "url": "https://example.invalid/uploaded.png"}
 
-    monkeypatch.setattr(upload_tasks, "SessionLocal", lambda: FakeSession())
+    monkeypatch.setattr(upload_tasks, "SessionLocal", lambda: _make_upload_task_session(task, config))
     monkeypatch.setattr("app.core.encryption.decrypt_config", fake_decrypt_config)
 
     from app.routers import storage as storage_package
@@ -269,9 +279,189 @@ def test_celery_upload_task_fails_closed_when_storage_credentials_unreadable(
         raising=False,
     )
 
-    result = upload_tasks.process_upload.run(FakeTaskContext(), "task-1")
+    result = upload_tasks.process_upload.run(_FakeCeleryTaskContext(), "task-1")
 
     assert result["success"] is False
     assert "storage_config_credentials_not_decrypted" in result["error"]
     assert task.status == "failed"
+    assert upload_calls == []
+
+
+def test_celery_upload_success_log_summarizes_signed_target_url(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    upload_tasks = _import_upload_tasks_with_fake_celery(monkeypatch)
+
+    source_file = tmp_path / "source.png"
+    source_file.write_bytes(b"image")
+    signed_url = (
+        "https://cdn.example.invalid/uploaded.png"
+        "?X-Amz-Signature=secret-signature&token=secret-token#private-fragment"
+    )
+    task = types.SimpleNamespace(
+        id="task-log",
+        storage_id="storage-1",
+        session_id=None,
+        message_id=None,
+        attachment_id=None,
+        filename="source.png",
+        source_file_path=str(source_file),
+        source_url=None,
+        status="pending",
+        error_message=None,
+        target_url=None,
+        completed_at=None,
+    )
+    config = types.SimpleNamespace(
+        id="storage-1",
+        provider="lsky",
+        enabled=True,
+        config={"token": "encrypted"},
+    )
+
+    def fake_upload_to_lsky_sync(*_args, **_kwargs):
+        return {"success": True, "url": signed_url}
+
+    monkeypatch.setattr(upload_tasks, "SessionLocal", lambda: _make_upload_task_session(task, config))
+    monkeypatch.setattr("app.core.encryption.decrypt_config", lambda config: dict(config))
+
+    from app.routers import storage as storage_package
+
+    monkeypatch.setattr(
+        storage_package,
+        "upload_to_lsky_sync",
+        fake_upload_to_lsky_sync,
+        raising=False,
+    )
+
+    result = upload_tasks.process_upload.run(_FakeCeleryTaskContext(), "task-log")
+    output = capsys.readouterr().out
+
+    assert result == {"success": True, "url": signed_url, "task_id": "task-log"}
+    assert task.target_url == signed_url
+    assert "上传成功: https://cdn.example.invalid path_len=13 query_params=2 fragment=yes" in output
+    assert signed_url not in output
+    assert "secret-signature" not in output
+    assert "secret-token" not in output
+    assert "private-fragment" not in output
+
+
+def test_celery_upload_failure_stdout_summarizes_exception(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    upload_tasks = _import_upload_tasks_with_fake_celery(monkeypatch)
+
+    source_file = tmp_path / "source.png"
+    source_file.write_bytes(b"image")
+    secret = "provider-secret-token"
+    task = types.SimpleNamespace(
+        id="task-fail-log",
+        storage_id="storage-1",
+        session_id=None,
+        message_id=None,
+        attachment_id=None,
+        filename="source.png",
+        source_file_path=str(source_file),
+        source_url=None,
+        status="pending",
+        error_message=None,
+        target_url=None,
+        completed_at=None,
+    )
+    config = types.SimpleNamespace(
+        id="storage-1",
+        provider="lsky",
+        enabled=True,
+        config={"token": "encrypted"},
+    )
+
+    def fake_upload_to_lsky_sync(*_args, **_kwargs):
+        raise RuntimeError(f"provider failed {secret}")
+
+    monkeypatch.setattr(upload_tasks, "SessionLocal", lambda: _make_upload_task_session(task, config))
+    monkeypatch.setattr("app.core.encryption.decrypt_config", lambda config: dict(config))
+
+    from app.routers import storage as storage_package
+
+    monkeypatch.setattr(
+        storage_package,
+        "upload_to_lsky_sync",
+        fake_upload_to_lsky_sync,
+        raising=False,
+    )
+
+    result = upload_tasks.process_upload.run(_FakeCeleryTaskContext(), "task-fail-log")
+    output = capsys.readouterr().out
+
+    assert result["success"] is False
+    assert secret in result["error"]
+    assert task.status == "failed"
+    assert secret not in output
+    assert "provider failed" not in output
+    assert "Traceback" not in output
+    assert "<redacted error; length=" in output
+
+
+def test_celery_upload_task_rejects_unsafe_source_url_before_upload(monkeypatch):
+    from app.utils.url_security import UnsafeURLError
+
+    upload_tasks = _import_upload_tasks_with_fake_celery(monkeypatch)
+
+    task = types.SimpleNamespace(
+        id="task-ssrf",
+        storage_id="storage-1",
+        session_id=None,
+        message_id=None,
+        attachment_id=None,
+        filename="source.png",
+        source_file_path=None,
+        source_url="http://127.0.0.1/internal.png",
+        status="pending",
+        error_message=None,
+        target_url=None,
+        completed_at=None,
+    )
+    config = types.SimpleNamespace(
+        id="storage-1",
+        provider="lsky",
+        enabled=True,
+        config={"token": "encrypted"},
+    )
+
+    guarded_urls = []
+    upload_calls = []
+
+    def fake_guard(url, **kwargs):
+        guarded_urls.append((url, kwargs))
+        raise UnsafeURLError("blocked unsafe URL")
+
+    def fake_upload_to_lsky_sync(*_args, **_kwargs):
+        upload_calls.append((_args, _kwargs))
+        return {"success": True, "url": "https://example.invalid/uploaded.png"}
+
+    monkeypatch.setattr(upload_tasks, "SessionLocal", lambda: _make_upload_task_session(task, config))
+    monkeypatch.setattr("app.core.encryption.decrypt_config", lambda config: dict(config))
+    monkeypatch.setattr(upload_tasks, "sync_get_with_redirect_guard", fake_guard)
+
+    from app.routers import storage as storage_package
+
+    monkeypatch.setattr(
+        storage_package,
+        "upload_to_lsky_sync",
+        fake_upload_to_lsky_sync,
+        raising=False,
+    )
+
+    result = upload_tasks.process_upload.run(_FakeCeleryTaskContext(), "task-ssrf")
+
+    assert result["success"] is False
+    assert "blocked unsafe URL" in result["error"]
+    assert task.status == "failed"
+    assert guarded_urls == [
+        ("http://127.0.0.1/internal.png", {"timeout": 30.0, "max_redirects": 5})
+    ]
     assert upload_calls == []

@@ -12,18 +12,17 @@ Design:
 - Extensible: Manual registration still supported for custom providers
 """
 
-from typing import Optional, Dict, Type
 import logging
+from typing import Dict, Optional, Type
+
 from sqlalchemy.orm import Session
+
+from ...utils.log_sanitization import summarize_url_for_log
+from ...utils.url_security import validate_storage_egress_url
 from .base_provider import BaseProviderService
-from .provider_config import ProviderConfig
 from .client_selector import ClientSelectorFactory
-from .errors import (
-    ClientCreationError,
-    ConfigurationError,
-    ErrorContext,
-    RequestIDManager
-)
+from .errors import ClientCreationError, ConfigurationError, ErrorContext, RequestIDManager
+from .provider_config import ProviderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +56,53 @@ class ProviderFactory:
 
     # Providers whose service instances bind request-scoped DB/session context.
     _db_context_providers = {"google", "google-custom", "tongyi", "openai"}
+    _trusted_local_base_urls_by_provider = {
+        "ollama": {
+            "http://localhost:11434",
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:11434",
+            "http://127.0.0.1:11434/v1",
+        },
+        "grok": {
+            "http://localhost:8000/v1",
+        },
+    }
+
+    @staticmethod
+    def _normalize_base_url_for_comparison(value: Optional[str]) -> str:
+        return str(value or "").strip().rstrip("/")
+
+    @classmethod
+    def _trusted_base_urls_for_provider(cls, provider: str) -> set[str]:
+        provider_id = str(provider or "").strip()
+        trusted = {
+            cls._normalize_base_url_for_comparison(value)
+            for value in cls._trusted_local_base_urls_by_provider.get(provider_id, set())
+        }
+        default_url = ProviderConfig.get_base_url(provider_id)
+        default_normalized = cls._normalize_base_url_for_comparison(default_url)
+        if default_normalized:
+            trusted.add(default_normalized)
+        return {value for value in trusted if value}
+
+    @classmethod
+    def _validate_provider_api_url(
+        cls,
+        provider: str,
+        api_url: Optional[str],
+    ) -> Optional[str]:
+        raw = str(api_url or "").strip()
+        if not raw:
+            return api_url
+
+        normalized = cls._normalize_base_url_for_comparison(raw)
+        if normalized in cls._trusted_base_urls_for_provider(provider):
+            return raw
+
+        # User/profile supplied provider endpoints are server-side egress targets.
+        # Validate them through the same operator-allowlisted boundary used for
+        # storage/custom base_url endpoints.
+        return validate_storage_egress_url(raw)
 
     @classmethod
     def _build_cache_key(
@@ -143,7 +189,6 @@ class ProviderFactory:
             ... )
         """
         import time
-        import sys
         start_time = time.time()
         
         logger.info(f"[ProviderFactory] 🔄 开始创建服务: provider={provider}, user_id={user_id if user_id else 'None'}")
@@ -154,9 +199,9 @@ class ProviderFactory:
         
         # Ensure providers are registered
         if not cls._initialized:
-            logger.info(f"[ProviderFactory] 🔄 自动注册提供商...")
+            logger.info("[ProviderFactory] 🔄 自动注册提供商...")
             cls._auto_register()
-            logger.info(f"[ProviderFactory] ✅ 提供商注册完成")
+            logger.info("[ProviderFactory] ✅ 提供商注册完成")
         
         # Validate provider exists
         if provider not in cls._providers:
@@ -177,6 +222,23 @@ class ProviderFactory:
         # If no api_url provided, use config base_url
         if api_url is None:
             api_url = ProviderConfig.get_base_url(provider)
+        else:
+            try:
+                api_url = cls._validate_provider_api_url(provider, api_url)
+            except Exception as e:
+                context = ErrorContext(
+                    provider_id=provider,
+                    client_type='single',
+                    operation='create_client',
+                    request_id=request_id,
+                    user_id=user_id,
+                    additional_context={'api_url': summarize_url_for_log(api_url)}
+                )
+                raise ClientCreationError(
+                    message=f"Failed to create {provider} client: {str(e)}",
+                    context=context,
+                    original_error=e
+                ) from e
 
         cache_key = cls._build_cache_key(provider, api_key, api_url, user_id, kwargs)
         should_use_cache = cls._is_cacheable_request(provider, db)
@@ -231,7 +293,7 @@ class ProviderFactory:
                 operation='create_client',
                 request_id=request_id,
                 user_id=user_id,
-                additional_context={'api_url': api_url}
+                additional_context={'api_url': summarize_url_for_log(api_url)}
             )
             raise ClientCreationError(
                 message=f"Failed to create {provider} client: {str(e)}",
@@ -319,7 +381,7 @@ class ProviderFactory:
                     logger.info(f"[Provider Factory] Registered {provider_id} (Grok)")
                 except ImportError:
                     GrokService = None
-                    logger.debug(f"[Provider Factory] GrokService not available")
+                    logger.debug("[Provider Factory] GrokService not available")
             
             else:
                 # 对于可选依赖（ollama, tongyi），使用 debug 级别

@@ -20,6 +20,7 @@ from starlette.routing import Match
 from starlette.types import ASGIApp, Receive, Scope, Send, Message
 
 from ..utils.case_converter import to_snake_case, to_camel_case, camel_to_snake
+from ..utils.log_sanitization import summarize_query_for_log, summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -192,9 +193,16 @@ class CaseConversionMiddleware:
                 scope["query_string"] = urlencode(converted_params, doseq=True).encode("utf-8")
 
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"[CaseConversion] Query: {query_str} -> {scope['query_string'].decode('utf-8')}")
+                    logger.debug(
+                        "[CaseConversion] Query converted: before=%s after=%s",
+                        summarize_query_for_log(query_str),
+                        summarize_query_for_log(scope["query_string"]),
+                    )
             except Exception as e:
-                logger.error(f"[CaseConversion] Query String conversion failed: {e}")
+                logger.error(
+                    "[CaseConversion] Query String conversion failed: %s",
+                    summarize_text_for_log(e, label="error"),
+                )
 
         # ========== 请求处理 ==========
         request_content_type = ""
@@ -243,7 +251,10 @@ class CaseConversionMiddleware:
                     except (json.JSONDecodeError, UnicodeDecodeError):
                         pass
                     except Exception as e:
-                        logger.error(f"[CaseConversion] Request conversion failed: {e}")
+                        logger.error(
+                            "[CaseConversion] Request conversion failed: %s",
+                            summarize_text_for_log(e, label="error"),
+                        )
 
                 # 创建新的 receive 函数
                 request_sent = False
@@ -336,7 +347,10 @@ class CaseConversionMiddleware:
                         e,
                     )
                 except Exception as e:
-                    logger.error(f"[CaseConversion] Response conversion failed: {e}")
+                    logger.error(
+                        "[CaseConversion] Response conversion failed: %s",
+                        summarize_text_for_log(e, label="error"),
+                    )
 
             # 发送响应头（更新 Content-Length）
             if cached_start_message:

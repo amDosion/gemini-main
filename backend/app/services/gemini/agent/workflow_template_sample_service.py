@@ -16,22 +16,31 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import unquote, urlparse
-from urllib.request import Request, urlopen
 
+import httpx
 from sqlalchemy.orm import Session
 
 from ....models.db_models import ActiveStorage
+from ....utils.attachment_handler import is_base64_image_url, is_base64_url, is_blob_url
+from ....utils.case_converter import to_camel_case
+from ....utils.log_sanitization import summarize_url_for_log
+from ....utils.url_security import pin_sync_client_for_outbound_guard
 from ...agent.agent_llm_service import AgentLLMService
 from ...agent.workflow_engine import WorkflowEngine
 from ...agent.workflow_result_contract import (
     extract_runtime_hints as _extract_runtime_hints_shared,
+)
+from ...agent.workflow_result_contract import (
     extract_text_preview as _extract_text_preview_shared,
+)
+from ...agent.workflow_result_contract import (
     normalize_runtime_hint as _normalize_runtime_hint_shared,
+)
+from ...agent.workflow_result_contract import (
     pick_primary_runtime as _pick_primary_runtime_shared,
 )
 from ...common.attachment_service import AttachmentService, safe_persist_ai_result
 from ...common.reference_image_catalog import pick_reference_image
-from ....utils.case_converter import to_camel_case
 from .test_template_fixture_service import (
     ADS_SAMPLE_SPREADSHEET_PATH,
     DATA_ANALYSIS_SAMPLE_SPREADSHEET_PATH,
@@ -41,7 +50,6 @@ from .test_template_fixture_service import (
 )
 from .tools.excel_tools import analyze_dataframe, clean_dataframe, read_excel_file
 from .workflow_template_service import WorkflowTemplateService
-from ....utils.attachment_handler import is_base64_url, is_blob_url, is_base64_image_url
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +70,7 @@ SAMPLE_ASSET_MAX_BYTES = {
     "audio": 16 * 1024 * 1024,
     "video": 32 * 1024 * 1024,
 }
+SAMPLE_ASSET_MAX_REDIRECTS = 5
 
 
 class WorkflowTemplateSampleService:
@@ -276,6 +285,19 @@ class WorkflowTemplateSampleService:
         return any(hostname.endswith(f".{allowed}") for allowed in TRUSTED_SAMPLE_ASSET_HOSTS)
 
     @classmethod
+    def _resolve_trusted_sample_asset_redirect_url(cls, current_url: str, location: str) -> str:
+        location_value = str(location or "").strip()
+        if not location_value:
+            raise ValueError("sample asset redirect missing location")
+        try:
+            next_url = str(httpx.URL(str(current_url or "").strip()).join(location_value))
+        except Exception as exc:
+            raise ValueError("sample asset redirect location is invalid") from exc
+        if not cls._is_trusted_sample_asset_url(next_url):
+            raise ValueError("sample asset redirect host is not trusted")
+        return next_url
+
+    @classmethod
     def _download_sample_remote_asset(
         cls,
         url: str,
@@ -283,20 +305,44 @@ class WorkflowTemplateSampleService:
         asset_kind: str,
     ) -> Tuple[bytes, str]:
         max_bytes = SAMPLE_ASSET_MAX_BYTES.get(asset_kind, 8 * 1024 * 1024)
-        request = Request(
-            url=str(url).strip(),
-            headers={
-                "User-Agent": "WorkflowTemplateSampleService/1.0",
-                "Accept": "*/*",
-            },
-        )
-        with urlopen(request, timeout=20) as response:  # nosec B310 - guarded by allowlist
-            mime_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
-            raw = response.read(max_bytes + 1)
-        if len(raw) > max_bytes:
-            raise ValueError(f"sample {asset_kind} exceeds {max_bytes // (1024 * 1024)}MB limit")
+        current_url = str(url).strip()
+        if not cls._is_trusted_sample_asset_url(current_url):
+            raise ValueError("sample asset host is not trusted")
+
+        headers = {
+            "User-Agent": "WorkflowTemplateSampleService/1.0",
+            "Accept": "*/*",
+        }
+        redirect_count = 0
+        with httpx.Client(timeout=20.0, follow_redirects=False) as client:
+            pin_sync_client_for_outbound_guard(client)
+            while True:
+                with client.stream("GET", current_url, headers=headers) as response:
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        if redirect_count >= SAMPLE_ASSET_MAX_REDIRECTS:
+                            raise ValueError(
+                                f"sample asset redirects exceeded limit ({SAMPLE_ASSET_MAX_REDIRECTS})"
+                            )
+                        current_url = cls._resolve_trusted_sample_asset_redirect_url(
+                            current_url,
+                            response.headers.get("Location") or response.headers.get("location") or "",
+                        )
+                        redirect_count += 1
+                        continue
+
+                    response.raise_for_status()
+                    mime_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+                    raw_parts: list[bytes] = []
+                    total_bytes = 0
+                    for chunk in response.iter_bytes():
+                        total_bytes += len(chunk)
+                        if total_bytes > max_bytes:
+                            raise ValueError(f"sample {asset_kind} exceeds {max_bytes // (1024 * 1024)}MB limit")
+                        raw_parts.append(chunk)
+                    raw = b"".join(raw_parts)
+                    break
         if not mime_type:
-            guessed = mimetypes.guess_type(str(url).strip())[0]
+            guessed = mimetypes.guess_type(current_url)[0]
             mime_type = str(guessed or "").strip().lower()
         return raw, mime_type
 
@@ -521,7 +567,7 @@ class WorkflowTemplateSampleService:
         for index, image_url in enumerate(candidates, start=1):
             processed = await safe_persist_ai_result(
                 attachment_service,
-                log_label=f"TemplateSample image #{index} ({image_url[:60]}...)",
+                log_label=f"TemplateSample image #{index} ({summarize_url_for_log(image_url)})",
                 log_with_traceback=False,
                 ai_url=image_url,
                 mime_type=self._guess_image_mime_type(image_url),

@@ -9,10 +9,23 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-try:
-    import pandas as pd  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
-    pd = None  # type: ignore
+_pd: Any | None = None
+_pd_import_attempted = False
+
+
+def _get_pandas() -> Any | None:
+    """Import pandas only when the Amazon Ads table tool runs."""
+
+    global _pd, _pd_import_attempted
+    if not _pd_import_attempted:
+        _pd_import_attempted = True
+        try:
+            import pandas as pandas_module  # type: ignore
+        except Exception:  # pragma: no cover - optional dependency
+            _pd = None
+        else:
+            _pd = pandas_module
+    return _pd
 
 
 def normalize_header_token(engine: Any, value: Any) -> str:
@@ -366,6 +379,7 @@ async def run_amazon_ads_keyword_optimize_tool(
     tool_args: Dict[str, Any],
     latest_input: Any,
 ) -> Dict[str, Any]:
+    pd = _get_pandas()
     if pd is None:
         return {
             "tool": "amazon_ads_keyword_optimize",

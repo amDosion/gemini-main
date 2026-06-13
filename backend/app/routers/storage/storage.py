@@ -3,9 +3,10 @@
 支持兰空图床和阿里云 OSS
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, Response, Request, Query
+from pydantic import BaseModel, Field, JsonValue, RootModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from typing import Optional, Any
+from typing import Annotated, Optional, Any
 from datetime import datetime
 import uuid
 import httpx
@@ -36,15 +37,212 @@ from ...core.dependencies import require_current_user, get_cache
 from ...core.user_scoped_query import UserScopedQuery
 from ...core.encryption import ConfigDecryptionError, decrypt_config
 from ...middleware.case_conversion_middleware import case_conversion_options
+from ..system.admin import require_admin_user
 from ...utils.url_security import (
     UnsafeURLError,
     _ensure_client_pinned,
     validate_outbound_http_url,
     validate_storage_egress_url,
 )
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 logger = logging.getLogger(__name__)
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+
+
+class WorkerPoolHealthResponse(BaseModel):
+    available: bool
+    running: bool
+    num_workers: int = Field(ge=0, le=1024)
+    redis_connected: bool
+    pending_tasks_count: int = Field(ge=0, le=1_000_000)
+    redis_queue_length: int = Field(ge=0, le=1_000_000)
+    error: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class StorageDebugFeaturesResponse(BaseModel):
+    upload_logs: bool
+    upload_status: bool
+    upload_async: bool
+
+
+class StorageDebugResponse(BaseModel):
+    module_file: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    cwd: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    temp_dir: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    backend_env_exists: bool
+    database_url: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    redis_url: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    features: StorageDebugFeaturesResponse
+
+
+class StorageWorkerPoolStatusResponse(BaseModel):
+    running: bool
+    workers_total: int = Field(ge=0, le=1024)
+    workers_alive: int = Field(ge=0, le=1024)
+    reconcile_interval_s: Optional[float] = Field(default=None, ge=0, le=86_400)
+    reconcile_limit: Optional[int] = Field(default=None, ge=0, le=1_000_000)
+
+
+class StorageWorkerRedisStatusResponse(BaseModel):
+    connected: bool
+    error: Optional[str] = Field(default=None, max_length=1024, pattern=NO_CONTROL_CHARS_PATTERN)
+    stats: Optional[dict[str, Any]] = None
+
+
+class StorageWorkerServerStatusResponse(BaseModel):
+    pid: int = Field(ge=0, le=10_000_000)
+    cwd: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    module_file: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class StorageWorkerStatusResponse(BaseModel):
+    worker_pool: StorageWorkerPoolStatusResponse
+    redis: StorageWorkerRedisStatusResponse
+    server: StorageWorkerServerStatusResponse
+
+
+class ActiveStorageResponse(BaseModel):
+    storage_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+TimestampMs = Annotated[int, Field(ge=0, le=4_102_444_800_000)]
+StorageDynamicObject = Annotated[dict[str, JsonValue], Field(max_length=256)]
+
+
+class StorageDynamicObjectResponse(RootModel[StorageDynamicObject]):
+    root: StorageDynamicObject
+
+
+class StorageRevisionResponse(BaseModel):
+    storage_revision: int = Field(ge=0, le=10_000_000_000)
+
+
+class StorageDeleteConfigResponse(StorageRevisionResponse):
+    success: bool
+
+
+class StorageSetActiveResponse(StorageDeleteConfigResponse):
+    storage_id: str = Field(min_length=1, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class StorageMetadataBatchResponse(StorageRevisionResponse):
+    items: list[StorageDynamicObject] = Field(default_factory=list, max_length=100)
+    total: int = Field(ge=0, le=100)
+
+
+class StorageBatchDeleteItemResponse(BaseModel):
+    success: bool
+    path: Optional[str] = Field(default=None, max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    message: Optional[str] = Field(default=None, max_length=1024, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class StorageBatchDeleteResponse(StorageRevisionResponse):
+    success: bool
+    total: int = Field(ge=0, le=1000)
+    success_count: int = Field(ge=0, le=1000)
+    failure_count: int = Field(ge=0, le=1000)
+    results: list[StorageBatchDeleteItemResponse] = Field(default_factory=list, max_length=1000)
+    failures: Optional[list[StorageBatchDeleteItemResponse]] = Field(default=None, max_length=1000)
+
+
+class StorageUploadTaskQueuedResponse(BaseModel):
+    task_id: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    attachment_id: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    priority: Optional[str] = Field(default=None, max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    queue_position: int = Field(ge=-1, le=1_000_000)
+    enqueued: Optional[bool] = None
+    enqueue_error: Optional[str] = Field(default=None, max_length=2048, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class StorageUploadTaskResponse(BaseModel):
+    id: str = Field(min_length=1, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    session_id: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    message_id: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    attachment_id: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    source_url: Optional[str] = Field(default=None, max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    source_file_path: Optional[str] = Field(default=None, max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    source_ai_url: Optional[str] = Field(default=None, max_length=4096)
+    source_attachment_id: Optional[str] = Field(default=None, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    target_url: Optional[str] = Field(default=None, max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    filename: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    storage_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    priority: Optional[str] = Field(default=None, max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    retry_count: Optional[int] = Field(default=None, ge=0, le=100)
+    status: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    error_message: Optional[str] = Field(default=None, max_length=4096)
+    created_at: TimestampMs
+    completed_at: Optional[int] = Field(default=None, ge=0, le=4_102_444_800_000)
+
+
+class StorageUploadTaskDbResponse(BaseModel):
+    task: StorageUploadTaskResponse
+    server: StorageWorkerServerStatusResponse
+
+
+class StorageUploadLogsResponse(BaseModel):
+    task_id: str = Field(min_length=1, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    logs: list[str] = Field(default_factory=list, max_length=10_000)
+
+
+class StorageRetryUploadResponse(BaseModel):
+    task_id: str = Field(min_length=1, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    status: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    queue_position: int = Field(ge=-1, le=1_000_000)
+
+
+class StoragePreparedDownloadResponse(BaseModel):
+    success: bool
+    download_id: str = Field(min_length=1, max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    download_url: str = Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)
+    file_name: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    archive: bool
+    total_files: int = Field(ge=0, le=500)
+    skipped_count: int = Field(ge=0, le=500)
+    created_at: TimestampMs
+    expires_at: TimestampMs
+
+
+STORAGE_BINARY_RESPONSE_CONTENT = {
+    "application/octet-stream": {
+        "schema": {
+            "type": "string",
+            "format": "binary",
+            "maxLength": 536_870_912,
+        }
+    },
+    "image/png": {
+        "schema": {
+            "type": "string",
+            "format": "binary",
+            "maxLength": 536_870_912,
+        }
+    },
+    "image/jpeg": {
+        "schema": {
+            "type": "string",
+            "format": "binary",
+            "maxLength": 536_870_912,
+        }
+    },
+    "image/webp": {
+        "schema": {
+            "type": "string",
+            "format": "binary",
+            "maxLength": 536_870_912,
+        }
+    },
+    "video/mp4": {
+        "schema": {
+            "type": "string",
+            "format": "binary",
+            "maxLength": 536_870_912,
+        }
+    },
+}
+
 
 _METADATA_IMAGE_EXTENSIONS = {
     "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "avif", "heic", "heif", "tif", "tiff"
@@ -111,8 +309,11 @@ async def _get_storage_revision_redis():
         if redis_queue._redis is None:
             await redis_queue.connect()
         return redis_queue._redis
-    except Exception:
-        logger.debug("[StorageRevision] redis unavailable", exc_info=True)
+    except Exception as e:
+        logger.debug(
+            "[StorageRevision] redis unavailable: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         return None
 
 
@@ -126,8 +327,11 @@ async def _get_storage_revision(user_id: str) -> int:
         if raw_value is None:
             return 0
         return int(raw_value)
-    except Exception:
-        logger.debug("[StorageRevision] get revision failed", exc_info=True)
+    except Exception as e:
+        logger.debug(
+            "[StorageRevision] get revision failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         return 0
 
 
@@ -149,8 +353,11 @@ async def _bump_storage_revision(user_id: str) -> int:
             async for matched_key in redis_conn.scan_iter(match=old_pattern):
                 await redis_conn.delete(matched_key)
         return next_revision
-    except Exception:
-        logger.debug("[StorageRevision] bump revision failed", exc_info=True)
+    except Exception as e:
+        logger.debug(
+            "[StorageRevision] bump revision failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         return await _get_storage_revision(user_id)
 
 
@@ -493,8 +700,11 @@ def _build_unavailable_metadata(url: str, error: str) -> dict[str, Any]:
 async def _get_cache_optional() -> CacheService | None:
     try:
         return await get_cache()
-    except Exception:
-        logger.warning("[StorageMetadata] cache unavailable, fallback to upstream only", exc_info=True)
+    except Exception as e:
+        logger.warning(
+            "[StorageMetadata] cache unavailable, fallback to upstream only: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         return None
 
 
@@ -559,12 +769,12 @@ async def _attach_total_count_to_browse_payload(
             storage_id=resolved_storage_id,
             path=resolved_path,
         )
-    except Exception:
+    except Exception as e:
         logger.warning(
-            "[StorageBrowse] count_storage_items failed for storage_id=%s path=%s",
+            "[StorageBrowse] count_storage_items failed for storage_id=%s path=%s error=%s",
             resolved_storage_id,
-            resolved_path,
-            exc_info=True,
+            summarize_text_for_log(resolved_path, label="path"),
+            summarize_text_for_log(e, label="error"),
         )
         result["total_count"] = None
         return result
@@ -582,8 +792,11 @@ async def _attach_total_count_to_browse_payload(
                 },
                 ttl=60,
             )
-        except Exception:
-            logger.debug("[StorageBrowse] total_count cache set failed", exc_info=True)
+        except Exception as e:
+            logger.debug(
+                "[StorageBrowse] total_count cache set failed: %s",
+                summarize_text_for_log(e, label="error"),
+            )
 
     return result
 
@@ -644,8 +857,11 @@ async def _resolve_storage_metadata_list(
             if cache is not None:
                 try:
                     await cache.set(cache_key, fetched, ttl=600)
-                except Exception:
-                    logger.debug("[StorageMetadata] cache set failed", exc_info=True)
+                except Exception as e:
+                    logger.debug(
+                        "[StorageMetadata] cache set failed: %s",
+                        summarize_text_for_log(e, label="error"),
+                    )
             return _normalize_storage_metadata_payload(fetched, source="upstream")
 
     return await asyncio.gather(*(resolve_one(url) for url in urls))
@@ -892,12 +1108,12 @@ async def _attach_metadata_to_browse_payload(
                 _BROWSE_METADATA_BACKFILL_TOTAL_TIMEOUT_SECONDS,
             )
             backfilled = []
-        except Exception:
+        except Exception as e:
             logger.debug(
-                "[StorageMetadata] browse metadata backfill failed: user_id=%s targets=%s",
+                "[StorageMetadata] browse metadata backfill failed: user_id=%s targets=%s error=%s",
                 user_id,
                 len(backfill_targets),
-                exc_info=True,
+                summarize_text_for_log(e, label="error"),
             )
             backfilled = []
 
@@ -1013,8 +1229,12 @@ def _cleanup_storage_download_artifacts(meta_path: Path, file_path: Path | None 
         try:
             if target.exists():
                 target.unlink()
-        except Exception:
-            logger.debug("[StorageDownload] failed to delete %s", target, exc_info=True)
+        except Exception as e:
+            logger.debug(
+                "[StorageDownload] failed to delete %s: %s",
+                summarize_text_for_log(target, label="path"),
+                summarize_text_for_log(e, label="error"),
+            )
 
 
 def _cleanup_storage_download_by_id(download_id: str) -> None:
@@ -1023,21 +1243,32 @@ def _cleanup_storage_download_by_id(download_id: str) -> None:
         try:
             if target.is_file():
                 target.unlink()
-        except Exception:
-            logger.debug("[StorageDownload] failed to delete %s", target, exc_info=True)
+        except Exception as e:
+            logger.debug(
+                "[StorageDownload] failed to delete %s: %s",
+                summarize_text_for_log(target, label="path"),
+                summarize_text_for_log(e, label="error"),
+            )
     try:
         if meta_path.exists():
             meta_path.unlink()
-    except Exception:
-        logger.debug("[StorageDownload] failed to delete %s", meta_path, exc_info=True)
+    except Exception as e:
+        logger.debug(
+            "[StorageDownload] failed to delete %s: %s",
+            summarize_text_for_log(meta_path, label="path"),
+            summarize_text_for_log(e, label="error"),
+        )
 
 
 def _cleanup_expired_storage_downloads() -> None:
     now = time.time()
     try:
         meta_paths = list(_STORAGE_DOWNLOAD_DIR.glob("*.json"))
-    except Exception:
-        logger.debug("[StorageDownload] failed to scan temp dir", exc_info=True)
+    except Exception as e:
+        logger.debug(
+            "[StorageDownload] failed to scan temp dir: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         return
 
     for meta_path in meta_paths:
@@ -1050,8 +1281,12 @@ def _cleanup_expired_storage_downloads() -> None:
             expires_at = float(payload.get("expires_at_ts") or 0)
             if expires_at > now and file_path and file_path.exists():
                 continue
-        except Exception:
-            logger.debug("[StorageDownload] invalid metadata file %s", meta_path, exc_info=True)
+        except Exception as e:
+            logger.debug(
+                "[StorageDownload] invalid metadata file %s: %s",
+                summarize_text_for_log(meta_path, label="path"),
+                summarize_text_for_log(e, label="error"),
+            )
         _cleanup_storage_download_artifacts(meta_path, file_path)
 
 
@@ -1480,8 +1715,8 @@ def _resolve_enabled_storage_config(
     return resolved_storage_id, config
 
 
-@router.get("/debug")
-async def storage_debug(user_id: str = Depends(require_current_user)):
+@router.get("/debug", response_model=StorageDebugResponse)
+async def storage_debug(_: str = Depends(require_admin_user)):
     """返回后端运行态信息（用于排查是否命中最新代码/路由）。"""
     backend_env = Path(__file__).resolve().parents[2] / ".env"
     return {
@@ -1499,13 +1734,17 @@ async def storage_debug(user_id: str = Depends(require_current_user)):
     }
 
 
-@router.get("/worker-status")
-async def get_worker_status(user_id: str = Depends(require_current_user)):
+@router.get("/worker-status", response_model=StorageWorkerStatusResponse)
+async def get_worker_status(_: str = Depends(require_admin_user)):
     """查看 WorkerPool/Redis 状态（用于定位“排队后不处理，重启才成功”）。"""
     try:
         from ...services.common.upload_worker_pool import worker_pool
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"WorkerPool 不可用: {e}")
+        logger.error(
+            "[StorageWorker] WorkerPool unavailable: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=503, detail="WorkerPool 不可用")
 
     redis_error: str | None = None
     stats = None
@@ -1516,8 +1755,14 @@ async def get_worker_status(user_id: str = Depends(require_current_user)):
     except Exception as e:
         redis_error = str(e)
 
-    workers_total = len(worker_pool._workers)
-    workers_alive = sum(1 for t in worker_pool._workers if not t.done())
+    worker_tasks = getattr(worker_pool, "_workers", None)
+    if isinstance(worker_tasks, (list, tuple, set)):
+        workers_total = len(worker_tasks)
+        workers_alive = sum(1 for task in worker_tasks if not task.done())
+    else:
+        worker_task = getattr(worker_pool, "_worker_task", None)
+        workers_total = 1 if worker_task is not None else 0
+        workers_alive = 1 if worker_task is not None and not worker_task.done() else 0
 
     return {
         "worker_pool": {
@@ -1542,7 +1787,7 @@ async def get_worker_status(user_id: str = Depends(require_current_user)):
 
 # ==================== 配置管理 ====================
 
-@router.get("/configs")
+@router.get("/configs", response_model=list[dict[str, Any]])
 @case_conversion_options(always_convert_response=True)
 async def get_storage_configs(
     user_id: str = Depends(require_current_user),
@@ -1558,7 +1803,12 @@ async def get_storage_configs(
     return configs
 
 
-@router.post("/configs")
+@router.post(
+    "/configs",
+    responses={
+        200: {"model": StorageDynamicObjectResponse, "description": "Created storage config"}
+    },
+)
 async def create_storage_config(
     config_data: dict,
     user_id: str = Depends(require_current_user),
@@ -1577,7 +1827,12 @@ async def create_storage_config(
     }
 
 
-@router.put("/configs/{config_id}")
+@router.put(
+    "/configs/{config_id}",
+    responses={
+        200: {"model": StorageDynamicObjectResponse, "description": "Updated storage config"}
+    },
+)
 async def update_storage_config(
     config_id: str,
     config_data: dict,
@@ -1597,7 +1852,12 @@ async def update_storage_config(
     }
 
 
-@router.delete("/configs/{config_id}")
+@router.delete(
+    "/configs/{config_id}",
+    responses={
+        200: {"model": StorageDeleteConfigResponse, "description": "Deleted storage config"}
+    },
+)
 async def delete_storage_config(
     config_id: str,
     user_id: str = Depends(require_current_user),
@@ -1610,7 +1870,7 @@ async def delete_storage_config(
     return {"success": True, "storage_revision": revision}
 
 
-@router.get("/active")
+@router.get("/active", response_model=ActiveStorageResponse)
 async def get_active_storage(
     user_id: str = Depends(require_current_user),
     db: Session = Depends(get_db)
@@ -1622,7 +1882,12 @@ async def get_active_storage(
     return {"storage_id": storage_id}
 
 
-@router.get("/active/browse")
+@router.get(
+    "/active/browse",
+    responses={
+        200: {"model": StorageDynamicObjectResponse, "description": "Active storage browse result"}
+    },
+)
 @case_conversion_options(always_convert_response=True)
 async def browse_active_storage(
     path: str = Query(default="", description="目录路径，空字符串表示根目录"),
@@ -1658,7 +1923,12 @@ async def browse_active_storage(
     return result
 
 
-@router.get("/browse/{storage_id}")
+@router.get(
+    "/browse/{storage_id}",
+    responses={
+        200: {"model": StorageDynamicObjectResponse, "description": "Storage browse result"}
+    },
+)
 @case_conversion_options(always_convert_response=True)
 async def browse_storage(
     storage_id: str,
@@ -1700,7 +1970,15 @@ async def browse_storage(
     return result
 
 
-@router.post("/metadata/batch")
+@router.post(
+    "/metadata/batch",
+    responses={
+        200: {
+            "model": StorageMetadataBatchResponse,
+            "description": "Storage file metadata batch result",
+        }
+    },
+)
 async def batch_get_storage_file_metadata(
     payload: dict,
     user_id: str = Depends(require_current_user),
@@ -1755,7 +2033,12 @@ async def batch_get_storage_file_metadata(
     }
 
 
-@router.post("/items/delete")
+@router.post(
+    "/items/delete",
+    responses={
+        200: {"model": StorageDynamicObjectResponse, "description": "Storage item delete result"}
+    },
+)
 async def delete_storage_item(
     payload: dict,
     user_id: str = Depends(require_current_user),
@@ -1787,7 +2070,12 @@ async def delete_storage_item(
     raise HTTPException(status_code=400, detail=result)
 
 
-@router.post("/items/batch-delete")
+@router.post(
+    "/items/batch-delete",
+    responses={
+        200: {"model": StorageBatchDeleteResponse, "description": "Storage batch delete result"}
+    },
+)
 @case_conversion_options(always_convert_response=True)
 async def batch_delete_storage_items(
     payload: dict,
@@ -1852,7 +2140,12 @@ async def batch_delete_storage_items(
     return response_payload
 
 
-@router.post("/items/rename")
+@router.post(
+    "/items/rename",
+    responses={
+        200: {"model": StorageDynamicObjectResponse, "description": "Storage item rename result"}
+    },
+)
 async def rename_storage_item(
     payload: dict,
     user_id: str = Depends(require_current_user),
@@ -1886,7 +2179,12 @@ async def rename_storage_item(
     raise HTTPException(status_code=400, detail=result)
 
 
-@router.post("/active/{storage_id}")
+@router.post(
+    "/active/{storage_id}",
+    responses={
+        200: {"model": StorageSetActiveResponse, "description": "Active storage selected"}
+    },
+)
 async def set_active_storage(
     storage_id: str,
     user_id: str = Depends(require_current_user),
@@ -1899,7 +2197,12 @@ async def set_active_storage(
     return {"success": True, "storage_id": storage_id, "storage_revision": revision}
 
 
-@router.post("/test")
+@router.post(
+    "/test",
+    responses={
+        200: {"model": StorageDynamicObjectResponse, "description": "Storage config test result"}
+    },
+)
 async def test_storage_config(
     config_data: dict,
     user_id: str = Depends(require_current_user),
@@ -2006,16 +2309,25 @@ async def upload_to_active_storage_async(content: bytes, filename: str, content_
         )
 
         if result.get('success'):
-            logger.info(f"[Storage] Upload successful: {result.get('url', '')[:60]}...")
+            logger.info("[Storage] Upload successful: %s", summarize_url_for_log(result.get('url', '')))
         else:
-            logger.error(f"[Storage] Upload failed: {result.get('error', 'Unknown error')}")
+            logger.error(
+                "[Storage] Upload failed: %s",
+                summarize_text_for_log(result.get('error', 'Unknown error'), label="error"),
+            )
 
         return result
     except HTTPException as e:
-        logger.error(f"[Storage] Async upload HTTP error: {e.detail}")
+        logger.error(
+            "[Storage] Async upload HTTP error: %s",
+            summarize_text_for_log(e.detail, label="error"),
+        )
         return {"success": False, "error": e.detail}
     except Exception as e:
-        logger.error(f"[Storage] Async upload error: {e}")
+        logger.error(
+            "[Storage] Async upload error: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         return {"success": False, "error": str(e)}
     finally:
         db.close()
@@ -2062,7 +2374,12 @@ def upload_to_lsky_sync(filename: str, content: bytes, content_type: str, config
         return {"success": False, "error": str(e)}
 
 
-@router.post("/upload")
+@router.post(
+    "/upload",
+    responses={
+        200: {"model": StorageDynamicObjectResponse, "description": "Storage upload result"}
+    },
+)
 @case_conversion_options(skip_request_body=True)
 async def upload_file(
     file: UploadFile = File(...),
@@ -2156,13 +2473,13 @@ async def process_upload_task(task_id: str, _db: Session = None):
         elif task.source_url:
             # 模式 2: 从 URL 下载
             safe_source_url = _validate_outbound_http_url(task.source_url)
-            logger.info(f"[UploadTask] 下载图片: {safe_source_url}")
+            logger.info("[UploadTask] 下载图片: %s", summarize_url_for_log(safe_source_url))
             async with httpx.AsyncClient(timeout=30.0) as client:
                 _ensure_client_pinned(client)  # W02R-016: pin DNS at connect time
                 response, final_url = await _safe_get_with_redirect_guard(client, safe_source_url)
                 response.raise_for_status()
                 image_content = response.content
-            logger.info(f"[UploadTask] 下载完成（最终URL）: {final_url}")
+            logger.info("[UploadTask] 下载完成（最终URL）: %s", summarize_url_for_log(final_url))
             
             # 保存到项目内临时目录（使用相对路径存储）
             filename_with_id = f"upload_{task_id}_{task.filename}"
@@ -2190,9 +2507,15 @@ async def process_upload_task(task_id: str, _db: Session = None):
         if temp_path and os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
-                logger.info(f"[UploadTask] 临时文件已删除: {temp_path}")
+                logger.info(
+                    "[UploadTask] 临时文件已删除: %s",
+                    summarize_text_for_log(temp_path, label="path"),
+                )
             except Exception as e:
-                logger.warning(f"[UploadTask] 删除临时文件失败: {e}")
+                logger.warning(
+                    "[UploadTask] 删除临时文件失败: %s",
+                    summarize_text_for_log(e, label="error"),
+                )
         
         # 6. 更新任务状态
         if result.get('success'):
@@ -2200,7 +2523,7 @@ async def process_upload_task(task_id: str, _db: Session = None):
             task.target_url = result.get('url')
             task.completed_at = int(datetime.now().timestamp() * 1000)
             db.commit()  # ✅ 先提交任务状态，确保上传成功被记录
-            logger.info(f"[UploadTask] 上传成功: {task.target_url}")
+            logger.info("[UploadTask] 上传成功: %s", summarize_url_for_log(task.target_url))
             revision = await _bump_storage_revision(user_id)
             logger.info(f"[UploadTask] storage revision bumped: user={user_id}, revision={revision}")
             
@@ -2216,21 +2539,33 @@ async def process_upload_task(task_id: str, _db: Session = None):
                         expected_user_id=resolve_upload_task_user_id(db, task),
                     )
                 except Exception as e:
-                    logger.warning(f"[UploadTask] ⚠️ 更新会话附件 URL 失败（任务已完成）: {e}")
+                    logger.warning(
+                        "[UploadTask] 更新会话附件 URL 失败（任务已完成）: %s",
+                        summarize_text_for_log(e, label="error"),
+                    )
         else:
             task.status = 'failed'
             task.error_message = result.get('error', '上传失败')
             db.commit()
-            logger.error(f"[UploadTask] 上传失败: {task.error_message}")
+            logger.error(
+                "[UploadTask] 上传失败: %s",
+                summarize_text_for_log(task.error_message, label="error"),
+            )
         
     except Exception as e:
-        logger.error(f"[UploadTask] 任务失败: {str(e)}")
+        logger.error(
+            "[UploadTask] 任务失败: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         try:
             task.status = 'failed'
             task.error_message = str(e)
             db.commit()
-        except Exception:
-            logger.debug("[UploadTask] failed to persist error status, rolling back", exc_info=True)
+        except Exception as persist_error:
+            logger.debug(
+                "[UploadTask] failed to persist error status, rolling back: %s",
+                summarize_text_for_log(persist_error, label="error"),
+            )
             db.rollback()
     finally:
         # ✅ 确保关闭独立的数据库会话
@@ -2292,7 +2627,11 @@ async def update_session_attachment_url(
                 attachment.upload_status = 'completed'
                 attachment.temp_url = None
                 db.commit()
-                logger.info(f"[UploadTask] 附件表已更新: {attachment_id}, URL: {url}")
+                logger.info(
+                    "[UploadTask] 附件表已更新: %s, URL: %s",
+                    attachment_id,
+                    summarize_url_for_log(url),
+                )
                 return
             else:
                 if attempt < max_retries - 1:
@@ -2302,14 +2641,23 @@ async def update_session_attachment_url(
                     logger.warning(f"[UploadTask] 重试 {max_retries} 次后仍未找到附件: {attachment_id}")
                 
         except Exception as e:
-            logger.error(f"[UploadTask] 更新附件失败: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            logger.error(
+                "[UploadTask] 更新附件失败: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             if attempt < max_retries - 1:
                 await asyncio.sleep(retry_delay)
 
 
-@router.post("/upload-async")
+@router.post(
+    "/upload-async",
+    responses={
+        200: {
+            "model": StorageUploadTaskQueuedResponse,
+            "description": "Queued async upload task",
+        }
+    },
+)
 @case_conversion_options(skip_request_body=True)
 async def upload_file_async(
     file: UploadFile = File(...),
@@ -2483,7 +2831,15 @@ async def upload_file_async(
     }
 
 
-@router.post("/upload-from-url")
+@router.post(
+    "/upload-from-url",
+    responses={
+        200: {
+            "model": StorageUploadTaskQueuedResponse,
+            "description": "Queued upload-from-url task",
+        }
+    },
+)
 async def upload_from_url(
     data: dict,
     user_id: str = Depends(require_current_user),
@@ -2586,7 +2942,12 @@ async def upload_from_url(
     }
 
 
-@router.get("/upload-status/{task_id}")
+@router.get(
+    "/upload-status/{task_id}",
+    responses={
+        200: {"model": StorageUploadTaskResponse, "description": "Upload task status"}
+    },
+)
 async def get_upload_status(
     task_id: str,
     user_id: str = Depends(require_current_user),
@@ -2609,8 +2970,15 @@ async def get_upload_status(
     return task.to_dict()
 
 
-@router.get("/worker-pool/health")
-async def get_worker_pool_health(db: Session = Depends(get_db)):
+@router.get(
+    "/worker-pool/health",
+    response_model=WorkerPoolHealthResponse,
+    response_model_exclude_none=True,
+)
+async def get_worker_pool_health(
+    _: str = Depends(require_admin_user),
+    db: Session = Depends(get_db),
+):
     """
     获取 Worker 池健康状态
 
@@ -2672,7 +3040,15 @@ async def get_worker_pool_health(db: Session = Depends(get_db)):
     return health
 
 
-@router.get("/upload-task-db/{task_id}")
+@router.get(
+    "/upload-task-db/{task_id}",
+    responses={
+        200: {
+            "model": StorageUploadTaskDbResponse,
+            "description": "Upload task database diagnostics",
+        }
+    },
+)
 async def get_upload_task_db(
     task_id: str,
     response: Response,
@@ -2727,7 +3103,12 @@ async def get_upload_task_db(
     }
 
 
-@router.get("/upload-logs/{task_id}")
+@router.get(
+    "/upload-logs/{task_id}",
+    responses={
+        200: {"model": StorageUploadLogsResponse, "description": "Upload task logs"}
+    },
+)
 async def get_upload_logs(
     task_id: str,
     tail: int = 200,
@@ -2742,10 +3123,19 @@ async def get_upload_logs(
         logs = await redis_queue.get_task_logs(task_id, tail=tail)
         return {"task_id": task_id, "logs": logs}
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"获取任务日志失败: {e}")
+        logger.error(
+            "[UploadTask] 获取任务日志失败: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=503, detail="获取任务日志失败")
 
 
-@router.post("/retry-upload/{task_id}")
+@router.post(
+    "/retry-upload/{task_id}",
+    responses={
+        200: {"model": StorageRetryUploadResponse, "description": "Retried upload task"}
+    },
+)
 async def retry_upload(
     task_id: str,
     user_id: str = Depends(require_current_user),
@@ -2783,7 +3173,15 @@ async def retry_upload(
     }
 
 
-@router.post("/items/downloads")
+@router.post(
+    "/items/downloads",
+    responses={
+        200: {
+            "model": StoragePreparedDownloadResponse,
+            "description": "Prepared storage download",
+        }
+    },
+)
 async def prepare_storage_download(
     payload: dict,
     user_id: str = Depends(require_current_user),
@@ -3008,10 +3406,23 @@ async def prepare_storage_download(
         raise
     except Exception as exc:
         _cleanup_storage_download_by_id(download_id)
-        raise HTTPException(status_code=500, detail=f"准备下载失败: {str(exc)}") from exc
+        logger.error(
+            "[StorageDownload] Prepare download failed: %s",
+            summarize_text_for_log(exc, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="准备下载失败") from exc
 
 
-@router.get("/downloads/{download_id}")
+@router.get(
+    "/downloads/{download_id}",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "description": "Prepared storage download bytes",
+            "content": STORAGE_BINARY_RESPONSE_CONTENT,
+        }
+    },
+)
 async def get_prepared_storage_download(
     download_id: str,
     user_id: str = Depends(require_current_user),
@@ -3070,7 +3481,16 @@ async def get_local_storage_file(
     )
 
 
-@router.get("/download")
+@router.get(
+    "/download",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Proxied storage download bytes",
+            "content": STORAGE_BINARY_RESPONSE_CONTENT,
+        }
+    },
+)
 async def download_image(
     url: str,
     request: Request,
@@ -3129,10 +3549,24 @@ async def download_image(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
+        logger.error(
+            "[StorageDownload] Download failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="下载失败")
 
 
-@router.get("/preview")
+@router.get(
+    "/preview",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Proxied storage preview bytes",
+            "content": STORAGE_BINARY_RESPONSE_CONTENT,
+        },
+        304: {"description": "Preview not modified"},
+    },
+)
 async def preview_file(
     url: str,
     request: Request,
@@ -3193,4 +3627,8 @@ async def preview_file(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"预览失败: {str(e)}")
+        logger.error(
+            "[StoragePreview] Preview failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="预览失败")

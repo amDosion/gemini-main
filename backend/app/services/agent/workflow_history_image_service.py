@@ -16,13 +16,24 @@ from urllib.parse import unquote_to_bytes, urlparse
 
 import httpx
 
-from ...utils.url_security import UnsafeURLError, validate_outbound_http_url
+from ...utils.url_security import (
+    UnsafeURLError,
+    pin_sync_client_for_outbound_guard,
+    validate_outbound_http_url,
+)
 
 _WORKFLOW_IMAGE_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 _WORKFLOW_IMAGE_MAX_REDIRECTS = 5
 _WORKFLOW_IMAGE_REQUEST_TIMEOUT_SECONDS = 20.0
 _DEFAULT_LOOPBACK_PORT = 21574
 PREVIEW_MAX_LIMIT = 100
+_SAFE_PREVIEW_IMAGE_MIME_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif",
+    "image/bmp",
+}
 
 
 def _format_origin_host(hostname: str) -> str:
@@ -218,6 +229,8 @@ def _download_workflow_image_binary(
     try:
         with httpx.Client(timeout=_WORKFLOW_IMAGE_REQUEST_TIMEOUT_SECONDS, follow_redirects=False) as client:
             while True:
+                if not is_same_origin_http_url(current_url, trusted_base_url):
+                    pin_sync_client_for_outbound_guard(client)
                 request_headers = build_workflow_image_request_headers(
                     current_url,
                     trusted_base_url,
@@ -388,7 +401,7 @@ def build_workflow_image_previews(
                 max_bytes=max_bytes_per_image,
             )
             normalized_mime = str(mime_type or "").split(";", 1)[0].strip().lower() or "image/png"
-            if not normalized_mime.startswith("image/"):
+            if normalized_mime not in _SAFE_PREVIEW_IMAGE_MIME_TYPES:
                 raise ValueError(f"unsupported preview mime type: {normalized_mime}")
             projected_total = total_bytes + len(binary)
             if max_total_bytes is not None and projected_total > max_total_bytes:

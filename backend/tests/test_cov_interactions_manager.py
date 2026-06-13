@@ -41,6 +41,7 @@ is active, so every coroutine boundary is awaited.
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
@@ -335,6 +336,35 @@ async def test_create_interaction_gemini_mode_builds_params(patch_pool):
     assert sent["system_instruction"] == "be terse"
     assert sent["previous_interaction_id"] == "prev-1"
     assert sent["store"] is True
+
+
+async def test_create_interaction_debug_logs_are_summarized(patch_pool, caplog):
+    resource = _FakeInteractionsResource(create_result=_FakeInteraction(id="abc", status="queued"))
+    client = _FakeClient(interactions=resource)
+    patch_pool(client)
+    mgr = InteractionsManager(default_vertexai=False)
+
+    with caplog.at_level(logging.DEBUG, logger=im.logger.name):
+        result = await mgr.create_interaction(
+            input="hello secret-token",
+            api_key="my-key",
+            agent="agent-secret-token",
+            background=False,
+            store=True,
+            agent_config={"apiKey": "secret-token"},
+            vertexai=False,
+        )
+
+    assert result["id"] == "abc"
+    sent = resource.create_calls[-1]
+    assert sent["input"] == "hello secret-token"
+    assert sent["agent_config"] == {"apiKey": "secret-token"}
+
+    log_text = "\n".join(record.getMessage() for record in caplog.records if record.name == im.logger.name)
+    assert "<redacted input; length=" in log_text
+    assert "<redacted agent; length=" in log_text
+    assert "<redacted agent_config; length=" in log_text
+    assert "secret-token" not in log_text
 
 
 async def test_create_interaction_outputs_and_error_passthrough(patch_pool):
@@ -813,6 +843,40 @@ async def test_stream_interaction_content_text_event(patch_pool):
         input="q", api_key="k", vertexai=False)]
     assert events[0]["text"] == "rendered content"
     assert events[0]["content_type"] == "output_text"
+
+
+async def test_stream_interaction_content_and_delta_logs_are_summarized(patch_pool, caplog):
+    secret_text = "rendered content with secret-token"
+    secret_delta = "delta content with secret-token"
+    ev_content = SimpleNamespace(
+        event_type="content.added",
+        content=SimpleNamespace(text=secret_text, type="output_text"),
+    )
+    ev_delta = SimpleNamespace(
+        event_type="content.delta",
+        delta=SimpleNamespace(type="text", text=secret_delta),
+    )
+    resource = _FakeInteractionsResource(stream=[ev_content, ev_delta])
+    client = _FakeClient(interactions=resource)
+    patch_pool(client)
+    mgr = InteractionsManager(default_vertexai=False)
+
+    with caplog.at_level(logging.DEBUG, logger=im.logger.name):
+        events = [
+            e
+            async for e in mgr.stream_interaction(
+                input="q",
+                api_key="k",
+                vertexai=False,
+            )
+        ]
+
+    assert events[0]["text"] == secret_text
+    assert events[1]["delta"]["text"] == secret_delta
+    log_text = "\n".join(record.getMessage() for record in caplog.records if record.name == im.logger.name)
+    assert "<redacted content_text; length=" in log_text
+    assert "<redacted delta_text; length=" in log_text
+    assert "secret-token" not in log_text
 
 
 async def test_stream_interaction_content_type_only_event(patch_pool):

@@ -4,14 +4,16 @@ Model Manager Module
 Handles fetching and managing available models.
 """
 
+import asyncio
+import json
 import logging
 import time
-import json
-import asyncio
-import urllib.error
-import urllib.request
 from typing import List, Optional
 
+import httpx
+
+from ....utils.log_sanitization import summarize_url_for_log
+from ....utils.url_security import UnsafeURLError, sync_get_with_redirect_guard
 from ...common.model_capabilities import ModelConfig, build_model_config
 
 logger = logging.getLogger(__name__)
@@ -20,8 +22,8 @@ logger = logging.getLogger(__name__)
 class ModelManager:
     """
     Manages model listing and capabilities.
-    
-    Uses stdlib HTTP requests to fetch models from Google REST API.
+
+    Uses the shared outbound HTTP guard to fetch models from Google REST API.
     """
     
     def __init__(self, api_key: str, api_url: Optional[str] = None):
@@ -52,29 +54,38 @@ class ModelManager:
             else:
                 base_url = "https://generativelanguage.googleapis.com/v1beta"
             
-            url = f"{base_url}/models"
-            logger.info(f"[Model Manager] Requesting models from: {base_url}/models")
+            url = f"{base_url.rstrip('/')}/models"
+            logger.info(
+                "[Model Manager] Requesting models from: "
+                f"{summarize_url_for_log(url)}"
+            )
             
             # 使用 asyncio.to_thread() 将同步 HTTP 调用包装为异步
             def _call_http() -> str:
-                request = urllib.request.Request(
-                    url,
-                    headers={
-                        "x-goog-api-key": self.api_key,
-                        "Accept": "application/json",
-                    },
-                )
                 try:
-                    with urllib.request.urlopen(request, timeout=10.0) as response:
-                        return response.read().decode("utf-8", errors="replace")
-                except urllib.error.HTTPError as exc:
-                    error_body = exc.read().decode("utf-8", errors="replace")
+                    response = sync_get_with_redirect_guard(
+                        url,
+                        headers={
+                            "x-goog-api-key": self.api_key,
+                            "Accept": "application/json",
+                        },
+                        timeout=10.0,
+                        max_redirects=5,
+                    )
+                    response.raise_for_status()
+                    return response.text
+                except httpx.HTTPStatusError as exc:
+                    error_body = exc.response.text
                     raise RuntimeError(
-                        f"Google API HTTP {exc.code}: {error_body[:500]}"
+                        f"Google API HTTP {exc.response.status_code}: {error_body[:500]}"
                     ) from exc
-                except urllib.error.URLError as exc:
+                except UnsafeURLError as exc:
                     raise RuntimeError(
-                        f"Google API request failed: {exc.reason}"
+                        "Google API request blocked by outbound URL policy"
+                    ) from exc
+                except httpx.RequestError as exc:
+                    raise RuntimeError(
+                        f"Google API request failed ({type(exc).__name__})"
                     ) from exc
             
             try:

@@ -8,7 +8,7 @@
  * - Auto-scroll to latest logs
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Download, Filter, X, Info, AlertTriangle, XCircle } from 'lucide-react';
 import { downloadBlobInBrowser } from '../../services/downloadService';
 
@@ -59,6 +59,37 @@ const logLevelConfig: Record<
   },
 };
 
+const EXECUTION_LOG_TIME_FORMATTER = new Intl.DateTimeFormat([], {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+const EXECUTION_LOG_EXPORT_FORMATTER = new Intl.DateTimeFormat([], {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+});
+
+function formatExecutionLogTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return String(timestamp);
+  }
+  return EXECUTION_LOG_TIME_FORMATTER.format(date);
+}
+
+function formatExecutionLogExportTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return String(timestamp);
+  }
+  return EXECUTION_LOG_EXPORT_FORMATTER.format(date);
+}
+
 export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({ logs, isOpen, onClose }) => {
   const [selectedLevels, setSelectedLevels] = useState<Set<LogLevel>>(
     new Set(['info', 'warn', 'error'])
@@ -73,7 +104,7 @@ export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({ logs, isOp
     }
   }, [logs]);
 
-  const toggleLevel = (level: LogLevel) => {
+  const toggleLevel = useCallback((level: LogLevel) => {
     setSelectedLevels((prev) => {
       const next = new Set(prev);
       if (next.has(level)) {
@@ -83,14 +114,17 @@ export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({ logs, isOp
       }
       return next;
     });
-  };
+  }, []);
 
-  const filteredLogs = logs.filter((log) => selectedLevels.has(log.level));
+  const filteredLogs = useMemo(
+    () => logs.filter((log) => selectedLevels.has(log.level)),
+    [logs, selectedLevels]
+  );
 
-  const handleExport = () => {
+  const handleExport = useCallback(() => {
     const logText = filteredLogs
       .map((log) => {
-        const timestamp = new Date(log.timestamp).toLocaleString();
+        const timestamp = formatExecutionLogExportTime(log.timestamp);
         return `[${timestamp}] [${log.level.toUpperCase()}] [${log.nodeName}] ${log.message}`;
       })
       .join('\n');
@@ -100,7 +134,7 @@ export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({ logs, isOp
       blob,
       fileName: `workflow-logs-${Date.now()}.txt`,
     });
-  };
+  }, [filteredLogs]);
 
   if (!isOpen) {
     return null;
@@ -196,7 +230,7 @@ export const ExecutionLogPanel: React.FC<ExecutionLogPanelProps> = ({ logs, isOp
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-slate-500">
-                      {new Date(log.timestamp).toLocaleTimeString()}
+                      {formatExecutionLogTime(log.timestamp)}
                     </span>
                     <span className={`font-medium ${config.color}`}>[{log.nodeName}]</span>
                   </div>

@@ -9,7 +9,7 @@ describe('CloudStorageGeneratedThumbnail', () => {
     cleanup();
   });
 
-  it('renders generated data-svg placeholders without entering the media cache path', () => {
+  it('renders generated svg placeholders without entering the media cache path', () => {
     render(
       <CloudStorageGeneratedThumbnail
         kind="video"
@@ -19,9 +19,11 @@ describe('CloudStorageGeneratedThumbnail', () => {
       />
     );
 
-    const thumbnail = screen.getByAltText('video preview placeholder');
-    expect(thumbnail.getAttribute('src')).toMatch(/^data:image\/svg\+xml;utf8,/);
-    expect(decodeURIComponent(thumbnail.getAttribute('src') || '')).toContain('MP4');
-    expect(thumbnail.getAttribute('loading')).toBeNull();
+    const thumbnail = screen.getByRole('img', {
+      name: 'video preview placeholder',
+    });
+    expect(thumbnail.tagName.toLowerCase()).toBe('svg');
+    expect(thumbnail.textContent).toContain('MP4');
+    expect(thumbnail.getAttribute('src')).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ path must clear it in the same commit that marks the task completed.
 """
 
 import pytest
+import logging
 
 from app.services.common.upload_worker_pool import UploadWorkerPool
 
@@ -60,3 +61,27 @@ async def test_handle_success_clears_source_ai_url(monkeypatch):
     # V-S28: the plaintext base64 payload must be cleared in the success commit.
     assert task.source_ai_url is None
     assert db.commits >= 1
+
+
+@pytest.mark.asyncio
+async def test_handle_success_logs_url_summary_without_leaking_signed_url(monkeypatch, caplog):
+    pool = UploadWorkerPool()
+    monkeypatch.setattr("app.services.common.upload_worker_pool.redis_queue", _FakeQueue())
+    monkeypatch.setattr(pool, "_log_task_db_state", _async_noop)
+
+    signed_url = (
+        "https://cdn.example.com/img.png"
+        "?X-Amz-Signature=secret-signature&token=secret-token#private-fragment"
+    )
+    task = _FakeTask()
+    db = _FakeDB()
+
+    with caplog.at_level(logging.INFO, logger="app.services.common.upload_worker_pool"):
+        await pool._handle_success(db, task, signed_url, "w1")
+
+    assert task.target_url == signed_url
+    assert "云存储 URL: http(len=" in caplog.text
+    assert signed_url not in caplog.text
+    assert "secret-signature" not in caplog.text
+    assert "secret-token" not in caplog.text
+    assert "private-fragment" not in caplog.text

@@ -24,6 +24,7 @@ from ...common.model_capabilities import get_google_capabilities
 import httpx
 
 from ....utils.attachment_handler import is_base64_url
+from ....utils.log_sanitization import redact_exact_value_in_log_text, summarize_url_for_log
 from ....utils.url_security import UnsafeURLError, get_with_redirect_guard
 
 logger = logging.getLogger(__name__)
@@ -1017,12 +1018,17 @@ class ConversationalImageEditService:
                     elif url.startswith('/api/storage/local-files/'):
                         # 本地存储 URL：直接从本地文件系统读取
                         from ...storage.local_provider import resolve_local_public_file_path
+                        safe_url = summarize_url_for_log(url)
                         local_file_path = resolve_local_public_file_path(url)
                         if local_file_path and local_file_path.exists():
                             with open(local_file_path, 'rb') as lf:
                                 image_bytes = lf.read()
                             mime_type = ref_img.get('mime_type', 'image/png')
-                            logger.info(f"[ConversationalImageEdit] ✅ 本地文件读取成功: {url}, 大小: {len(image_bytes)} bytes")
+                            logger.info(
+                                "[ConversationalImageEdit] ✅ 本地文件读取成功: %s, 大小: %s bytes",
+                                safe_url,
+                                len(image_bytes),
+                            )
                             if genai_types:
                                 try:
                                     message_parts.append(genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type))
@@ -1032,11 +1038,14 @@ class ConversationalImageEditService:
                                 base64_str = base64.b64encode(image_bytes).decode('utf-8')
                                 message_parts.append({'inline_data': {'mime_type': mime_type, 'data': base64_str}})
                         else:
-                            logger.error(f"[ConversationalImageEdit] ❌ 本地文件不存在: {url}")
-                            raise ValueError(f"Local file not found: {url}")
+                            logger.error("[ConversationalImageEdit] ❌ 本地文件不存在: %s", safe_url)
+                            raise ValueError(f"Local file not found: {safe_url}")
                     elif url.startswith('http://') or url.startswith('https://'):
                         # HTTP URL：需要下载图片
-                        logger.info(f"[ConversationalImageEdit] 下载 HTTP URL 图片: {url[:60]}...")
+                        logger.info(
+                            "[ConversationalImageEdit] 下载 HTTP URL 图片: %s",
+                            summarize_url_for_log(url),
+                        )
                         try:
                             # CANON-021: SSRF-guarded fetch (initial URL + every redirect hop).
                             image_bytes, mime_type = await self._download_http_image_guarded(
@@ -1068,8 +1077,14 @@ class ConversationalImageEditService:
                         except UnsafeURLError:
                             raise  # propagate SSRF rejection (do not mask as a generic download error)
                         except Exception as e:
-                            logger.error(f"[ConversationalImageEdit] ❌ HTTP URL 下载失败: {e}")
-                            raise ValueError(f"Failed to download image from URL: {str(e)}")
+                            safe_url = summarize_url_for_log(url)
+                            safe_error = redact_exact_value_in_log_text(str(e), url, safe_url)
+                            logger.error(
+                                "[ConversationalImageEdit] ❌ HTTP URL 下载失败: target=%s error=%s",
+                                safe_url,
+                                safe_error,
+                            )
+                            raise ValueError(f"Failed to download image from URL: {safe_url}: {safe_error}")
         else:
             if not should_include_image:
                 logger.info(

@@ -7,8 +7,8 @@
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import Response, RedirectResponse, FileResponse
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field
+from typing import Annotated, Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 import base64
 import logging
@@ -19,6 +19,7 @@ from ...core.dependencies import require_current_user
 from ...models.db_models import MessageAttachment
 from ...services.common.attachment_service import AttachmentService
 from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 from ...utils.url_security import (
     UnsafeURLError,
     get_with_redirect_guard,
@@ -31,6 +32,11 @@ from ...services.storage.local_provider import resolve_local_public_file_path
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["attachments"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+AttachmentIdText = Annotated[str, Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)]
+AttachmentStatusText = Annotated[str, Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)]
+AttachmentMimeText = Annotated[str, Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)]
+AttachmentLargeText = Annotated[str, Field(max_length=100_000_000)]
 
 
 # ==================== Internal Helpers ====================
@@ -151,13 +157,52 @@ class ResolveContinuityRequest(BaseModel):
 
 class CloudUrlResponse(BaseModel):
     """云URL响应"""
-    url: Optional[str] = None
-    upload_status: str
+    url: Optional[AttachmentLargeText] = None
+    upload_status: AttachmentStatusText
 
 
-@router.get("/temp-images/{attachment_id}")
+class ResolveContinuityResponse(BaseModel):
+    """CONTINUITY 附件解析响应。"""
+
+    attachment_id: AttachmentIdText
+    url: Optional[AttachmentLargeText] = None
+    status: AttachmentStatusText
+    task_id: Optional[AttachmentIdText] = None
+    message_id: Optional[AttachmentIdText] = None
+    session_id: Optional[AttachmentIdText] = None
+    user_id: Optional[AttachmentIdText] = None
+    filename: Optional[AttachmentLargeText] = None
+    mime_type: Optional[AttachmentMimeText] = None
+    size: Optional[int] = Field(default=None, ge=0, le=10_000_000_000)
+    cloud_url: Optional[AttachmentLargeText] = None
+    created_at: Optional[str] = Field(default=None, max_length=128)
+
+
+TEMP_IMAGE_RESPONSE_CONTENT = {
+    "image/png": {"schema": {"type": "string", "format": "binary", "maxLength": 100_000_000}},
+    "image/jpeg": {"schema": {"type": "string", "format": "binary", "maxLength": 100_000_000}},
+    "image/webp": {"schema": {"type": "string", "format": "binary", "maxLength": 100_000_000}},
+    "image/gif": {"schema": {"type": "string", "format": "binary", "maxLength": 100_000_000}},
+    "video/mp4": {"schema": {"type": "string", "format": "binary", "maxLength": 100_000_000}},
+    "application/octet-stream": {
+        "schema": {"type": "string", "format": "binary", "maxLength": 100_000_000}
+    },
+}
+
+
+@router.get(
+    "/temp-images/{attachment_id}",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Temporary attachment bytes for same-origin image or video rendering",
+            "content": TEMP_IMAGE_RESPONSE_CONTENT,
+        },
+        307: {"description": "Redirect to completed external attachment URL"},
+    },
+)
 async def get_temp_image(
-    attachment_id: str,
+    attachment_id: AttachmentIdText,
     request: Request,
     no_redirect: bool = Query(False, description="是否禁用重定向并由后端代理返回图片字节流"),
     db: Session = Depends(get_db),
@@ -252,9 +297,16 @@ async def get_temp_image(
                 except HTTPException:
                     raise  # propagate SSRF/validation rejection (400) instead of masking as 502
                 except Exception as e:
-                    logger.error(f"[TempImage] Proxy uploaded URL failed: {attachment_id}: {e}")
-                    raise HTTPException(status_code=502, detail=f"Failed to proxy uploaded image: {str(e)}")
-            logger.info(f"[TempImage] ✅ 上传已完成，重定向到云URL: {attachment.url[:80]}...")
+                    logger.error(
+                        "[TempImage] Proxy uploaded URL failed: attachment_id=%s error=%s",
+                        attachment_id,
+                        summarize_text_for_log(e, label="error"),
+                    )
+                    raise HTTPException(status_code=502, detail="Failed to proxy uploaded image")
+            logger.info(
+                "[TempImage] ✅ 上传已完成，重定向到云URL: %s",
+                summarize_url_for_log(attachment.url),
+            )
             return RedirectResponse(url=attachment.url)
         provider_file_name, provider_file_uri, gcs_uri = _resolve_attachment_provider_asset_ref(attachment)
         if provider_file_name or gcs_uri:
@@ -270,8 +322,12 @@ async def get_temp_image(
                     gcs_uri=gcs_uri,
                 )
             except Exception as e:
-                logger.error(f"[TempImage] Proxy Google provider asset failed: {attachment_id}: {e}")
-                raise HTTPException(status_code=502, detail=f"Failed to proxy provider media: {str(e)}")
+                logger.error(
+                    "[TempImage] Proxy Google provider asset failed: attachment_id=%s error=%s",
+                    attachment_id,
+                    summarize_text_for_log(e, label="error"),
+                )
+                raise HTTPException(status_code=502, detail="Failed to proxy provider media")
         else:
             logger.warning(
                 f"[TempImage] ❌ Temp URL不可用: "
@@ -301,8 +357,12 @@ async def get_temp_image(
                 }
             )
         except Exception as e:
-            logger.error(f"[TempImage] Failed to decode Base64: {attachment_id}: {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid Base64 data URL: {str(e)}")
+            logger.error(
+                "[TempImage] Failed to decode Base64: attachment_id=%s error=%s",
+                attachment_id,
+                summarize_text_for_log(e, label="error"),
+            )
+            raise HTTPException(status_code=400, detail="Invalid Base64 data URL")
     
     elif is_http_url(temp_url):
         if no_redirect:
@@ -313,8 +373,12 @@ async def get_temp_image(
             except HTTPException:
                 raise  # propagate SSRF/validation rejection (400) instead of masking as 502
             except Exception as e:
-                logger.error(f"[TempImage] Proxy fetch failed: {attachment_id}: {e}")
-                raise HTTPException(status_code=502, detail=f"Failed to proxy temp image: {str(e)}")
+                logger.error(
+                    "[TempImage] Proxy fetch failed: attachment_id=%s error=%s",
+                    attachment_id,
+                    summarize_text_for_log(e, label="error"),
+                )
+                raise HTTPException(status_code=502, detail="Failed to proxy temp image")
 
         # HTTP URL → 默认重定向（兼容历史逻辑）
         logger.info(f"[TempImage] Redirecting to HTTP URL: {attachment_id}")
@@ -340,8 +404,12 @@ async def get_temp_image(
                 gcs_uri=gcs_uri,
             )
         except Exception as e:
-            logger.error(f"[TempImage] Provider temp asset fetch failed: {attachment_id}: {e}")
-            raise HTTPException(status_code=502, detail=f"Failed to proxy provider media: {str(e)}")
+            logger.error(
+                "[TempImage] Provider temp asset fetch failed: attachment_id=%s error=%s",
+                attachment_id,
+                summarize_text_for_log(e, label="error"),
+            )
+            raise HTTPException(status_code=502, detail="Failed to proxy provider media")
     
     else:
         raise HTTPException(status_code=400, detail="Invalid temp URL format")
@@ -387,7 +455,7 @@ def _split_data_url_header(data_url: str) -> tuple[str, str]:
     return mime_type, base64_str
 
 
-@router.post("/attachments/resolve-continuity")
+@router.post("/attachments/resolve-continuity", response_model=ResolveContinuityResponse)
 async def resolve_continuity(
     request_body: ResolveContinuityRequest,
     db: Session = Depends(get_db),
@@ -495,11 +563,15 @@ async def resolve_continuity(
         raise
     except Exception as e:
         elapsed_time = (time.time() - start_time) * 1000
-        logger.error(f"[Attachments] ❌ 解析失败 (耗时: {elapsed_time:.2f}ms): {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error(
+            "[Attachments] ❌ 解析失败 (耗时: %.2fms): %s",
+            elapsed_time,
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.get("/attachments/{attachment_id}/cloud-url")
+@router.get("/attachments/{attachment_id}/cloud-url", response_model=CloudUrlResponse)
 async def get_cloud_url(
     attachment_id: str,
     db: Session = Depends(get_db),
@@ -540,5 +612,8 @@ async def get_cloud_url(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Attachments] Failed to get cloud URL: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error(
+            "[Attachments] Failed to get cloud URL: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Internal server error")

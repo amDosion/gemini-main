@@ -6,6 +6,7 @@ export type AttachmentUrlSource = Pick<Attachment, 'cloudUrl' | 'url' | 'tempUrl
   temp_url?: string | null;
   file_uri?: string | null;
   file?: Blob | File | null;
+  mimeType?: string | null;
 };
 
 const normalizeAttachmentUrl = (url: string | null | undefined): string | null => {
@@ -56,6 +57,51 @@ const isLocalStorageAttachmentUrl = (url: string | null | undefined): boolean =>
   );
 };
 
+const getMimeFamily = (mimeType: string | null | undefined): string | null => {
+  const normalized = (mimeType || '').trim().toLowerCase();
+  if (normalized.startsWith('image/')) return 'image';
+  if (normalized.startsWith('audio/')) return 'audio';
+  if (normalized.startsWith('video/')) return 'video';
+  return null;
+};
+
+const isRenderableDataUrl = (
+  url: string | null | undefined,
+  mimeType: string | null | undefined
+): boolean => {
+  const normalized = normalizeAttachmentUrl(url);
+  if (!normalized) return false;
+  const match = /^data:([^;,]+)[;,]/i.exec(normalized);
+  if (!match?.[1]) return false;
+
+  const dataMimeType = match[1].toLowerCase();
+  if (
+    !(
+      dataMimeType.startsWith('image/') ||
+      dataMimeType.startsWith('audio/') ||
+      dataMimeType.startsWith('video/')
+    )
+  ) {
+    return false;
+  }
+
+  const expectedFamily = getMimeFamily(mimeType);
+  return !expectedFamily || dataMimeType.startsWith(`${expectedFamily}/`);
+};
+
+export const isRenderableAttachmentUrl = (
+  url: string | null | undefined,
+  attachment?: AttachmentUrlSource | null
+): boolean => {
+  if (isBlobAttachmentUrl(url)) {
+    return Boolean(attachment?.file);
+  }
+  if (isDataAttachmentUrl(url)) {
+    return isRenderableDataUrl(url, attachment?.mimeType);
+  }
+  return isLocalStorageAttachmentUrl(url) || isHttpAttachmentUrl(url);
+};
+
 export const getPreferredAttachmentUrl = (
   attachment: AttachmentUrlSource | null | undefined
 ): string | null => {
@@ -86,8 +132,7 @@ export const getRenderableAttachmentUrl = (
 ): string | null => {
   const preferredUrl = getPreferredAttachmentUrl(attachment);
   if (!preferredUrl) return null;
-  if (isBlobAttachmentUrl(preferredUrl) && !attachment?.file) return null;
-  return preferredUrl;
+  return isRenderableAttachmentUrl(preferredUrl, attachment) ? preferredUrl : null;
 };
 
 export const revokeAttachmentObjectUrls = (

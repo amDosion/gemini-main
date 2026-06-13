@@ -30,8 +30,19 @@ from .core.import_loader import safe_import, create_fallback_function, create_fa
 
 # Import logger and progress tracker
 from .core.logger import setup_logger, LOG_PREFIXES
+from .core.openapi_contract import install_openapi_contract
 from .services.common.progress_tracker import progress_tracker
 logger = setup_logger("main")
+
+
+def _safe_startup_log_text(value: object, *, label: str = "error") -> str:
+    if value is None:
+        return "None"
+    text = str(value)
+    if not text:
+        return f"<empty {label}>"
+    return f"<redacted {label}; type={type(value).__name__}; length={len(text)}>"
+
 
 # ============================================================================
 # Module Imports with Unified Fallback Strategy
@@ -211,12 +222,17 @@ try:
     ensure_service_loggers()
     logger.info(f"{LOG_PREFIXES['info']} Service loggers configured")
 except Exception as e:
-    logger.warning(f"{LOG_PREFIXES['warning']} Failed to configure service loggers: {e}")
+    logger.warning(
+        "%s Failed to configure service loggers: %s",
+        LOG_PREFIXES["warning"],
+        _safe_startup_log_text(e, label="error"),
+    )
 
 # Register all API routes (统一注册)
 if ROUTER_REGISTRY_AVAILABLE:
     try:
         register_routers(app)
+        install_openapi_contract(app)
         
         # Register service dependencies (设置路由所需的外部服务引用)
         # 获取 web_search 函数（通过统一的 safe_import，替代旧的三层嵌套 try/ImportError）
@@ -244,9 +260,11 @@ if ROUTER_REGISTRY_AVAILABLE:
             log_prefixes=LOG_PREFIXES
         )
     except Exception as e:
-        logger.error(f"{LOG_PREFIXES['error']} Failed to register routes: {e}", exc_info=True)
-        import traceback
-        logger.error(f"{LOG_PREFIXES['error']} Registration traceback:\n{traceback.format_exc()}")
+        logger.error(
+            "%s Failed to register routes: %s",
+            LOG_PREFIXES["error"],
+            _safe_startup_log_text(e),
+        )
         raise
 else:
     logger.error(f"{LOG_PREFIXES['error']} Router registry not available, routes will not be registered!")

@@ -20,6 +20,7 @@ import {
   isDirectlyRenderableVideoUrl,
 } from './workflowResultUtils';
 import { getAuthHeaders } from '../../services/apiClient';
+import { parseHttpError } from '../../services/http';
 import { WorkflowTemplateCategoryCreateDialog } from './WorkflowTemplateCategoryCreateDialog';
 import {
   createWorkflowTemplateCategory,
@@ -49,13 +50,8 @@ const resolveTemplateResponseError = async (
   response: Response,
   fallback: string
 ): Promise<string> => {
-  try {
-    const payload = await response.json();
-    return payload?.detail || payload?.message || fallback;
-  } catch {
-    const raw = await response.text();
-    return raw || fallback;
-  }
+  const parsedError = await parseHttpError(response, fallback);
+  return parsedError.message;
 };
 
 export const WorkflowTemplateSelector: React.FC<WorkflowTemplateSelectorProps> = ({

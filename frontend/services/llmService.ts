@@ -84,6 +84,69 @@ const emptyModelsPayload = (
 });
 
 // Model cache TTL is managed by CacheManager (default: 5 minutes)
+const DEBUG_REDACTED_VALUE = '[REDACTED]';
+const SENSITIVE_DEBUG_KEY_PATTERN =
+  /(?:api[_-]?key|authorization|bearer|token|secret|password|credential|cookie)/i;
+
+function sanitizeDebugString(value: string): string {
+  let sanitized = value
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, `Bearer ${DEBUG_REDACTED_VALUE}`)
+    .replace(
+      /((?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|authorization)=)[^&\s"']+/gi,
+      `$1${DEBUG_REDACTED_VALUE}`
+    );
+
+  try {
+    const url = new URL(sanitized);
+    let changed = false;
+    url.searchParams.forEach((_paramValue, paramKey) => {
+      if (SENSITIVE_DEBUG_KEY_PATTERN.test(paramKey)) {
+        url.searchParams.set(paramKey, DEBUG_REDACTED_VALUE);
+        changed = true;
+      }
+    });
+    if (changed) {
+      sanitized = url.toString();
+    }
+  } catch {
+    // Not an absolute URL; regex redaction above still covers embedded query text.
+  }
+
+  return sanitized;
+}
+
+function sanitizeDebugValue(
+  value: unknown,
+  key: string = '',
+  seen: WeakSet<object> = new WeakSet()
+): unknown {
+  if (key && SENSITIVE_DEBUG_KEY_PATTERN.test(key)) {
+    return DEBUG_REDACTED_VALUE;
+  }
+  if (typeof value === 'string') {
+    return sanitizeDebugString(value);
+  }
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+  if (seen.has(value)) {
+    return '[Circular]';
+  }
+
+  seen.add(value);
+  if (Array.isArray(value)) {
+    const sanitizedArray = value.map((item) => sanitizeDebugValue(item, '', seen));
+    seen.delete(value);
+    return sanitizedArray;
+  }
+
+  const sanitizedObject: Record<string, unknown> = {};
+  Object.entries(value as Record<string, unknown>).forEach(([entryKey, entryValue]) => {
+    sanitizedObject[entryKey] = sanitizeDebugValue(entryValue, entryKey, seen);
+  });
+  seen.delete(value);
+  return sanitizedObject;
+}
 
 export class LLMService {
   private apiKey: string = '';
@@ -158,8 +221,12 @@ export class LLMService {
   private debugLog(...args: unknown[]): void {
     if (this.isVerboseLoggingEnabled()) {
       // eslint-disable-next-line no-console
-      console.debug(...args);
+      console.debug(...args.map((arg) => sanitizeDebugValue(arg)));
     }
+  }
+
+  private debugJson(value: unknown): string {
+    return JSON.stringify(sanitizeDebugValue(value), null, 2);
   }
 
   public async getAvailableModelsPayload(
@@ -291,7 +358,7 @@ export class LLMService {
           outputFormat: options.outputFormat,
           enhancePrompt: options.enhancePrompt,
         });
-        this.debugLog('[startNewChat] 完整 Options 对象:', JSON.stringify(options, null, 2));
+        this.debugLog('[startNewChat] 完整 Options 对象:', this.debugJson(options));
         this.debugLog('========== [llmService.startNewChat] 参数设置结束 ==========');
       }
       this._cachedOptions = options;
@@ -420,7 +487,7 @@ export class LLMService {
     });
     this.debugLog(
       '[llmService.generateImage] 完整 _cachedOptions 对象:',
-      JSON.stringify(this._cachedOptions, null, 2)
+      this.debugJson(this._cachedOptions)
     );
     this.debugLog('========== [llmService.generateImage] 图片生成请求参数结束 ==========');
 

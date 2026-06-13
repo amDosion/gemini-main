@@ -5,20 +5,37 @@ Payload, reference, and result-media helpers extracted from WorkflowEngine.
 from __future__ import annotations
 
 import base64
+import binascii
 import ipaddress
 import logging
 import mimetypes
+import os
 import re
 import socket
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 from urllib.parse import urlparse
 
+from ....utils.attachment_handler import is_base64_url, is_blob_url
 from ...gemini.base.video_common import is_google_provider_video_uri
 from ..execution_context import ExecutionContext
-from ....utils.attachment_handler import is_base64_url, is_blob_url
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_INLINE_IMAGE_MAX_BYTES = 20 * 1024 * 1024
+
+
+def _load_inline_image_max_bytes() -> int:
+    raw_value = os.getenv("WORKFLOW_INLINE_IMAGE_MAX_BYTES", str(DEFAULT_INLINE_IMAGE_MAX_BYTES))
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_INLINE_IMAGE_MAX_BYTES
+    return max(1024, value)
+
+
+INLINE_IMAGE_MAX_BYTES = _load_inline_image_max_bytes()
+_DATA_IMAGE_URL_RE = re.compile(r"^data:(image/[a-zA-Z0-9.+-]+);base64,(.*)$", re.DOTALL)
 
 
 def looks_like_excel_binary(engine: Any, mime_type: str = "", file_name: str = "") -> bool:
@@ -83,9 +100,7 @@ def is_disallowed_reference_hostname(engine: Any, hostname: str) -> bool:
         return True
     if normalized == "localhost" or normalized.endswith(".localhost"):
         return True
-    if normalized.startswith("metadata."):
-        return True
-    return False
+    return normalized.startswith("metadata.")
 
 
 def resolve_generic_path(engine: Any, data: Any, path: str) -> Any:
@@ -124,7 +139,7 @@ def normalize_possible_image_url(engine: Any, value: Any, key_hint: str = "") ->
 
     lower = text.lower()
     if is_base64_url(text):
-        return text
+        return normalize_data_image_url(engine, text)
     if is_blob_url(text):
         return text
     if lower.startswith("oss://"):
@@ -132,12 +147,10 @@ def normalize_possible_image_url(engine: Any, value: Any, key_hint: str = "") ->
     if lower.startswith("file://"):
         return text
 
-    compact = text.replace("\n", "").replace("\r", "")
-    if (
-        len(compact) >= 128
-        and re.fullmatch(r"[A-Za-z0-9+/=]+", compact)
-        and " " not in compact
-    ):
+    compact = re.sub(r"\s+", "", text)
+    if len(compact) >= 128 and re.fullmatch(r"[A-Za-z0-9+/=]+", compact):
+        if not is_allowed_inline_image_base64(engine, compact):
+            return None
         return f"data:image/png;base64,{compact}"
 
     if not (
@@ -155,9 +168,51 @@ def normalize_possible_image_url(engine: Any, value: Any, key_hint: str = "") ->
     normalized_path = lower.split("?", 1)[0].split("#", 1)[0]
     if re.search(r"\.(png|jpg|jpeg|webp|gif|bmp|svg)$", normalized_path):
         return text
-    if any(token in normalized_path for token in ("/image", "/images", "/attachments", "/uploads", "/generated", "/edited", "/expanded")):
+    if any(
+        token in normalized_path
+        for token in (
+            "/image",
+            "/images",
+            "/attachments",
+            "/uploads",
+            "/generated",
+            "/edited",
+            "/expanded",
+        )
+    ):
         return text
     return None
+
+
+def normalize_data_image_url(engine: Any, value: str) -> Optional[str]:
+    _ = engine
+    if len(value) > INLINE_IMAGE_MAX_BYTES * 4:
+        return None
+    match = _DATA_IMAGE_URL_RE.match(value)
+    if not match:
+        return None
+    payload = re.sub(r"\s+", "", match.group(2))
+    if not is_allowed_inline_image_base64(engine, payload):
+        return None
+    return f"data:{match.group(1).lower()};base64,{payload}"
+
+
+def is_allowed_inline_image_base64(engine: Any, payload: str) -> bool:
+    _ = engine
+    normalized = str(payload or "").strip()
+    if not normalized:
+        return False
+    if len(normalized) > ((INLINE_IMAGE_MAX_BYTES + 2) // 3) * 4 + 16:
+        return False
+    remainder = len(normalized) % 4
+    if remainder == 1:
+        return False
+    padded = normalized + ("=" * ((4 - remainder) % 4))
+    try:
+        decoded = base64.b64decode(padded, validate=True)
+    except (ValueError, binascii.Error):
+        return False
+    return len(decoded) <= INLINE_IMAGE_MAX_BYTES
 
 
 def normalize_possible_file_url(engine: Any, value: Any) -> Optional[str]:
@@ -208,7 +263,9 @@ def normalize_possible_result_media_url(engine: Any, value: Any) -> Optional[str
     return None
 
 
-def normalize_reference_image_for_provider(engine: Any, source_image_url: str, provider_id: str) -> str:
+def normalize_reference_image_for_provider(
+    engine: Any, source_image_url: str, provider_id: str
+) -> str:
     raw_value = str(source_image_url or "").strip()
     if not raw_value:
         return raw_value
@@ -261,7 +318,9 @@ def guess_image_mime_type_from_reference(engine: Any, reference: str) -> str:
     lowered = raw.lower()
     if lowered.startswith("data:image/"):
         header = raw.split(",", 1)[0]
-        mime_type = str(header.split(":", 1)[1].split(";", 1)[0] if ":" in header else "").strip().lower()
+        mime_type = (
+            str(header.split(":", 1)[1].split(";", 1)[0] if ":" in header else "").strip().lower()
+        )
         if mime_type.startswith("image/"):
             return mime_type
         return "image/png"
@@ -276,9 +335,9 @@ def guess_image_mime_type_from_reference(engine: Any, reference: str) -> str:
     return "image/png"
 
 
-def extract_all_image_urls(engine: Any, payload: Any) -> List[str]:
-    urls: List[str] = []
-    seen: Set[str] = set()
+def extract_all_image_urls(engine: Any, payload: Any) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
 
     def walk(value: Any, key_hint: str = ""):
         normalized = engine._normalize_possible_image_url(value, key_hint=key_hint)
@@ -297,9 +356,9 @@ def extract_all_image_urls(engine: Any, payload: Any) -> List[str]:
     return urls
 
 
-def extract_result_image_urls(engine: Any, payload: Any) -> List[str]:
-    urls: List[str] = []
-    seen: Set[str] = set()
+def extract_result_image_urls(engine: Any, payload: Any) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
 
     def push(candidate: Any, key_hint: str = ""):
         normalized = engine._normalize_possible_image_url(candidate, key_hint=key_hint)
@@ -338,14 +397,16 @@ def extract_first_image_url(engine: Any, payload: Any) -> Optional[str]:
 
 
 def extract_first_video_url(engine: Any, payload: Any) -> Optional[str]:
-    candidates: List[Any] = []
+    candidates: list[Any] = []
 
     if isinstance(payload, dict):
         direct_candidates = [
             payload.get("videoUrl"),
             payload.get("video_url"),
         ]
-        payload_mime_type = str(payload.get("mimeType") or payload.get("mime_type") or "").strip().lower()
+        payload_mime_type = (
+            str(payload.get("mimeType") or payload.get("mime_type") or "").strip().lower()
+        )
         if payload_mime_type.startswith("video/") and payload.get("url") is not None:
             direct_candidates.append(payload.get("url"))
         for item in direct_candidates:
@@ -363,11 +424,7 @@ def extract_first_video_url(engine: Any, payload: Any) -> Optional[str]:
 
     for candidate in candidates:
         if isinstance(candidate, dict):
-            nested = (
-                candidate.get("videoUrl")
-                or candidate.get("video_url")
-                or candidate.get("url")
-            )
+            nested = candidate.get("videoUrl") or candidate.get("video_url") or candidate.get("url")
             normalized = engine._normalize_possible_result_media_url(nested)
             if normalized:
                 return normalized
@@ -381,14 +438,16 @@ def extract_first_video_url(engine: Any, payload: Any) -> Optional[str]:
 
 
 def extract_first_audio_url(engine: Any, payload: Any) -> Optional[str]:
-    candidates: List[Any] = []
+    candidates: list[Any] = []
 
     if isinstance(payload, dict):
         direct_candidates = [
             payload.get("audioUrl"),
             payload.get("audio_url"),
         ]
-        payload_mime_type = str(payload.get("mimeType") or payload.get("mime_type") or "").strip().lower()
+        payload_mime_type = (
+            str(payload.get("mimeType") or payload.get("mime_type") or "").strip().lower()
+        )
         if payload_mime_type.startswith("audio/") and payload.get("url") is not None:
             direct_candidates.append(payload.get("url"))
         for item in direct_candidates:
@@ -406,11 +465,7 @@ def extract_first_audio_url(engine: Any, payload: Any) -> Optional[str]:
 
     for candidate in candidates:
         if isinstance(candidate, dict):
-            nested = (
-                candidate.get("audioUrl")
-                or candidate.get("audio_url")
-                or candidate.get("url")
-            )
+            nested = candidate.get("audioUrl") or candidate.get("audio_url") or candidate.get("url")
             normalized = engine._normalize_possible_result_media_url(nested)
             if normalized:
                 return normalized
@@ -424,17 +479,13 @@ def extract_first_audio_url(engine: Any, payload: Any) -> Optional[str]:
 
 
 def build_source_video_payload(engine: Any, payload: Any) -> Any:
-    def _pack_video_payload(raw_payload: Dict[str, Any]) -> Any:
+    def _pack_video_payload(raw_payload: dict[str, Any]) -> Any:
         video_url = engine._extract_first_video_url(raw_payload)
         provider_file_name = str(
-            raw_payload.get("provider_file_name")
-            or raw_payload.get("providerFileName")
-            or ""
+            raw_payload.get("provider_file_name") or raw_payload.get("providerFileName") or ""
         ).strip()
         provider_file_uri = str(
-            raw_payload.get("provider_file_uri")
-            or raw_payload.get("providerFileUri")
-            or ""
+            raw_payload.get("provider_file_uri") or raw_payload.get("providerFileUri") or ""
         ).strip()
         gcs_uri = str(raw_payload.get("gcs_uri") or raw_payload.get("gcsUri") or "").strip()
         mime_type = str(raw_payload.get("mime_type") or raw_payload.get("mimeType") or "").strip()
@@ -443,7 +494,7 @@ def build_source_video_payload(engine: Any, payload: Any) -> Any:
             provider_file_name = provider_file_uri
 
         if video_url or provider_file_name or provider_file_uri or gcs_uri or mime_type:
-            normalized_payload: Dict[str, Any] = {}
+            normalized_payload: dict[str, Any] = {}
             if video_url:
                 normalized_payload["url"] = video_url
             if provider_file_name:
@@ -495,18 +546,20 @@ def build_source_video_payload(engine: Any, payload: Any) -> Any:
 
 def resolve_agent_reference_image_url(
     engine: Any,
-    node_data: Dict[str, Any],
+    node_data: dict[str, Any],
     context: ExecutionContext,
-    initial_input: Dict[str, Any],
-    input_packets: List[Dict[str, Any]],
+    initial_input: dict[str, Any],
+    input_packets: list[dict[str, Any]],
 ) -> str:
     raw_ref = (
-        node_data.get("agentReferenceImageUrl")
-        or node_data.get("agent_reference_image_url")
-        or ""
+        node_data.get("agentReferenceImageUrl") or node_data.get("agent_reference_image_url") or ""
     )
     if str(raw_ref or "").strip():
-        resolved = context.resolve_template(raw_ref) if isinstance(raw_ref, str) and "{{" in raw_ref else raw_ref
+        resolved = (
+            context.resolve_template(raw_ref)
+            if isinstance(raw_ref, str) and "{{" in raw_ref
+            else raw_ref
+        )
         normalized = engine._normalize_possible_image_url(resolved, key_hint="imageUrl")
         if normalized:
             return normalized
@@ -523,24 +576,26 @@ def resolve_agent_reference_image_url(
 
 def resolve_agent_source_video_input(
     engine: Any,
-    node_data: Dict[str, Any],
+    node_data: dict[str, Any],
     context: ExecutionContext,
-    initial_input: Dict[str, Any],
-    input_packets: List[Dict[str, Any]],
+    initial_input: dict[str, Any],
+    input_packets: list[dict[str, Any]],
 ) -> Any:
-    raw_ref = (
-        node_data.get("agentSourceVideoUrl")
-        or node_data.get("agent_source_video_url")
-        or ""
-    )
+    raw_ref = node_data.get("agentSourceVideoUrl") or node_data.get("agent_source_video_url") or ""
     if str(raw_ref or "").strip():
-        resolved = context.resolve_template(raw_ref) if isinstance(raw_ref, str) and "{{" in raw_ref else raw_ref
+        resolved = (
+            context.resolve_template(raw_ref)
+            if isinstance(raw_ref, str) and "{{" in raw_ref
+            else raw_ref
+        )
         normalized_payload = engine._build_source_video_payload(resolved)
         if normalized_payload is not None:
             return normalized_payload
 
     continue_from_previous = engine._to_bool(
-        node_data.get("agentContinueFromPreviousVideo", node_data.get("agent_continue_from_previous_video")),
+        node_data.get(
+            "agentContinueFromPreviousVideo", node_data.get("agent_continue_from_previous_video")
+        ),
         default=False,
     )
     continue_from_previous_last_frame = engine._to_bool(
@@ -563,10 +618,10 @@ def resolve_agent_source_video_input(
 
 def resolve_agent_source_video_url(
     engine: Any,
-    node_data: Dict[str, Any],
+    node_data: dict[str, Any],
     context: ExecutionContext,
-    initial_input: Dict[str, Any],
-    input_packets: List[Dict[str, Any]],
+    initial_input: dict[str, Any],
+    input_packets: list[dict[str, Any]],
 ) -> str:
     resolved = engine._resolve_agent_source_video_input(
         node_data=node_data,
@@ -582,7 +637,7 @@ def resolve_agent_source_video_url(
     return ""
 
 
-def get_tool_arg(engine: Any, tool_args: Dict[str, Any], *keys: str) -> Any:
+def get_tool_arg(engine: Any, tool_args: dict[str, Any], *keys: str) -> Any:
     _ = engine
     for key in keys:
         if key in tool_args and tool_args.get(key) is not None:

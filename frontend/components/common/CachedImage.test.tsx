@@ -326,6 +326,44 @@ describe('CachedImage', () => {
     expect(screen.queryByAltText('Local file result')).toBeNull();
   });
 
+  it('does not render an internal local blob key when cache is disabled', () => {
+    render(
+      <CachedImage
+        src="local-blob:att-local-file"
+        cacheEnabled={false}
+        alt="Raw local blob key"
+      />
+    );
+
+    expect(screen.queryByAltText('Raw local blob key')).toBeNull();
+  });
+
+  it('renders safe raster data image fallbacks when cache is disabled', () => {
+    render(
+      <CachedImage
+        src="data:image/png;base64,YWJj"
+        cacheEnabled={false}
+        alt="Safe data image"
+      />
+    );
+
+    expect(screen.getByAltText('Safe data image').getAttribute('src')).toBe(
+      'data:image/png;base64,YWJj'
+    );
+  });
+
+  it('does not render unsafe data image fallbacks when cache is disabled', () => {
+    render(
+      <CachedImage
+        src="data:image/svg+xml;base64,PHN2Zy8+"
+        cacheEnabled={false}
+        alt="Unsafe data image"
+      />
+    );
+
+    expect(screen.queryByAltText('Unsafe data image')).toBeNull();
+  });
+
   it('shows the durable raw src immediately when the fallback delay is zero', () => {
     vi.mocked(useCachedImageSrc).mockReturnValue({
       src: null,

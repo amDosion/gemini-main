@@ -26,17 +26,115 @@ usage propagation, and error/permission branches.
 from __future__ import annotations
 
 import base64
+import logging
 from typing import Any, Dict, List
 
 import pytest
 
 from app.services.gemini.common import chat_handler as ch_mod
+from app.services.gemini.common import message_converter as mc_mod
 from app.services.gemini.common.chat_handler import ChatHandler
+from app.services.gemini.common.message_converter import (
+    MessageConverter,
+    decode_inline_attachment_bytes,
+    is_allowed_provider_file_uri,
+    normalize_inline_base64_payload,
+    validate_inline_base64_payload,
+)
 from app.services.common.errors import (
     APIKeyError,
     ModelNotFoundError,
     OperationError,
 )
+
+
+def test_provider_file_uri_allowlist_rejects_local_and_unknown_schemes():
+    assert is_allowed_provider_file_uri("files/abc") is True
+    assert is_allowed_provider_file_uri("gs://bucket/object.png") is True
+    assert is_allowed_provider_file_uri(
+        "https://generativelanguage.googleapis.com/v1beta/files/abc"
+    ) is True
+
+    for raw in (
+        "file:///etc/passwd",
+        "/etc/passwd",
+        r"C:\Users\me\secret.png",
+        "https://evil.example/files/abc",
+        "https://www.googleapis.com/v1/files/abc",
+        "https://generativelanguage.googleapis.com/other/files/abc",
+        "ftp://host/files/abc",
+        "files/",
+        "gs://bucket",
+    ):
+        assert is_allowed_provider_file_uri(raw) is False
+
+
+def test_message_converter_rejects_unsafe_file_uri_attachment():
+    part = MessageConverter._build_attachment_part(
+        {"fileUri": "file:///etc/passwd", "mimeType": "image/png"}
+    )
+    assert part is None
+
+
+def test_message_converter_allows_provider_file_uri_attachment():
+    part = MessageConverter._build_attachment_part(
+        {"fileUri": "gs://bucket/object.png", "mimeType": "image/png"}
+    )
+    assert part == {
+        "file_data": {
+            "file_uri": "gs://bucket/object.png",
+            "mime_type": "image/png",
+        }
+    }
+
+
+def test_message_converter_file_uri_log_redacts_query(caplog):
+    uri = "https://generativelanguage.googleapis.com/v1beta/files/abc?token=secret"
+
+    with caplog.at_level(logging.INFO, logger="app.services.gemini.common.message_converter"):
+        MessageConverter._build_attachment_part(
+            {"fileUri": uri, "mimeType": "image/png"}
+        )
+
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "https://generativelanguage.googleapis.com path_len=17 query_params=1 fragment=no" in log_text
+    assert uri not in log_text
+    assert "secret" not in log_text
+
+
+def test_inline_base64_payload_limit_rejects_before_decode(monkeypatch):
+    monkeypatch.setattr(mc_mod, "MAX_INLINE_ATTACHMENT_BYTES", 3)
+
+    raw = base64.b64encode(b"abcd").decode()
+
+    with pytest.raises(ValueError, match="attachment too large"):
+        normalize_inline_base64_payload(raw, source="attachment")
+
+    with pytest.raises(ValueError, match="attachment too large"):
+        decode_inline_attachment_bytes(raw, source="attachment")
+
+
+def test_inline_base64_payload_validation_rejects_malformed_data():
+    with pytest.raises(ValueError, match="invalid attachment base64 payload"):
+        validate_inline_base64_payload("not valid base64!", source="attachment")
+
+
+def test_message_converter_rejects_oversized_inline_attachment(monkeypatch):
+    monkeypatch.setattr(mc_mod, "MAX_INLINE_ATTACHMENT_BYTES", 3)
+    raw = base64.b64encode(b"abcd").decode()
+
+    assert MessageConverter._build_attachment_part(
+        {"url": f"data:image/png;base64,{raw}", "mimeType": "image/png"}
+    ) is None
+    assert MessageConverter._build_attachment_part(
+        {"base64Data": raw, "mimeType": "image/png"}
+    ) is None
+
+
+def test_message_converter_rejects_invalid_inline_attachment():
+    assert MessageConverter._build_attachment_part(
+        {"base64Data": "not valid base64!", "mimeType": "image/png"}
+    ) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -394,6 +492,11 @@ class TestAttachmentPart:
         assert part is not None
         assert part.file_data.file_uri == "files/abc"
 
+    def test_unsafe_file_uri_rejected(self):
+        assert ChatHandler._build_attachment_part(
+            {"fileUri": "file:///etc/passwd", "mimeType": "image/png"}
+        ) is None
+
     def test_data_url_in_url_field(self):
         raw = base64.b64encode(b"PNGDATA").decode()
         part = ChatHandler._build_attachment_part(
@@ -414,6 +517,22 @@ class TestAttachmentPart:
             {"base64Data": raw, "mimeType": "image/gif"}
         )
         assert part is not None
+
+    def test_oversized_inline_data_rejected(self, monkeypatch):
+        monkeypatch.setattr(mc_mod, "MAX_INLINE_ATTACHMENT_BYTES", 3)
+        raw = base64.b64encode(b"abcd").decode()
+
+        assert ChatHandler._build_attachment_part(
+            {"url": f"data:image/png;base64,{raw}", "mimeType": "image/png"}
+        ) is None
+        assert ChatHandler._build_attachment_part(
+            {"base64Data": raw, "mimeType": "image/png"}
+        ) is None
+
+    def test_invalid_base64data_rejected(self):
+        assert ChatHandler._build_attachment_part(
+            {"base64Data": "not valid base64!", "mimeType": "image/png"}
+        ) is None
 
     def test_no_usable_data_returns_none(self):
         assert ChatHandler._build_attachment_part({"mimeType": "image/png"}) is None
@@ -794,6 +913,46 @@ class TestStreamChatFunctionCalls:
         assert isinstance(async_chat.sent_messages[1], list)
         assert out[-1]["chunk_type"] == "done"
 
+    async def test_function_call_args_are_summarized_in_logs(self, patch_pool, monkeypatch, caplog):
+        _patch_stream_config(monkeypatch)
+        fc = FakeFunctionCall(
+            name="web_search",
+            args={"query": "private query secret-token"},
+            call_id="call-secret-token",
+        )
+        batch1 = [FakeChunk(candidates=[FakeCandidate(parts=[FakePart(function_call=fc)], finish_reason=1)])]
+        batch2 = [FakeChunk(candidates=[FakeCandidate(parts=[FakePart(text="done")], finish_reason=1)])]
+        _install_async_client(patch_pool, [batch1, batch2])
+
+        import app.services.gemini.common.browser as browser_mod
+
+        monkeypatch.setattr(
+            browser_mod,
+            "AVAILABLE_TOOLS",
+            {"web_search": lambda **kw: "search results text"},
+            raising=False,
+        )
+        _silence_progress(monkeypatch)
+
+        handler = ChatHandler(api_key="k")
+        with caplog.at_level(logging.INFO, logger="app.services.gemini.common.chat_handler"):
+            out = await _collect(handler.stream_chat([{"role": "user", "content": "x"}], "m"))
+
+        tool_call = next(c for c in out if c["chunk_type"] == "tool_call")
+        assert tool_call["tool_args"]["query"] == "private query secret-token"
+
+        records = [
+            record
+            for record in caplog.records
+            if record.name == "app.services.gemini.common.chat_handler"
+        ]
+        assert records
+        assert all(record.exc_info is None for record in records)
+        log_text = "\n".join(record.getMessage() for record in records)
+        assert "<redacted function_args; length=" in log_text
+        assert "<redacted function_call_id; length=" in log_text
+        assert "secret-token" not in log_text
+
     async def test_async_tool_and_dict_result_with_error(self, patch_pool, monkeypatch):
         _patch_stream_config(monkeypatch)
         fc = FakeFunctionCall(name="read_webpage", args={"url": "http://x"}, call_id="c2")
@@ -1119,6 +1278,48 @@ class TestStreamChatMCP:
         ))
         tr = next(c for c in out if c["chunk_type"] == "tool_result")
         assert "mcp down" in tr["tool_error"]
+
+    async def test_mcp_tool_failure_log_is_summarized(self, patch_pool, monkeypatch, caplog):
+        _patch_stream_config(monkeypatch)
+        fc = FakeFunctionCall(
+            name="mcp_tool",
+            args={"apiKey": "secret-token"},
+            call_id="mcp-call-secret-token",
+        )
+        batch1 = [FakeChunk(candidates=[FakeCandidate(parts=[FakePart(function_call=fc)], finish_reason=1)])]
+        batch2 = [FakeChunk(candidates=[FakeCandidate(parts=[FakePart(text="ok")], finish_reason=1)])]
+        _install_async_client(patch_pool, [batch1, batch2])
+        import app.services.gemini.common.browser as browser_mod
+        monkeypatch.setattr(browser_mod, "AVAILABLE_TOOLS", {}, raising=False)
+
+        class _MCPManager:
+            async def call_tool(self, *, session_id, tool_name, arguments):
+                raise RuntimeError("mcp echoed secret-token")
+
+        import app.services.mcp.mcp_manager as mcp_mod
+        monkeypatch.setattr(mcp_mod, "get_mcp_manager", lambda: _MCPManager())
+        _silence_progress(monkeypatch)
+
+        handler = ChatHandler(api_key="k")
+        with caplog.at_level(logging.ERROR, logger="app.services.gemini.common.chat_handler"):
+            out = await _collect(handler.stream_chat(
+                [{"role": "user", "content": "x"}], "m",
+                mcp_session_id="sess-1",
+                additional_function_declarations=[{"name": "mcp_tool", "parameters": {}}],
+            ))
+        tr = next(c for c in out if c["chunk_type"] == "tool_result")
+        assert "secret-token" in tr["tool_error"]
+
+        records = [
+            record
+            for record in caplog.records
+            if record.name == "app.services.gemini.common.chat_handler"
+        ]
+        assert records
+        assert all(record.exc_info is None for record in records)
+        log_text = "\n".join(record.getMessage() for record in records)
+        assert "<redacted mcp_function_error; length=" in log_text
+        assert "secret-token" not in log_text
 
     async def test_mcp_session_load_tools_path(self, patch_pool, monkeypatch):
         """No preloaded declarations: tools fetched via get_gemini_tools."""

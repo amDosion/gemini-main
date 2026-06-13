@@ -207,12 +207,6 @@ from ....core.config import settings
 
 logger = logging.getLogger(__name__)
 
-try:
-    import pandas as pd  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
-    pd = None  # type: ignore
-
-
 class WorkflowEngine:
     """工作流执行引擎：支持动态分支与循环"""
 

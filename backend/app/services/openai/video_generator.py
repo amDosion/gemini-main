@@ -5,20 +5,20 @@ OpenAI 视频生成器
 """
 from __future__ import annotations
 
-import asyncio
 import base64
 import logging
 import mimetypes
-from pathlib import Path
 import tempfile
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import unquote
 
 import httpx
 
 from ...core.sdk_executor import run_in_sdk_thread
-from ...utils.url_security import get_with_redirect_guard, validate_outbound_http_url
 from ...utils.attachment_handler import is_base64_url
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
+from ...utils.url_security import get_with_redirect_guard, validate_outbound_http_url
 from ..common.video_extension_chain import (
     is_video_extension_strategy,
     normalize_video_extension_count,
@@ -96,7 +96,10 @@ class VideoGenerator:
             max_retries=self.max_retries,
         )
 
-        logger.info(f"[OpenAI VideoGenerator] Initialized with base_url={self.base_url}")
+        logger.info(
+            "[OpenAI VideoGenerator] Initialized with base_url=%s",
+            summarize_url_for_log(self.base_url),
+        )
 
     async def generate_video(
         self,
@@ -104,7 +107,11 @@ class VideoGenerator:
         model: str = DEFAULT_MODEL,
         **kwargs,
     ) -> Dict[str, Any]:
-        logger.info(f"[OpenAI VideoGenerator] Video generation: model={model}, prompt={prompt[:80]}...")
+        logger.info(
+            "[OpenAI VideoGenerator] Video generation: model=%s, prompt=%s",
+            model,
+            summarize_text_for_log(prompt, label="prompt"),
+        )
 
         self._ensure_videos_resource()
 
@@ -525,7 +532,10 @@ class VideoGenerator:
             if local_path and local_path.exists() and local_path.is_file():
                 mime_type = mimetypes.guess_type(local_path.name)[0] or fallback_mime_type
                 return local_path.read_bytes(), mime_type
-            raise ValueError(f"Local storage media file not found for OpenAI video generation: {url[:80]}")
+            raise ValueError(
+                "Local storage media file not found for OpenAI video generation: "
+                f"{summarize_url_for_log(url)}"
+            )
 
         # CANON-027: no generic Path(url).read_bytes() fallback — that was arbitrary
         # local file read (LFI). Legit local media is served only via the allow-rooted

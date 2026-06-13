@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 
 from .base_agent_executor import BaseAgentExecutor
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,10 @@ class CoordinatorAgent:
         4. 实际执行任务（不再只返回路由信息）
         5. 返回结果
         """
-        logger.info(f"[CoordinatorAgent] Coordinating task: {task[:50]}...")
+        logger.info(
+            "[CoordinatorAgent] Coordinating task: %s",
+            summarize_text_for_log(task, label="task"),
+        )
 
         # 1. 分析用户意图
         intent = await self._analyze_intent(task, context)
@@ -125,7 +129,10 @@ class CoordinatorAgent:
             }
 
         except Exception as e:
-            logger.error(f"[CoordinatorAgent] Execution failed: {e}", exc_info=True)
+            logger.error(
+                "[CoordinatorAgent] Execution failed: %s",
+                summarize_text_for_log(e, label="execution_error"),
+            )
             return {
                 "success": False,
                 "intent": intent.intent_type,
@@ -191,7 +198,10 @@ class CoordinatorAgent:
             )
 
         except Exception as e:
-            logger.error(f"[CoordinatorAgent] Error analyzing intent: {e}", exc_info=True)
+            logger.error(
+                "[CoordinatorAgent] Error analyzing intent: %s",
+                summarize_text_for_log(e, label="intent_error"),
+            )
             return Intent(intent_type="general", confidence=0.3)
 
     def _select_agent(

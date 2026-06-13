@@ -26,6 +26,7 @@ import {
   ensureTempImageNoRedirect,
   waitForClonedImages,
 } from '../workflowExport';
+import { triggerBrowserDownload } from '../../../services/downloadService';
 
 import type { LogLevel } from '../ExecutionLogPanel';
 
@@ -235,12 +236,10 @@ export const useWorkflowImageExport = ({
       }
 
       const timestamp = `${Date.now()}`;
-      const anchor = document.createElement('a');
-      anchor.href = dataUrl;
-      anchor.download = `workflow-${timestamp}.${fileExtension}`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
+      triggerBrowserDownload({
+        href: dataUrl,
+        fileName: `workflow-${timestamp}.${fileExtension}`,
+      });
       addLog(
         'system',
         '系统',

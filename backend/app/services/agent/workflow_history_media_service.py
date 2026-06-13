@@ -13,14 +13,18 @@ import time
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import unquote_to_bytes, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
 from ...core.database import SessionLocal
+from ...utils.url_security import (
+    UnsafeURLError,
+    pin_sync_client_for_outbound_guard,
+    validate_outbound_http_url,
+)
 from ..gemini.base.video_asset_download import download_google_video_asset_for_user
 from ..gemini.base.video_common import is_google_provider_video_uri, normalize_gemini_file_name
-from ...utils.url_security import UnsafeURLError, validate_outbound_http_url
 from .workflow_history_image_service import (
     build_workflow_image_request_headers,
     is_same_origin_http_url,
@@ -36,6 +40,7 @@ _AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", "
 _VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".ogv", ".webm"}
 _AUDIO_FALLBACK_MIME = "audio/mpeg"
 _VIDEO_FALLBACK_MIME = "video/mp4"
+_INLINE_DATA_MEDIA_MAX_BYTES = 128 * 1024 * 1024
 
 
 def _normalize_media_kind(media_kind: str) -> str:
@@ -73,6 +78,7 @@ def validate_workflow_history_media_url(
     candidate_url: str,
     trusted_base_url: str,
     media_kind: str,
+    max_inline_bytes: int = _INLINE_DATA_MEDIA_MAX_BYTES,
 ) -> str:
     normalized_kind = _normalize_media_kind(media_kind)
     normalized = str(candidate_url or "").strip()
@@ -81,6 +87,7 @@ def validate_workflow_history_media_url(
 
     lowered = normalized.lower()
     if lowered.startswith(f"data:{normalized_kind}/"):
+        _parse_data_media_url(normalized, normalized_kind, max_bytes=max_inline_bytes)
         return normalized
     if normalized_kind == "video" and is_google_provider_video_uri(normalized):
         return normalized
@@ -165,7 +172,11 @@ def _guess_media_extension(original_url: str, mime_type: str, media_kind: str) -
     return ".mp3" if _normalize_media_kind(media_kind) == "audio" else ".mp4"
 
 
-def _decode_data_media_url(data_url: str, media_kind: str) -> tuple[bytes, str]:
+def _parse_data_media_url(
+    data_url: str,
+    media_kind: str,
+    max_bytes: int = _INLINE_DATA_MEDIA_MAX_BYTES,
+) -> tuple[str, str]:
     normalized_kind = _normalize_media_kind(media_kind)
     raw_value = str(data_url or "").strip()
     if not raw_value.lower().startswith(f"data:{normalized_kind}/"):
@@ -176,13 +187,39 @@ def _decode_data_media_url(data_url: str, media_kind: str) -> tuple[bytes, str]:
     mime_type = str(header[5:].split(";", 1)[0] or _fallback_mime(normalized_kind)).strip().lower()
     if not mime_type.startswith(f"{normalized_kind}/"):
         raise ValueError(f"unsupported {normalized_kind} mime type: {mime_type}")
-    if ";base64" in header.lower():
-        try:
-            binary = base64.b64decode(payload, validate=False)
-        except (ValueError, binascii.Error) as exc:
-            raise ValueError("invalid base64 media payload") from exc
-        return binary, mime_type
-    return unquote_to_bytes(payload), mime_type
+    if ";base64" not in header.lower():
+        raise ValueError("inline media data urls must be base64 encoded")
+
+    normalized_payload = re.sub(r"\s+", "", payload)
+    if not normalized_payload:
+        raise ValueError("empty base64 media payload")
+    if not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", normalized_payload):
+        raise ValueError("invalid base64 media payload")
+    if len(normalized_payload) % 4 == 1:
+        raise ValueError("invalid base64 media payload")
+
+    padding = 2 if normalized_payload.endswith("==") else 1 if normalized_payload.endswith("=") else 0
+    estimated_bytes = (len(normalized_payload) * 3) // 4 - padding
+    if estimated_bytes > max_bytes:
+        raise ValueError(f"inline media data too large (> {max_bytes} bytes)")
+
+    return normalized_payload, mime_type
+
+
+def _decode_data_media_url(
+    data_url: str,
+    media_kind: str,
+    max_bytes: int = _INLINE_DATA_MEDIA_MAX_BYTES,
+) -> tuple[bytes, str]:
+    payload, mime_type = _parse_data_media_url(data_url, media_kind, max_bytes=max_bytes)
+    padded_payload = payload + ("=" * ((4 - len(payload) % 4) % 4))
+    try:
+        binary = base64.b64decode(padded_payload, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("invalid base64 media payload") from exc
+    if len(binary) > max_bytes:
+        raise ValueError(f"inline media data too large (> {max_bytes} bytes)")
+    return binary, mime_type
 
 
 def _build_workflow_media_request_headers(
@@ -256,7 +293,11 @@ def download_workflow_media_binary(
             safe_max_bytes = None
 
     if raw.lower().startswith(f"data:{normalized_kind}/"):
-        binary, mime_type = _decode_data_media_url(raw, normalized_kind)
+        binary, mime_type = _decode_data_media_url(
+            raw,
+            normalized_kind,
+            max_bytes=safe_max_bytes or _INLINE_DATA_MEDIA_MAX_BYTES,
+        )
         if safe_max_bytes is not None and len(binary) > safe_max_bytes:
             raise ValueError(f"file too large (> {safe_max_bytes} bytes)")
         return binary, mime_type, raw
@@ -274,6 +315,8 @@ def download_workflow_media_binary(
     try:
         with httpx.Client(timeout=_WORKFLOW_MEDIA_REQUEST_TIMEOUT_SECONDS, follow_redirects=False) as client:
             while True:
+                if not is_same_origin_http_url(current_url, trusted_base_url):
+                    pin_sync_client_for_outbound_guard(client)
                 request_headers = _build_workflow_media_request_headers(
                     target_url=current_url,
                     trusted_base_url=trusted_base_url,
@@ -420,6 +463,7 @@ def build_workflow_media_previews(
     trusted_base_url: str,
     preview_path_template: str,
     limit: Optional[int] = None,
+    max_bytes_per_item: Optional[int] = None,
 ) -> Dict[str, Any]:
     normalized_kind = _normalize_media_kind(media_kind)
     safe_limit: Optional[int] = None
@@ -430,6 +474,14 @@ def build_workflow_media_previews(
                 safe_limit = min(parsed_limit, PREVIEW_MAX_LIMIT)
         except Exception:
             safe_limit = None
+    safe_max_bytes: int = _INLINE_DATA_MEDIA_MAX_BYTES
+    if max_bytes_per_item is not None:
+        try:
+            parsed_max_bytes = int(max_bytes_per_item)
+            if parsed_max_bytes > 0:
+                safe_max_bytes = parsed_max_bytes
+        except Exception:
+            safe_max_bytes = _INLINE_DATA_MEDIA_MAX_BYTES
 
     previews: List[Dict[str, Any]] = []
     skipped: List[Dict[str, Any]] = []
@@ -444,7 +496,12 @@ def build_workflow_media_previews(
             break
 
         try:
-            resolved_url = validate_workflow_history_media_url(candidate, trusted_base_url, normalized_kind)
+            resolved_url = validate_workflow_history_media_url(
+                candidate,
+                trusted_base_url,
+                normalized_kind,
+                max_inline_bytes=safe_max_bytes,
+            )
             mime_type = _guess_media_mime_type(resolved_url, normalized_kind)
             file_name = _sanitize_download_file_name(
                 f"{normalized_kind}-{len(previews) + 1:02d}{_guess_media_extension(resolved_url, mime_type, normalized_kind)}"

@@ -20,7 +20,6 @@ import httpx
 from ...utils.attachment_handler import is_base64_url
 from ...utils.url_security import (
     get_with_redirect_guard,
-    validate_outbound_http_url,
 )
 from .attachment_records import is_google_provider_http_file_url, parse_data_url
 
@@ -81,9 +80,12 @@ async def load_local_storage_source_bytes(
         )
         return payload
 
-    safe_url = validate_outbound_http_url(normalized_ai_url)
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response, _final_url = await get_with_redirect_guard(client, safe_url, max_redirects=5)
+        response, _final_url = await get_with_redirect_guard(
+            client,
+            normalized_ai_url,
+            max_redirects=5,
+        )
         response.raise_for_status()
         return response.content
 

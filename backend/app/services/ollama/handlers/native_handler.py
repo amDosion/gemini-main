@@ -3,16 +3,14 @@ Ollama 原生 API 处理器
 
 处理 Ollama 原生 API 调用（/api/* 端点）。
 """
-from typing import Dict, Any, List, Optional, AsyncGenerator
 import logging
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
 import httpx
 from cachetools import TTLCache
 
-from ...common.errors import (
-    OperationError,
-    ErrorContext,
-    ExecutionTimer
-)
+from ....utils.log_sanitization import summarize_url_for_log
+from ...common.errors import ErrorContext, ExecutionTimer, OperationError
 from ..ollama_types import OllamaModelInfo
 
 logger = logging.getLogger(__name__)
@@ -64,7 +62,10 @@ class NativeOllamaHandler:
             ttl=self.CACHE_TTL_SECONDS
         )
         
-        logger.info(f"[Ollama NativeHandler] Initialized with base_url={self.base_url}")
+        logger.info(
+            "[Ollama NativeHandler] Initialized with base_url=%s",
+            summarize_url_for_log(self.base_url),
+        )
     
     async def _call_api(
         self,

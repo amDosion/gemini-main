@@ -21,6 +21,10 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 from ....utils.attachment_handler import is_base64_url
+from ....utils.log_sanitization import (
+    redact_exact_value_in_log_text,
+    summarize_text_for_log,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +271,12 @@ class SegmentationService:
                 binary_color_threshold=binary_color_threshold,
             )
 
-            logger.info(f"[SegmentationService] Calling segment_image: model={model}, mode={mode}, prompt={prompt}")
+            logger.info(
+                "[SegmentationService] Calling segment_image: model=%s, mode=%s, prompt=%s",
+                model,
+                mode,
+                summarize_text_for_log(prompt, label="prompt"),
+            )
 
             # 调用 segment_image API
             response = client.models.segment_image(
@@ -316,7 +325,12 @@ class SegmentationService:
 
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"[SegmentationService] Segmentation error: {error_msg}")
+            safe_error = redact_exact_value_in_log_text(
+                error_msg,
+                prompt,
+                summarize_text_for_log(prompt, label="prompt"),
+            )
+            logger.error(f"[SegmentationService] Segmentation error: {safe_error}")
             return self._handle_error(error_msg)
 
     def segment_foreground(

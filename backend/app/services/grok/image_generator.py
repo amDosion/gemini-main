@@ -5,10 +5,13 @@ Grok 图片生成器
 使用 httpx 直接调用 grok2api 的 /images/generations 端点。
 """
 from __future__ import annotations
-from typing import Dict, Any, List, Optional
+
 import logging
+from typing import Any, Dict, List
 
 import httpx
+
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +54,10 @@ class ImageGenerator:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        logger.info(f"[Grok ImageGenerator] Initialized with base_url={self.base_url}")
+        logger.info(
+            "[Grok ImageGenerator] Initialized with base_url=%s",
+            summarize_url_for_log(self.base_url),
+        )
 
     def _resolve_size(self, kwargs: Dict[str, Any]) -> str:
         """Resolve image size from kwargs (size, aspect_ratio, image_aspect_ratio)."""
@@ -98,7 +104,11 @@ class ImageGenerator:
             图片结果列表（统一格式）
         """
         try:
-            logger.info(f"[Grok ImageGenerator] Image generation: model={model}, prompt={prompt[:50]}...")
+            logger.info(
+                "[Grok ImageGenerator] Image generation: model=%s, prompt=%s",
+                model,
+                summarize_text_for_log(prompt, label="prompt"),
+            )
 
             size = self._resolve_size(kwargs)
             n = self._resolve_n(kwargs)
@@ -143,12 +153,19 @@ class ImageGenerator:
             if not results:
                 raise RuntimeError("Grok image response did not contain a usable image payload.")
 
-            logger.info(f"[Grok ImageGenerator] Image generated: {len(results)} image(s)")
+            logger.info("[Grok ImageGenerator] Image generated: %s image(s)", len(results))
             return results
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"[Grok ImageGenerator] HTTP error: {e.response.status_code} - {e.response.text}", exc_info=True)
+            logger.error(
+                "[Grok ImageGenerator] HTTP error: status=%s body=%s",
+                e.response.status_code,
+                summarize_text_for_log(e.response.text, label="provider_error"),
+            )
             raise
         except Exception as e:
-            logger.error(f"[Grok ImageGenerator] Image generation error: {e}", exc_info=True)
+            logger.error(
+                "[Grok ImageGenerator] Image generation error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise

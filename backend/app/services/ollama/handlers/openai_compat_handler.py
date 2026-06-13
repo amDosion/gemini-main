@@ -3,11 +3,14 @@ Ollama OpenAI 兼容 API 处理器
 
 处理 Ollama 的 OpenAI 兼容 API 调用（/v1/* 端点）。
 """
-from typing import Dict, Any, List, Optional, AsyncGenerator, Mapping, Set
 import logging
+from typing import Any, AsyncGenerator, Dict, List, Mapping, Set
+
 import tiktoken
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
+
+from ....utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +119,10 @@ class OpenAICompatibleHandler:
         # Token 估算器（延迟加载）
         self.encoding = None
         
-        logger.info(f"[Ollama OpenAICompatHandler] Initialized with base_url={base_url}")
+        logger.info(
+            "[Ollama OpenAICompatHandler] Initialized with base_url=%s",
+            summarize_url_for_log(base_url),
+        )
     
     def _get_encoding(self, model: str):
         """获取或初始化 tokenizer"""
@@ -236,8 +242,9 @@ class OpenAICompatibleHandler:
             usage = self._normalize_usage(response.usage)
             
             logger.info(
-                f"[Ollama OpenAICompatHandler] Chat completed: "
-                f"tokens={usage['total_tokens']}, model={response.model}"
+                "[Ollama OpenAICompatHandler] Chat completed: tokens=%s, model=%s",
+                usage["total_tokens"],
+                response.model,
             )
             
             return {
@@ -254,7 +261,10 @@ class OpenAICompatibleHandler:
             }
         
         except Exception as e:
-            logger.error(f"[Ollama OpenAICompatHandler] Chat error: {e}", exc_info=True)
+            logger.error(
+                "[Ollama OpenAICompatHandler] Chat error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise
     
     async def stream_chat(
@@ -338,7 +348,7 @@ class OpenAICompatibleHandler:
                 }
             else:
                 # API 不返回 usage 信息，使用 tiktoken 估算
-                logger.warning(f"[Ollama OpenAICompatHandler] No usage information, estimating tokens")
+                logger.warning("[Ollama OpenAICompatHandler] No usage information, estimating tokens")
                 
                 prompt_tokens = self._estimate_tokens(messages, model_name)
                 encoding = self._get_encoding(model_name)
@@ -356,10 +366,13 @@ class OpenAICompatibleHandler:
                 }
         
         except Exception as e:
-            logger.error(f"[Ollama OpenAICompatHandler] Stream error: {e}", exc_info=True)
+            logger.error(
+                "[Ollama OpenAICompatHandler] Stream error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             yield {
                 "content": "",
                 "chunk_type": "error",
-                "error": str(e)
+                "error": "Ollama stream chat failed"
             }
             yield self._build_error_done_chunk()

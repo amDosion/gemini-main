@@ -19,6 +19,8 @@ import logging
 from typing import Dict, Any, List, Optional
 import inspect
 
+from ....utils.log_sanitization import summarize_text_for_log
+
 logger = logging.getLogger(__name__)
 
 
@@ -227,8 +229,9 @@ class BaseAgentExecutor:
 
         except Exception as e:
             logger.error(
-                f"[BaseAgentExecutor] Tool execution failed for {agent_name}: {e}",
-                exc_info=True,
+                "[BaseAgentExecutor] Tool execution failed for %s: %s",
+                agent_name,
+                summarize_text_for_log(e, label="tool_error"),
             )
             # Fall back to LLM-only
             return await self._execute_with_llm(
@@ -269,8 +272,9 @@ class BaseAgentExecutor:
 
         except Exception as e:
             logger.error(
-                f"[BaseAgentExecutor] LLM execution failed for {agent_name}: {e}",
-                exc_info=True,
+                "[BaseAgentExecutor] LLM execution failed for %s: %s",
+                agent_name,
+                summarize_text_for_log(e, label="llm_error"),
             )
             raise RuntimeError(f"Agent '{agent_name}' execution failed: {e}")
 

@@ -10,9 +10,12 @@ It either returns plaintext (matching key / plaintext input) or fails closed
 (empty string in silent mode, ConfigDecryptionError otherwise).
 """
 
+import logging
+
 import pytest
 from cryptography.fernet import Fernet
 
+from app.core import encryption
 from app.core.encryption import (
     ConfigDecryptionError,
     EncryptionKeyManager,
@@ -24,6 +27,10 @@ from app.core.encryption import (
 KEY_A = Fernet.generate_key().decode()
 KEY_B = Fernet.generate_key().decode()
 PLAINTEXT = "sk-super-secret-provider-key-123"
+
+
+def _raise_runtime(message: str):
+    raise RuntimeError(message)
 
 
 @pytest.fixture
@@ -62,6 +69,63 @@ def test_plaintext_key_passthrough(monkeypatch):
         "AIzaSyExamplePlaintextGoogleKey"
     )
     assert decrypt_api_key("", silent=True) == ""
+
+
+def test_encrypt_data_error_log_is_summarized(monkeypatch, caplog):
+    secret = "encrypt-log-secret"
+    monkeypatch.setattr(
+        encryption,
+        "_get_encryption_key_bytes",
+        lambda: _raise_runtime(f"key load failed {secret}"),
+    )
+
+    with caplog.at_level(logging.ERROR, logger=encryption.logger.name):
+        with pytest.raises(RuntimeError):
+            encryption.encrypt_data("plain-secret")
+
+    assert secret not in caplog.text
+    assert "plain-secret" not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "<redacted error; length=" in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+def test_decrypt_data_key_error_log_is_summarized(monkeypatch, caplog):
+    secret = "decrypt-log-secret"
+    monkeypatch.setattr(
+        encryption,
+        "_get_encryption_key_bytes",
+        lambda: (_ for _ in ()).throw(ValueError(f"missing key {secret}")),
+    )
+
+    with caplog.at_level(logging.ERROR, logger=encryption.logger.name):
+        with pytest.raises(ValueError):
+            encryption.decrypt_data("ciphertext-secret", silent=False)
+
+    assert secret not in caplog.text
+    assert "ciphertext-secret" not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "<redacted error; length=" in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
+
+
+def test_encrypt_config_error_log_is_summarized(monkeypatch, caplog):
+    secret = "config-encrypt-log-secret"
+    monkeypatch.setattr(
+        encryption,
+        "_get_encryption_key_bytes",
+        lambda: _raise_runtime(f"config key failed {secret}"),
+    )
+
+    with caplog.at_level(logging.ERROR, logger=encryption.logger.name):
+        with pytest.raises(RuntimeError):
+            encryption.encrypt_config({"api_key": "plain-api-key-secret"})
+
+    assert secret not in caplog.text
+    assert "plain-api-key-secret" not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert "<redacted error; length=" in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 def test_dead_file_key_persistence_methods_are_removed():

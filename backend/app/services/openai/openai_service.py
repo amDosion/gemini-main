@@ -18,10 +18,12 @@ to specialized sub-services:
 Updated: 2026-01-14 - 移动到 openai/ 目录，统一架构
 """
 
-from typing import Dict, Any, List, Optional, AsyncGenerator
 import logging
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
 from openai import AsyncOpenAI
 
+from ...utils.log_sanitization import summarize_url_for_log
 from ..common.base_provider import BaseProviderService
 from ..common.model_capabilities import ModelConfig
 from ._shared import coerce_openai_image_max_retries, coerce_openai_image_timeout
@@ -67,10 +69,12 @@ class OpenAIService(BaseProviderService):
         self.image_timeout = coerce_openai_image_timeout(kwargs.get("image_timeout"))
         self.image_max_retries = coerce_openai_image_max_retries(kwargs.get("image_max_retries"))
 
+        effective_base_url = api_url or "https://api.openai.com/v1"
+
         # Create shared AsyncOpenAI client (used by all sub-services)
         self.client = AsyncOpenAI(
             api_key=api_key,
-            base_url=api_url or "https://api.openai.com/v1",
+            base_url=effective_base_url,
             timeout=self.timeout,
             max_retries=self.max_retries
         )
@@ -85,7 +89,10 @@ class OpenAIService(BaseProviderService):
         self._model_manager = None
         self._pdf_extractor = None
 
-        logger.info(f"[OpenAI Service] Coordinator initialized with base_url={api_url or 'default'}")
+        logger.info(
+            "[OpenAI Service] Coordinator initialized with base_url=%s",
+            summarize_url_for_log(effective_base_url),
+        )
 
     @property
     def chat_handler(self):

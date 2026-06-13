@@ -8,6 +8,8 @@ import logging
 import time
 
 from ...core.config import settings
+from ...utils.error_handler import _mask_keys_in_text
+from ...utils.log_sanitization import summarize_text_for_log
 from ...utils.url_security import UnsafeURLError, validate_outbound_http_url_async
 from .types import (
     MCPServerConfig,
@@ -35,6 +37,94 @@ logger = logging.getLogger(__name__)
 
 # svc-mcp-5: how long (seconds) list_tools() results are considered fresh
 _TOOLS_CACHE_TTL_SECONDS: float = 60.0
+_REDACTED_LOG_VALUE = "[REDACTED]"
+_SENSITIVE_KEY_MARKERS = (
+    "apikey",
+    "accesskey",
+    "accesstoken",
+    "refreshtoken",
+    "authtoken",
+    "authorization",
+    "credential",
+    "password",
+    "privatekey",
+    "secret",
+)
+_SENSITIVE_ARG_NAMES = {
+    "--api-key",
+    "--apikey",
+    "--access-key",
+    "--access-token",
+    "--auth-token",
+    "--authorization",
+    "--credential",
+    "--password",
+    "--refresh-token",
+    "--secret",
+    "--token",
+}
+_SAFE_TOKEN_COUNT_KEYS = {
+    "maxtokens",
+    "prompttokens",
+    "completiontokens",
+    "totaltokens",
+}
+
+
+def _is_sensitive_log_key(key: object) -> bool:
+    normalized = "".join(ch for ch in str(key).lower() if ch.isalnum())
+    if not normalized or normalized in _SAFE_TOKEN_COUNT_KEYS:
+        return False
+    if normalized == "token" or normalized.endswith("token"):
+        return True
+    return any(marker in normalized for marker in _SENSITIVE_KEY_MARKERS)
+
+
+def _redact_cli_arg(arg: str) -> str:
+    stripped = arg.strip()
+    lowered = stripped.lower()
+    for name in _SENSITIVE_ARG_NAMES:
+        if lowered == name:
+            return arg
+        for separator in ("=", ":"):
+            prefix = f"{name}{separator}"
+            if lowered.startswith(prefix):
+                visible_prefix = arg[: len(prefix)]
+                return f"{visible_prefix}{_REDACTED_LOG_VALUE}"
+    return _mask_keys_in_text(arg)
+
+
+def _redact_sequence_for_log(values: list[Any] | tuple[Any, ...]) -> list[Any]:
+    redacted: list[Any] = []
+    redact_next = False
+    for value in values:
+        if redact_next:
+            redacted.append(_REDACTED_LOG_VALUE)
+            redact_next = False
+            continue
+
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            redacted.append(_redact_cli_arg(value))
+            if lowered in _SENSITIVE_ARG_NAMES:
+                redact_next = True
+            continue
+
+        redacted.append(_redact_log_value(value))
+    return redacted
+
+
+def _redact_log_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _mask_keys_in_text(value)
+    if isinstance(value, dict):
+        return {
+            key: _REDACTED_LOG_VALUE if _is_sensitive_log_key(key) else _redact_log_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return _redact_sequence_for_log(value)
+    return value
 
 
 class MCPClient:
@@ -93,7 +183,7 @@ class MCPClient:
             config.server_type.value,
             config.command,
         )
-        logger.debug("MCPClient args: %s", config.args)
+        logger.debug("MCPClient args: %s", _redact_log_value(config.args))
 
     async def __aenter__(self):
         """异步上下文管理器入口"""
@@ -208,9 +298,12 @@ class MCPClient:
             await self.close()
             raise
         except Exception as e:
-            logger.error(f"Failed to connect to MCP server: {e}")
+            logger.error(
+                "Failed to connect to MCP server: error=%s",
+                summarize_text_for_log(e, label="mcp_connect_error"),
+            )
             await self.close()
-            raise RuntimeError(f"MCP connection failed: {e}") from e
+            raise RuntimeError("MCP connection failed") from e
 
     async def list_tools(self, force_refresh: bool = False) -> List[MCPTool]:
         """
@@ -252,8 +345,11 @@ class MCPClient:
             return self._tools_cache
 
         except Exception as e:
-            logger.error(f"Failed to list tools: {e}")
-            raise RuntimeError(f"Failed to list tools: {e}")
+            logger.error(
+                "Failed to list MCP tools: error=%s",
+                summarize_text_for_log(e, label="mcp_list_tools_error"),
+            )
+            raise RuntimeError("Failed to list tools") from e
 
     async def call_tool(
         self,
@@ -284,8 +380,16 @@ class MCPClient:
             raise ValueError("arguments must be a dictionary")
 
         # svc-mcp-3: avoid logging argument values at INFO to prevent credential leakage
-        logger.info("Calling MCP tool: %s with %d args", tool_name, len(arguments))
-        logger.debug("MCP tool %s args: %s", tool_name, arguments)
+        logger.info(
+            "Calling MCP tool: %s with %d args",
+            summarize_text_for_log(tool_name, label="tool_name"),
+            len(arguments),
+        )
+        logger.debug(
+            "MCP tool %s args: %s",
+            summarize_text_for_log(tool_name, label="tool_name"),
+            _redact_log_value(arguments),
+        )
 
         try:
             # 调用 MCP SDK 的 call_tool
@@ -296,14 +400,21 @@ class MCPClient:
 
             # 转换为内部类型
             if result.isError:
-                logger.error(f"MCP tool call failed: {result}")
+                logger.error(
+                    "MCP tool call failed: tool=%s result=%s",
+                    summarize_text_for_log(tool_name, label="tool_name"),
+                    summarize_text_for_log(result, label="tool_result"),
+                )
                 return MCPToolResult(
                     success=False,
                     error=str(result.content) if result.content else "Unknown error",
                     is_error=True
                 )
 
-            logger.info(f"MCP tool call succeeded: {tool_name}")
+            logger.info(
+                "MCP tool call succeeded: %s",
+                summarize_text_for_log(tool_name, label="tool_name"),
+            )
             return MCPToolResult(
                 success=True,
                 result=result.content,
@@ -311,7 +422,11 @@ class MCPClient:
             )
 
         except Exception as e:
-            logger.error(f"Error calling MCP tool {tool_name}: {e}")
+            logger.error(
+                "Error calling MCP tool: tool=%s error=%s",
+                summarize_text_for_log(tool_name, label="tool_name"),
+                summarize_text_for_log(e, label="mcp_tool_error"),
+            )
             return MCPToolResult(
                 success=False,
                 error=str(e),
@@ -332,7 +447,10 @@ class MCPClient:
                 try:
                     await self._session_context.__aexit__(None, None, None)
                 except Exception as e:
-                    logger.warning(f"Error closing session context: {e}")
+                    logger.warning(
+                        "Error closing session context: error=%s",
+                        summarize_text_for_log(e, label="mcp_close_error"),
+                    )
                 self._session_context = None
 
             # 再退出 stdio 上下文
@@ -340,7 +458,10 @@ class MCPClient:
                 try:
                     await self._stdio_context.__aexit__(None, None, None)
                 except Exception as e:
-                    logger.warning(f"Error closing stdio context: {e}")
+                    logger.warning(
+                        "Error closing stdio context: error=%s",
+                        summarize_text_for_log(e, label="mcp_close_error"),
+                    )
                 self._stdio_context = None
 
             # 再退出 streamable HTTP 上下文
@@ -348,7 +469,10 @@ class MCPClient:
                 try:
                     await self._streamable_http_context.__aexit__(None, None, None)
                 except Exception as e:
-                    logger.warning(f"Error closing streamable HTTP context: {e}")
+                    logger.warning(
+                        "Error closing streamable HTTP context: error=%s",
+                        summarize_text_for_log(e, label="mcp_close_error"),
+                    )
                 self._streamable_http_context = None
 
             # 清空引用

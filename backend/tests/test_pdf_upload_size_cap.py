@@ -12,7 +12,10 @@ from fastapi.testclient import TestClient
 def _client(monkeypatch, max_bytes):
     from app.routers.tools import pdf as pdf_mod
 
-    pdf_mod.set_pdf_service(lambda **kwargs: {"ok": True}, lambda: [], True)
+    async def fake_extract(**kwargs):
+        return {"ok": True}
+
+    pdf_mod.set_pdf_service(fake_extract, lambda: [], True)
     monkeypatch.setattr(pdf_mod, "MAX_PDF_BYTES", max_bytes)
     app = FastAPI()
     app.include_router(pdf_mod.router)
@@ -32,4 +35,17 @@ def test_small_pdf_passes_size_gate(monkeypatch):
     files = {"file": ("small.pdf", b"%PDF-1.7 tiny", "application/pdf")}
     data = {"template_type": "invoice", "api_key": "k", "model_id": "m"}
     resp = client.post("/api/pdf/extract", files=files, data=data)
-    assert resp.status_code != 413
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_pdf_extract_rejects_unbounded_form_fields(monkeypatch):
+    client = _client(monkeypatch, max_bytes=1024)
+    files = {"file": ("small.pdf", b"%PDF-1.7 tiny", "application/pdf")}
+    data = {
+        "template_type": "invoice",
+        "api_key": "k",
+        "model_id": "m" * 257,
+    }
+    resp = client.post("/api/pdf/extract", files=files, data=data)
+    assert resp.status_code == 422

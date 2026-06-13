@@ -112,3 +112,55 @@ async def test_pinning_async_backend_connects_to_pinned_ip(monkeypatch):
     result = await backend.connect_tcp("ok.example", 443)
     assert result == "CONN"
     assert captured["ip"] == "1.2.3.4"
+
+
+@pytest.mark.asyncio
+async def test_async_redirect_guard_bounds_initial_slow_resolution(monkeypatch):
+    import time
+
+    monkeypatch.setattr(us, "_DEFAULT_DNS_TIMEOUT_SECONDS", 0.1)
+
+    def slow_getaddrinfo(host, port):
+        time.sleep(1.0)
+        return [(2, 1, 6, "", ("1.2.3.4", port))]
+
+    monkeypatch.setattr(us, "_getaddrinfo", slow_getaddrinfo)
+
+    client = httpx.AsyncClient()
+    try:
+        with pytest.raises(us.UnsafeURLError):
+            await us.get_with_redirect_guard(client, "https://slow.example/image.png")
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_redirect_guard_bounds_redirect_slow_resolution(monkeypatch):
+    import time
+
+    monkeypatch.setattr(us, "_DEFAULT_DNS_TIMEOUT_SECONDS", 0.1)
+
+    def selective_getaddrinfo(host, port):
+        if host == "ok.example":
+            return [(2, 1, 6, "", ("1.2.3.4", port))]
+        time.sleep(1.0)
+        return [(2, 1, 6, "", ("1.2.3.5", port))]
+
+    monkeypatch.setattr(us, "_getaddrinfo", selective_getaddrinfo)
+
+    client = httpx.AsyncClient()
+
+    async def fake_get(url, *, follow_redirects=False):
+        return httpx.Response(
+            302,
+            headers={"location": "https://slow.example/next.png"},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(client, "get", fake_get)
+
+    try:
+        with pytest.raises(us.UnsafeURLError):
+            await us.get_with_redirect_guard(client, "https://ok.example/start.png")
+    finally:
+        await client.aclose()

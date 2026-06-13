@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ....agent.agent_llm_service import AgentLLMService
 from ....agent.workflow_engine import WorkflowEngine
+from .....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +234,7 @@ class ImageEditWorkflow:
         logger.info(
             "[ImageEditWorkflow] Starting execution: mode=%s prompt=%s",
             normalized_edit_mode,
-            normalized_edit_prompt[:80],
+            summarize_text_for_log(normalized_edit_prompt, label="edit_prompt"),
         )
 
         try:
@@ -308,7 +309,13 @@ class ImageEditWorkflow:
                 "imageUrls": artifact.get("image_urls") or [],
             }
         except Exception as exc:
-            logger.error("[ImageEditWorkflow] Execution failed: %s", exc, exc_info=True)
+            logger.error(
+                "[ImageEditWorkflow] Execution failed: mode=%s image=%s prompt=%s error=%s",
+                normalized_edit_mode,
+                summarize_text_for_log(normalized_image_url, label="image_url"),
+                summarize_text_for_log(normalized_edit_prompt, label="edit_prompt"),
+                summarize_text_for_log(exc, label="workflow_error"),
+            )
             return {
                 "success": False,
                 "workflow": "image_edit",

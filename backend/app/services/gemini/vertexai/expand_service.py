@@ -22,6 +22,11 @@ from ..client_pool import get_client_pool
 from ..common.parameter_validation import ImageServiceValidator
 from ...common.google_model_catalog import get_google_vertex_static_model_entries
 from ....utils.attachment_handler import is_base64_url
+from ....utils.log_sanitization import (
+    redact_exact_value_in_log_text,
+    summarize_text_for_log,
+    summarize_url_for_log,
+)
 from ....utils.url_security import UnsafeURLError, get_with_redirect_guard
 from ...storage.local_provider import resolve_local_public_file_path
 
@@ -284,7 +289,8 @@ class ExpandService:
             # CANON-021: user-supplied image URL — fetch through the shared egress
             # guard so the initial URL AND every redirect hop are SSRF-validated
             # (a plain client would follow a 302 into a private/internal host).
-            logger.info(f"[Expand Service] 下载 HTTP URL 图片: {image_path[:60]}...")
+            safe_image_path = summarize_url_for_log(image_path)
+            logger.info("[Expand Service] 下载 HTTP URL 图片: %s", safe_image_path)
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response, _final_url = await get_with_redirect_guard(
@@ -301,15 +307,22 @@ class ExpandService:
             except UnsafeURLError:
                 raise  # propagate SSRF rejection (do not mask as a generic download error)
             except httpx.HTTPError as e:
-                logger.error(f"[Expand Service] ❌ HTTP URL 下载失败: {e}")
-                raise ValueError(f"Failed to download image from URL: {str(e)}")
+                safe_error = redact_exact_value_in_log_text(str(e), image_path, safe_image_path)
+                logger.error(
+                    "[Expand Service] ❌ HTTP URL 下载失败: target=%s error=%s",
+                    safe_image_path,
+                    safe_error,
+                )
+                raise ValueError(f"Failed to download image from URL: {safe_image_path}: {safe_error}")
 
         else:
             # 本地文件路径：CANON-017/021 — 仅允许 allow-root 内的 local-files 引用，
             # 不得对任意用户/模型可控路径执行 open()（任意文件读取 LFI）。
             local_path = resolve_local_public_file_path(image_path)
             if local_path is None or not local_path.exists() or not local_path.is_file():
-                raise ValueError(f"Image file not found or not permitted: {image_path}")
+                raise ValueError(
+                    f"Image file not found or not permitted: {summarize_url_for_log(image_path)}"
+                )
             with open(local_path, 'rb') as f:
                 image_bytes = f.read()
             # 根据扩展名推断 mime_type
@@ -385,7 +398,7 @@ class ExpandService:
             logger.info(f"[Expand Service] Parameters validated successfully")
             
             # 添加详细的参数日志
-            prompt_log = f"expand_prompt='{expand_prompt[:30]}...'" if len(expand_prompt) > 30 else f"expand_prompt='{expand_prompt}'"
+            prompt_log = summarize_text_for_log(expand_prompt, label="expand_prompt")
             
             # 根据模式记录不同的参数
             if mode == "scale":
@@ -404,7 +417,7 @@ class ExpandService:
             
             logger.info(
                 f"[Expand Service] Received parameters: "
-                f"{prompt_log}, "
+                f"expand_prompt={prompt_log}, "
                 f"{mode_params}, "
                 f"number_of_images={kwargs.get('number_of_images', 1)}, "
                 f"guidance_scale={kwargs.get('guidance_scale', 7.5)}"
@@ -435,7 +448,10 @@ class ExpandService:
                 raise ValueError(f"Unsupported expansion mode: {mode}")
         
         except Exception as e:
-            logger.error(f"[Expand Service] Image expansion error: {e}", exc_info=True)
+            logger.error(
+                "[Expand Service] Image expansion error: %s",
+                summarize_text_for_log(e, label="expand_error"),
+            )
             raise
     
     async def _expand_by_scale(
@@ -751,7 +767,7 @@ class ExpandService:
             from ..common.parameter_validation import ParameterValidationError
             raise ParameterValidationError(
                 parameter='expand_prompt',
-                value=expand_prompt[:50] + '...',
+                value=summarize_text_for_log(expand_prompt, label="expand_prompt"),
                 message=f"Parameter 'expand_prompt' is too long ({len(expand_prompt)} characters)",
                 valid_range="0 to 2000 characters",
                 suggestion="Shorten the prompt to 2000 characters or less",
@@ -989,7 +1005,10 @@ class ExpandService:
             return results
 
         except Exception as e:
-            logger.error(f"[Expand Service] Upscale error: {e}", exc_info=True)
+            logger.error(
+                "[Expand Service] Upscale error: %s",
+                summarize_text_for_log(e, label="upscale_error"),
+            )
             raise
 
     def _check_upscale_resolution(
@@ -1290,5 +1309,8 @@ class ExpandService:
             )
 
         except Exception as e:
-            logger.error(f"[Expand Service] Outpaint error: {e}", exc_info=True)
+            logger.error(
+                "[Expand Service] Outpaint error: %s",
+                summarize_text_for_log(e, label="outpaint_error"),
+            )
             raise

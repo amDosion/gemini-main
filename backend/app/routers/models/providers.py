@@ -19,6 +19,7 @@ try:
     from ...services.common.provider_config import ProviderConfig
 except ImportError:
     from app.services.common.provider_config import ProviderConfig
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +59,11 @@ async def get_templates() -> List[Dict[str, Any]]:
         return templates
     
     except Exception as e:
-        logger.error(f"[Provider Templates] Error loading templates: {e}", exc_info=True)
+        logger.error(
+            "[Provider Templates] Error loading templates: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to load provider templates: {str(e)}"
+            detail="Failed to load provider templates"
         )

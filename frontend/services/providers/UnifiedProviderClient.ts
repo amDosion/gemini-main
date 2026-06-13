@@ -222,8 +222,8 @@ export class UnifiedProviderClient implements ILLMProvider {
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Chat failed: ${error}`);
+        const parsedError = await parseHttpError(response, `Chat failed (${response.status})`);
+        throw new Error(`Chat failed: ${parsedError.message}`);
       }
 
       // Read SSE stream

@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useRetainedBlobObjectUrl } from '../../hooks/useRetainedBlobObjectUrl';
+import {
+  isSafeInlineAudioDataUrl,
+  isSafeInlineVideoDataUrl,
+} from '../../utils/safeMediaDataUrl';
 
 const isBlobObjectUrl = (value: string | null | undefined): boolean =>
   String(value || '').trim().toLowerCase().startsWith('blob:');
@@ -8,6 +12,24 @@ const isFailedBlobForRenderedSrc = (
   renderedSrc: string | null | undefined,
   failedSrc: string | null | undefined
 ): boolean => isBlobObjectUrl(renderedSrc) && isBlobObjectUrl(failedSrc);
+
+const isRenderableRetainedMediaSrc = (
+  value: string | null | undefined,
+  mediaFamily: 'audio' | 'video'
+): boolean => {
+  const src = (value || '').trim();
+  if (!src) return false;
+  const lowered = src.toLowerCase();
+  if (lowered.startsWith('local-blob:')) return false;
+  if (lowered.startsWith('blob:')) return true;
+  if (lowered.startsWith('data:audio/')) {
+    return mediaFamily === 'audio' && isSafeInlineAudioDataUrl(src);
+  }
+  if (lowered.startsWith('data:video/')) {
+    return mediaFamily === 'video' && isSafeInlineVideoDataUrl(src);
+  }
+  return lowered.startsWith('/api/') || lowered.startsWith('http://') || lowered.startsWith('https://');
+};
 
 export interface RetainedVideoProps
   extends Omit<React.VideoHTMLAttributes<HTMLVideoElement>, 'src'> {
@@ -24,7 +46,9 @@ export interface RetainedAudioProps
 export const RetainedVideo = React.forwardRef<HTMLVideoElement, RetainedVideoProps>(
   ({ src, onRecoverMediaError, onError, ...videoProps }, ref) => {
     const [failedSrc, setFailedSrc] = useState<string | null>(null);
-    useRetainedBlobObjectUrl(src);
+    const normalizedSrc = (src || '').trim();
+    const renderedSrc = isRenderableRetainedMediaSrc(normalizedSrc, 'video') ? normalizedSrc : '';
+    useRetainedBlobObjectUrl(renderedSrc);
 
     useEffect(() => {
       setFailedSrc(null);
@@ -37,23 +61,25 @@ export const RetainedVideo = React.forwardRef<HTMLVideoElement, RetainedVideoPro
           setFailedSrc(mediaSrc);
           return;
         }
-        if (isFailedBlobForRenderedSrc(src, mediaSrc)) {
+        if (isFailedBlobForRenderedSrc(renderedSrc, mediaSrc)) {
           setFailedSrc(mediaSrc);
         }
         onError?.(event);
       },
-      [onError, onRecoverMediaError, src]
+      [onError, onRecoverMediaError, renderedSrc]
     );
 
-    if (!src || isFailedBlobForRenderedSrc(src, failedSrc)) return null;
-    return <video ref={ref} src={src} onError={handleError} {...videoProps} />;
+    if (!renderedSrc || isFailedBlobForRenderedSrc(renderedSrc, failedSrc)) return null;
+    return <video ref={ref} src={renderedSrc} onError={handleError} {...videoProps} />;
   }
 );
 
 export const RetainedAudio = React.forwardRef<HTMLAudioElement, RetainedAudioProps>(
   ({ src, onRecoverMediaError, onError, ...audioProps }, ref) => {
     const [failedSrc, setFailedSrc] = useState<string | null>(null);
-    useRetainedBlobObjectUrl(src);
+    const normalizedSrc = (src || '').trim();
+    const renderedSrc = isRenderableRetainedMediaSrc(normalizedSrc, 'audio') ? normalizedSrc : '';
+    useRetainedBlobObjectUrl(renderedSrc);
 
     useEffect(() => {
       setFailedSrc(null);
@@ -66,16 +92,16 @@ export const RetainedAudio = React.forwardRef<HTMLAudioElement, RetainedAudioPro
           setFailedSrc(mediaSrc);
           return;
         }
-        if (isFailedBlobForRenderedSrc(src, mediaSrc)) {
+        if (isFailedBlobForRenderedSrc(renderedSrc, mediaSrc)) {
           setFailedSrc(mediaSrc);
         }
         onError?.(event);
       },
-      [onError, onRecoverMediaError, src]
+      [onError, onRecoverMediaError, renderedSrc]
     );
 
-    if (!src || isFailedBlobForRenderedSrc(src, failedSrc)) return null;
-    return <audio ref={ref} src={src} onError={handleError} {...audioProps} />;
+    if (!renderedSrc || isFailedBlobForRenderedSrc(renderedSrc, failedSrc)) return null;
+    return <audio ref={ref} src={renderedSrc} onError={handleError} {...audioProps} />;
   }
 );
 

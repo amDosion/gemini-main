@@ -15,8 +15,8 @@ Updated: 2026-01-15 - 重命名为 vertex_ai_config，数据表名称改为 vert
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Request
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, Literal, Dict, Any, List
+from pydantic import BaseModel, Field, ConfigDict, JsonValue
+from typing import Annotated, Optional, Literal, Dict, Any, List
 from sqlalchemy.orm import Session
 import logging
 
@@ -30,10 +30,17 @@ from ...services.common.google_model_catalog import (
     get_static_google_vertex_models,
     is_deprecated_google_vertex_image_model,
 )
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/vertex-ai", tags=["vertex-ai"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+FREE_TEXT_PATTERN = r"^[\s\S]*$"
+VertexText = Annotated[str, Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)]
+VertexLocationText = Annotated[str, Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)]
+VertexCredentialsText = Annotated[str, Field(max_length=100_000, pattern=FREE_TEXT_PATTERN)]
+VertexApiKeyText = Annotated[str, Field(max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN)]
 
 
 # ==================== Request/Response Models ====================
@@ -41,14 +48,21 @@ router = APIRouter(prefix="/api/vertex-ai", tags=["vertex-ai"])
 class VertexAIConfigResponse(BaseModel):
     """Response model for Vertex AI configuration"""
     api_mode: Literal['gemini_api', 'vertex_ai']
-    capabilities: Dict[str, Any]
+    capabilities: Dict[str, JsonValue] = Field(max_length=64)
     gemini_api_configured: bool
     vertex_ai_configured: bool
-    vertex_ai_project_id: Optional[str] = None
-    vertex_ai_location: Optional[str] = 'us-central1'
-    vertex_ai_credentials_json: Optional[str] = None
-    hidden_models: List[str] = Field(default_factory=list)
-    saved_models: List[Dict[str, Any]] = Field(default_factory=list)
+    vertex_ai_project_id: Optional[VertexText] = None
+    vertex_ai_location: Optional[VertexLocationText] = 'us-central1'
+    vertex_ai_credentials_json: Optional[VertexCredentialsText] = None
+    hidden_models: List[VertexText] = Field(default_factory=list, max_length=512)
+    saved_models: List[Dict[str, JsonValue]] = Field(default_factory=list, max_length=512)
+
+
+class VertexAIConfigUpdateResponse(BaseModel):
+    """Response model for updating Vertex AI configuration"""
+    success: bool
+    message: str = Field(max_length=256)
+    config: VertexAIConfigResponse
 
 
 class VertexAIConfigUpdateRequest(BaseModel):
@@ -58,30 +72,32 @@ class VertexAIConfigUpdateRequest(BaseModel):
     )
 
     # Gemini API config (optional, uses LLM API key if not provided)
-    gemini_api_key: Optional[str] = Field(
+    gemini_api_key: Optional[VertexApiKeyText] = Field(
         default=None,
         description="Gemini API key (optional, uses LLM config if not provided)"
     )
 
     # Vertex AI config
-    vertex_ai_project_id: Optional[str] = Field(
+    vertex_ai_project_id: Optional[VertexText] = Field(
         default=None,
         description="Google Cloud project ID (required for vertex_ai mode)"
     )
-    vertex_ai_location: Optional[str] = Field(
+    vertex_ai_location: Optional[VertexLocationText] = Field(
         default='us-central1',
         description="Vertex AI location/region"
     )
-    vertex_ai_credentials_json: Optional[str] = Field(
+    vertex_ai_credentials_json: Optional[VertexCredentialsText] = Field(
         default=None,
         description="Service account credentials JSON content (required for vertex_ai mode)"
     )
-    hidden_models: Optional[List[str]] = Field(
+    hidden_models: Optional[List[VertexText]] = Field(
         default=None,
+        max_length=512,
         description="List of hidden model IDs"
     )
-    saved_models: Optional[List[Dict[str, Any]]] = Field(
+    saved_models: Optional[List[Dict[str, JsonValue]]] = Field(
         default=None,
+        max_length=512,
         description="List of saved model configurations (ModelConfig[])"
     )
 
@@ -260,7 +276,8 @@ async def get_vertex_ai_config(
                 logger.info(f"[VertexAIConfig] Got capabilities via GoogleService for user={user_id}")
             except Exception as e:
                 logger.warning(
-                    f"[VertexAIConfig] Failed to get capabilities via GoogleService, using defaults: {e}"
+                    "[VertexAIConfig] Failed to get capabilities via GoogleService, using defaults: %s",
+                    summarize_text_for_log(e, label="error"),
                 )
 
         # ✅ 5. 处理 Vertex AI 配置
@@ -316,7 +333,11 @@ async def get_vertex_ai_config(
                             model_data['description'] = get_model_description('google', model_id)
                             logger.debug(f"[VertexAIConfig] Enriched description for {model_id} during read")
                         except Exception as e:
-                            logger.warning(f"[VertexAIConfig] Failed to enrich description for {model_id} during read: {e}")
+                            logger.warning(
+                                "[VertexAIConfig] Failed to enrich description for %s during read: %s",
+                                model_id,
+                                summarize_text_for_log(e, label="error"),
+                            )
                     
                     enriched_saved_models.append(model_data)
                 else:
@@ -339,14 +360,17 @@ async def get_vertex_ai_config(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[VertexAIConfig] Failed to get configuration: {e}", exc_info=True)
+        logger.error(
+            "[VertexAIConfig] Failed to get configuration: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to get Vertex AI configuration: {str(e)}"
+            detail="Failed to get Vertex AI configuration"
         )
 
 
-@router.post("/config")
+@router.post("/config", response_model=VertexAIConfigUpdateResponse)
 async def update_vertex_ai_config(
     request_body: VertexAIConfigUpdateRequest,
     user_id: str = Depends(require_current_user),
@@ -447,7 +471,10 @@ async def update_vertex_ai_config(
                                     logger.info(f"[VertexAIConfig] Encrypted and saved credentials (migrated from plaintext) (user={user_id})")
                             except Exception as e:
                                 # 解密失败，可能是密钥不匹配，当作新凭证处理
-                                logger.warning(f"[VertexAIConfig] Failed to decrypt existing credentials for comparison: {e}")
+                                logger.warning(
+                                    "[VertexAIConfig] Failed to decrypt existing credentials for comparison: %s",
+                                    summarize_text_for_log(e, label="error"),
+                                )
                                 encrypted_credentials = encrypt_data(request_body.vertex_ai_credentials_json)
                                 user_config.vertex_ai_credentials_json = encrypted_credentials
                                 logger.info(f"[VertexAIConfig] Encrypted and saved new credentials (decryption failed) (user={user_id})")
@@ -457,10 +484,13 @@ async def update_vertex_ai_config(
                             user_config.vertex_ai_credentials_json = encrypted_credentials
                             logger.info(f"[VertexAIConfig] Encrypted and saved new credentials (first time) (user={user_id})")
                     except Exception as e:
-                        logger.error(f"[VertexAIConfig] Failed to encrypt credentials: {e}")
+                        logger.error(
+                            "[VertexAIConfig] Failed to encrypt credentials: %s",
+                            summarize_text_for_log(e, label="error"),
+                        )
                         raise HTTPException(
                             status_code=500,
-                            detail=f"Failed to encrypt credentials: {str(e)}"
+                            detail="Failed to encrypt credentials"
                         )
             
             # Save model configurations (hidden_models and saved_models)
@@ -502,7 +532,11 @@ async def update_vertex_ai_config(
                                 }
                                 logger.debug(f"[VertexAIConfig] Enriched capabilities for {model_id}")
                             except Exception as e:
-                                logger.warning(f"[VertexAIConfig] Failed to enrich capabilities for {model_id}: {e}")
+                                logger.warning(
+                                    "[VertexAIConfig] Failed to enrich capabilities for %s: %s",
+                                    model_id,
+                                    summarize_text_for_log(e, label="error"),
+                                )
                         
                         # ✅ 检查 description 是否和 name 一样，如果是，生成更好的描述
                         description = model_data.get('description', '')
@@ -512,7 +546,11 @@ async def update_vertex_ai_config(
                                 model_data['description'] = get_model_description('google', model_id)
                                 logger.debug(f"[VertexAIConfig] Enriched description for {model_id}")
                             except Exception as e:
-                                logger.warning(f"[VertexAIConfig] Failed to enrich description for {model_id}: {e}")
+                                logger.warning(
+                                    "[VertexAIConfig] Failed to enrich description for %s: %s",
+                                    model_id,
+                                    summarize_text_for_log(e, label="error"),
+                                )
                         
                         enriched_saved_models.append(model_data)
                     else:
@@ -533,7 +571,11 @@ async def update_vertex_ai_config(
                                 'contextWindow': model_config.context_window
                             })
                         except Exception as e:
-                            logger.warning(f"[VertexAIConfig] Failed to build model config for {model_id}: {e}")
+                            logger.warning(
+                                "[VertexAIConfig] Failed to build model config for %s: %s",
+                                model_id,
+                                summarize_text_for_log(e, label="error"),
+                            )
                             # Fallback: 使用原始数据，但添加默认 capabilities 和描述
                             if isinstance(model_data, dict):
                                 model_data['capabilities'] = model_data.get('capabilities', {
@@ -548,8 +590,9 @@ async def update_vertex_ai_config(
                                         model_data['description'] = get_model_description('google', model_id)
                                     except Exception as desc_err:
                                         logger.warning(
-                                            f"[VertexAIConfig] get_model_description failed for {model_id}: {desc_err}",
-                                            exc_info=True,
+                                            "[VertexAIConfig] get_model_description failed for %s: %s",
+                                            model_id,
+                                            summarize_text_for_log(desc_err, label="error"),
                                         )
                                         model_data['description'] = f'Google AI model: {model_id}'
                                 enriched_saved_models.append(model_data)
@@ -558,8 +601,9 @@ async def update_vertex_ai_config(
                                     desc = get_model_description('google', model_id)
                                 except Exception as desc_err:
                                     logger.warning(
-                                        f"[VertexAIConfig] get_model_description failed for {model_id}: {desc_err}",
-                                        exc_info=True,
+                                        "[VertexAIConfig] get_model_description failed for %s: %s",
+                                        model_id,
+                                        summarize_text_for_log(desc_err, label="error"),
                                     )
                                     desc = f'Google AI model: {model_id}'
                                 enriched_saved_models.append({
@@ -633,7 +677,10 @@ async def update_vertex_ai_config(
                 capabilities = service.get_imagen_capabilities()
                 logger.info(f"[VertexAIConfig] Got capabilities after config update: supported_models={len(capabilities.get('supported_models', []))}")
             except Exception as e:
-                logger.warning(f"[VertexAIConfig] Failed to get capabilities, using defaults: {e}")
+                logger.warning(
+                    "[VertexAIConfig] Failed to get capabilities, using defaults: %s",
+                    summarize_text_for_log(e, label="error"),
+                )
         
         # Build updated config response
         # 注意：update 后返回时，应该返回加密值（非编辑模式），因为这是保存后的响应
@@ -665,13 +712,13 @@ async def update_vertex_ai_config(
         raise
     except Exception as e:
         logger.error(
-            f"[VertexAIConfig] Failed to update configuration: {e}",
-            exc_info=True
+            "[VertexAIConfig] Failed to update configuration: %s",
+            summarize_text_for_log(e, label="error"),
         )
         db.rollback()
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to update Vertex AI configuration: {str(e)}"
+            detail="Failed to update Vertex AI configuration"
         )
 
 
@@ -770,26 +817,27 @@ async def test_vertex_ai_connection(
         raise
     except ConfigurationError as e:
         logger.warning(
-            f"[VertexAIConfig] Configuration error during connection test: {e}"
+            "[VertexAIConfig] Configuration error during connection test: %s",
+            summarize_text_for_log(e, label="error"),
         )
         raise HTTPException(
             status_code=400,
             detail={
                 "code": "vertex_ai_configuration_error",
-                "message": f"Configuration error: {str(e)}",
+                "message": "Configuration error",
                 "api_mode": request_body.api_mode,
             },
         )
     except Exception as e:
         logger.error(
-            f"[VertexAIConfig] Connection test failed: {e}",
-            exc_info=True
+            "[VertexAIConfig] Connection test failed: %s",
+            summarize_text_for_log(e, label="error"),
         )
         raise HTTPException(
             status_code=500,
             detail={
                 "code": "vertex_ai_connection_test_failed",
-                "message": f"Connection test failed: {str(e)}",
+                "message": "Connection test failed",
             },
         ) from e
 
@@ -839,7 +887,10 @@ async def verify_vertex_ai_connection(
             from google.oauth2 import service_account
             import json
         except ImportError as e:
-            logger.error(f"[VertexAIConfig] Failed to import Google GenAI SDK: {e}")
+            logger.error(
+                "[VertexAIConfig] Failed to import Google GenAI SDK: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise HTTPException(
                 status_code=500,
                 detail="Google GenAI SDK not available"
@@ -849,7 +900,11 @@ async def verify_vertex_ai_connection(
         try:
             credentials_info = json.loads(request_body.credentials_json)
         except json.JSONDecodeError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid credentials JSON: {e}")
+            logger.warning(
+                "[VertexAIConfig] Invalid credentials JSON: %s",
+                summarize_text_for_log(e, label="error"),
+            )
+            raise HTTPException(status_code=400, detail="Invalid credentials JSON")
 
         credentials = service_account.Credentials.from_service_account_info(
             credentials_info,
@@ -900,14 +955,22 @@ async def verify_vertex_ai_connection(
                     coding=caps.coding
                 )
             except Exception as e:
-                logger.warning(f"[VertexAIConfig] Failed to get capabilities for {short_model_id}: {e}")
+                logger.warning(
+                    "[VertexAIConfig] Failed to get capabilities for %s: %s",
+                    short_model_id,
+                    summarize_text_for_log(e, label="error"),
+                )
                 capabilities = ModelCapabilities()  # Default: all False
 
             # ✅ Get model description
             try:
                 description = get_model_description('google', short_model_id)
             except Exception as e:
-                logger.warning(f"[VertexAIConfig] Failed to get description for {short_model_id}: {e}")
+                logger.warning(
+                    "[VertexAIConfig] Failed to get description for %s: %s",
+                    short_model_id,
+                    summarize_text_for_log(e, label="error"),
+                )
                 description = None  # Will use default in frontend
 
             models.append(VertexAIModel(
@@ -936,13 +999,21 @@ async def verify_vertex_ai_connection(
                     coding=caps.coding
                 )
             except Exception as e:
-                logger.warning(f"[VertexAIConfig] Failed to get capabilities for static model {static_model_id}: {e}")
+                logger.warning(
+                    "[VertexAIConfig] Failed to get capabilities for static model %s: %s",
+                    static_model_id,
+                    summarize_text_for_log(e, label="error"),
+                )
                 capabilities = ModelCapabilities()
 
             try:
                 description = get_model_description('google', static_model_id)
             except Exception as e:
-                logger.warning(f"[VertexAIConfig] Failed to get description for static model {static_model_id}: {e}")
+                logger.warning(
+                    "[VertexAIConfig] Failed to get description for static model %s: %s",
+                    static_model_id,
+                    summarize_text_for_log(e, label="error"),
+                )
                 description = None
 
             models.append(VertexAIModel(
@@ -969,14 +1040,14 @@ async def verify_vertex_ai_connection(
         raise
     except Exception as e:
         logger.error(
-            f"[VertexAIConfig] Vertex AI verification failed: {e}",
-            exc_info=True
+            "[VertexAIConfig] Vertex AI verification failed: %s",
+            summarize_text_for_log(e, label="error"),
         )
         raise HTTPException(
             status_code=500,
             detail={
                 "code": "vertex_ai_verification_failed",
-                "message": f"Verification failed: {str(e)}",
+                "message": "Verification failed",
             },
         ) from e
     finally:
@@ -989,6 +1060,6 @@ async def verify_vertex_ai_connection(
                 # close 失败意味着临时凭证 client 的连接资源没有被释放，
                 # 在大量验证请求并发时可能耗尽 fd。
                 logger.warning(
-                    f"[VertexAIConfig] Failed to close verify-only Vertex AI client: {close_err}",
-                    exc_info=True,
+                    "[VertexAIConfig] Failed to close verify-only Vertex AI client: %s",
+                    summarize_text_for_log(close_err, label="error"),
                 )

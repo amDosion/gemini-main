@@ -2,8 +2,10 @@
 认证路由 - 处理用户注册、登录、登出、令牌刷新等
 """
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
 
@@ -11,7 +13,9 @@ from ...core.database import get_db
 from ...core.config import settings
 from ...services.common.auth_service import (
     AuthService,
+    AuthConfigResponse,
     TokenPair,
+    UserResponse,
     RegisterRequest,
     LoginRequest,
     ChangePasswordRequest,
@@ -39,6 +43,48 @@ from ...models.db_models import IPLoginHistory, RefreshToken, UserSettings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+
+
+def _safe_auth_log_text(value: object, *, label: str = "error") -> str:
+    if value is None:
+        return "None"
+    text = str(value)
+    if not text:
+        return f"<empty {label}>"
+    return f"<redacted {label}; type={type(value).__name__}; length={len(text)}>"
+
+
+class PublicTokenResponse(BaseModel):
+    token_type: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    expires_in: int = Field(ge=1, le=31_536_000)
+
+
+class AuthSessionResponse(PublicTokenResponse):
+    user: UserResponse
+    has_active_profile: bool = False
+
+
+class AuthRefreshResponse(PublicTokenResponse):
+    has_active_profile: bool = False
+
+
+class CurrentUserResponse(UserResponse):
+    has_active_profile: bool = False
+
+
+class LogoutResponse(BaseModel):
+    message: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class ChangePasswordResponse(BaseModel):
+    success: bool
+    message: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class IpInfoResponse(BaseModel):
+    detected_ip: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    is_private: bool
 
 
 @dataclass(frozen=True)
@@ -170,6 +216,20 @@ def _get_bearer_token(auth_header: str | None) -> str | None:
     return None
 
 
+def _iter_request_tokens(request: Request, *, cookie_name: str) -> list[str]:
+    tokens: list[str] = []
+
+    bearer_token = _get_bearer_token(request.headers.get("Authorization"))
+    if bearer_token:
+        tokens.append(bearer_token)
+
+    cookie_token = request.cookies.get(cookie_name)
+    if cookie_token and cookie_token not in tokens:
+        tokens.append(cookie_token)
+
+    return tokens
+
+
 def _get_request_token(request: Request, *, cookie_name: str) -> str | None:
     """
     Resolve an auth token from request state.
@@ -178,7 +238,21 @@ def _get_request_token(request: Request, *, cookie_name: str) -> str | None:
     cookies. Browser UI can rely on httpOnly cookies without exposing refresh
     tokens to localStorage.
     """
-    return _get_bearer_token(request.headers.get("Authorization")) or request.cookies.get(cookie_name)
+    tokens = _iter_request_tokens(request, cookie_name=cookie_name)
+    return tokens[0] if tokens else None
+
+
+def _get_valid_request_token(
+    request: Request,
+    *,
+    cookie_name: str,
+    is_valid_token: Callable[[str], bool],
+) -> str | None:
+    """Return the first request token that is valid for this endpoint."""
+    for token in _iter_request_tokens(request, cookie_name=cookie_name):
+        if is_valid_token(token):
+            return token
+    return None
 
 
 def _build_public_token_response(tokens: TokenPair) -> dict[str, object]:
@@ -189,7 +263,7 @@ def _build_public_token_response(tokens: TokenPair) -> dict[str, object]:
     }
 
 
-@router.get("/config")
+@router.get("/config", response_model=AuthConfigResponse)
 async def get_auth_config(db: Session = Depends(get_db)):
     """获取认证配置（注册开关状态）"""
     logger.info("[Auth] 收到获取配置请求")
@@ -209,12 +283,12 @@ async def get_auth_config(db: Session = Depends(get_db)):
         elif "connection" in error_msg or "connect" in error_msg:
             logger.error("[Auth] 数据库连接失败")
         else:
-            logger.error(f"[Auth] 获取配置失败: {e}", exc_info=True)
+            logger.error("[Auth] 获取配置失败: %s", _safe_auth_log_text(e))
         # ✅ 返回通用错误消息，不泄露实现细节
         raise HTTPException(status_code=500, detail="Failed to get auth config")
 
 
-@router.get("/ip-info")
+@router.get("/ip-info", response_model=IpInfoResponse)
 async def get_ip_info_endpoint(
     request: Request,
     user_id: str = Depends(require_current_user),
@@ -235,7 +309,7 @@ async def get_ip_info_endpoint(
     }
 
 
-@router.post("/register")
+@router.post("/register", response_model=AuthSessionResponse)
 async def register(
     data: RegisterRequest,
     request: Request,
@@ -266,7 +340,11 @@ async def register(
             ensure_personas_initialized(user_response.id, db)
         except Exception as e:
             # Personas 初始化失败不应该阻止注册，只记录警告
-            logger.warning(f"Failed to initialize default personas for new user {user_response.id}: {e}")
+            logger.warning(
+                "Failed to initialize default personas for new user %s: %s",
+                user_response.id,
+                _safe_auth_log_text(e),
+            )
 
         # ✅ 为新用户自动初始化 Starter 工作流模板（注册后立即可用）
         template_service = WorkflowTemplateService(db=db)
@@ -303,7 +381,7 @@ async def register(
         raise HTTPException(status_code=400, detail="Passwords do not match")
 
 
-@router.post("/login")
+@router.post("/login", response_model=AuthSessionResponse)
 async def login(
     data: LoginRequest,
     request: Request,
@@ -348,12 +426,12 @@ async def login(
         # 透传 auth_service 内部主动抛出的 HTTPException（如 429 频率限制、403 IP 封禁）
         raise
     except Exception as e:
-        # ✅ A-1/C-8: 不向客户端泄漏内部异常细节，仅服务端日志保留完整 traceback
-        logger.error(f"[Auth] 登录失败 (email={data.email}): {e}", exc_info=True)
+        # ✅ A-1/C-8: 不向客户端泄漏内部异常细节，服务端日志只保留摘要。
+        logger.error("[Auth] 登录失败 (email=%s): %s", data.email, _safe_auth_log_text(e))
         raise HTTPException(status_code=500, detail="Login failed")
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=LogoutResponse)
 async def logout(
     request: Request,
     response: Response,
@@ -365,7 +443,11 @@ async def logout(
     # ✅ 统一清除 Cookie
     clear_auth_cookies(response, request)
     
-    access_token = _get_request_token(request, cookie_name="access_token")
+    access_token = _get_valid_request_token(
+        request,
+        cookie_name="access_token",
+        is_valid_token=lambda token: extract_user_id_from_token(token) is not None,
+    )
     if access_token:
         try:
             # 验证 access_token 并获取用户 ID
@@ -405,13 +487,13 @@ async def logout(
             db.rollback()
         except Exception as e:
             # Unexpected error: roll back any partial writes and log; cookies are already cleared
-            logger.error(f"[Logout] Error revoking tokens: {e}", exc_info=True)
+            logger.error("[Logout] Error revoking tokens: %s", _safe_auth_log_text(e))
             db.rollback()
     
     return {"message": "Logged out successfully"}
 
 
-@router.post("/refresh")
+@router.post("/refresh", response_model=AuthRefreshResponse)
 async def refresh_token(
     request: Request,
     response: Response,
@@ -420,7 +502,11 @@ async def refresh_token(
     """刷新访问令牌 - Header 优先，httpOnly refresh Cookie 兜底"""
     auth_service = AuthService(db)
 
-    refresh_token = _get_request_token(request, cookie_name="refresh_token")
+    refresh_token = _get_valid_request_token(
+        request,
+        cookie_name="refresh_token",
+        is_valid_token=auth_service.is_refresh_token_usable,
+    )
     
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token not found")
@@ -451,7 +537,7 @@ async def refresh_token(
             db.add(ip_history)
             db.commit()
         except Exception as e:
-            logger.warning(f"[Auth] 记录 token 刷新历史失败: {e}")
+            logger.warning("[Auth] 记录 token 刷新历史失败: %s", _safe_auth_log_text(e))
 
         # ✅ 检查用户是否有活跃的配置文件
         user_settings = db.query(UserSettings).filter(
@@ -475,7 +561,7 @@ async def refresh_token(
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
 
-@router.get("/me")
+@router.get("/me", response_model=CurrentUserResponse)
 def get_current_user(
     request: Request,
     db: Session = Depends(get_db)
@@ -488,7 +574,11 @@ def get_current_user(
     """
     auth_service = AuthService(db)
 
-    access_token = _get_request_token(request, cookie_name="access_token")
+    access_token = _get_valid_request_token(
+        request,
+        cookie_name="access_token",
+        is_valid_token=lambda token: extract_user_id_from_token(token) is not None,
+    )
 
     if not access_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -519,11 +609,11 @@ def get_current_user(
         raise
     except Exception as e:
         # ✅ 捕获其他异常（如数据库错误），避免返回 500 错误
-        logger.error(f"[Auth] 获取当前用户失败: {e}", exc_info=True)
+        logger.error("[Auth] 获取当前用户失败: %s", _safe_auth_log_text(e))
         raise HTTPException(status_code=500, detail="Failed to fetch user information")
 
 
-@router.post("/change-password")
+@router.post("/change-password", response_model=ChangePasswordResponse)
 async def change_password(
     data: ChangePasswordRequest,
     user_id: str = Depends(require_current_user),

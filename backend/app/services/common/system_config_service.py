@@ -6,9 +6,19 @@ import logging
 import os
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any, List
+
+import httpx
+
 from ...models.db_models import SystemConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_ip(ip: str):
+    try:
+        return ipaddress.ip_address(str(ip or "").strip())
+    except ValueError:
+        return None
 
 
 def _parse_trusted_proxies() -> List[ipaddress._BaseNetwork]:
@@ -68,7 +78,6 @@ def is_private_ip(ip: str) -> bool:
     ]
     
     try:
-        import ipaddress
         ip_obj = ipaddress.ip_address(ip)
         
         # 检查是否为 IPv4 私有地址
@@ -84,8 +93,13 @@ def is_private_ip(ip: str) -> bool:
         
         return False
     except (ValueError, AttributeError):
-        # 如果无法解析 IP，假设是公网 IP（让后续验证处理）
-        return False
+        # 非法 IP 不应被当作公网客户端地址继续处理。
+        return True
+
+
+def is_public_ip(ip: str) -> bool:
+    ip_obj = _parse_ip(ip)
+    return ip_obj is not None and not is_private_ip(str(ip_obj))
 
 
 def get_client_ip(request, prefer_public: bool = True) -> str:
@@ -158,9 +172,13 @@ def get_client_ip(request, prefer_public: bool = True) -> str:
     valid_ips = []
     for ip in ip_candidates:
         ip = ip.strip()
-        if ip and ip not in seen and ip != "unknown":
-            seen.add(ip)
-            valid_ips.append(ip)
+        ip_obj = _parse_ip(ip)
+        if ip_obj is None:
+            continue
+        normalized_ip = str(ip_obj)
+        if normalized_ip not in seen:
+            seen.add(normalized_ip)
+            valid_ips.append(normalized_ip)
     
     if not valid_ips:
         return "unknown"
@@ -168,7 +186,7 @@ def get_client_ip(request, prefer_public: bool = True) -> str:
     # 如果 prefer_public=True，优先返回公网 IP
     if prefer_public:
         for ip in valid_ips:
-            if not is_private_ip(ip):
+            if is_public_ip(ip):
                 return ip
         # 如果没有公网 IP，返回第一个（可能是内网 IP）
         return valid_ips[0]
@@ -187,7 +205,6 @@ async def get_public_ip_from_service() -> Optional[str]:
     Returns:
         公网 IP 地址，如果获取失败则返回 None
     """
-    import httpx
     services = [
         "https://api.ipify.org?format=text",
         "https://icanhazip.com",
@@ -233,21 +250,20 @@ async def get_ip_info(ip: str) -> Optional[Dict[str, Any]]:
             "is_private": False
         }
     """
-    if not ip or ip == "unknown" or is_private_ip(ip):
+    ip_obj = _parse_ip(ip)
+    if ip_obj is None or not is_public_ip(str(ip_obj)):
         return {
             "ip": ip,
             "is_private": True,
-            "note": "Private IP address"
+            "note": "Private or invalid IP address"
         }
-    
-    import httpx
     
     # 使用免费的 IP 地理位置 API（ip-api.com，无需 API key）
     # 注意：免费版本有速率限制（45 请求/分钟）
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             # ip-api.com 免费 API（JSON 格式）
-            url = f"http://ip-api.com/json/{ip}?fields=status,message,country,countryCode,region,regionName,city,isp,query"
+            url = f"http://ip-api.com/json/{ip_obj}?fields=status,message,country,countryCode,region,regionName,city,isp,query"
             response = await client.get(url)
             
             if response.status_code == 200:

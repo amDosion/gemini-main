@@ -16,16 +16,29 @@ to specialized sub-services:
 - 所有子服务延迟加载，避免循环导入和减少初始化开销
 """
 
-from typing import Dict, Any, List, Optional, AsyncGenerator
 import logging
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
 from openai import AsyncOpenAI
 
+from ...utils.log_sanitization import summarize_url_for_log
+from ...utils.url_security import validate_storage_egress_url
 from ..common.base_provider import BaseProviderService
 from ..common.model_capabilities import ModelConfig
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "http://localhost:8000/v1"
+TRUSTED_DEFAULT_BASE_URLS = {DEFAULT_BASE_URL.rstrip("/")}
+
+
+def _resolve_grok_base_url(api_url: Optional[str]) -> str:
+    base_url = str(api_url or DEFAULT_BASE_URL).strip().rstrip("/")
+    if not base_url:
+        base_url = DEFAULT_BASE_URL.rstrip("/")
+    if base_url in TRUSTED_DEFAULT_BASE_URLS:
+        return base_url
+    return validate_storage_egress_url(base_url).rstrip("/")
 
 
 class GrokService(BaseProviderService):
@@ -55,7 +68,7 @@ class GrokService(BaseProviderService):
         """
         super().__init__(api_key, api_url, **kwargs)
 
-        self.base_url = api_url or DEFAULT_BASE_URL
+        self.base_url = _resolve_grok_base_url(api_url)
         self.timeout = kwargs.get("timeout", 120.0)
         self.max_retries = kwargs.get("max_retries", 3)
 
@@ -74,7 +87,10 @@ class GrokService(BaseProviderService):
         self._video_generator = None
         self._model_manager = None
 
-        logger.info(f"[Grok Service] Coordinator initialized with base_url={self.base_url}")
+        logger.info(
+            "[Grok Service] Coordinator initialized with base_url=%s",
+            summarize_url_for_log(self.base_url),
+        )
 
     @property
     def chat_handler(self):

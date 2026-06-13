@@ -3,9 +3,10 @@ OpenAI 语音生成器
 
 处理 OpenAI 的语音合成操作（TTS）。
 """
-from typing import Dict, Any, Optional
 import logging
+from typing import Any, Dict, Optional
 
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 from ._shared import (
     SPEECH_ALLOWED_OPTION_KEYS,
     audio_format_to_mime_type,
@@ -44,7 +45,10 @@ class SpeechGenerator:
             client=kwargs.get("client"),
         )
         
-        logger.info(f"[OpenAI SpeechGenerator] Initialized with base_url={self.base_url}")
+        logger.info(
+            "[OpenAI SpeechGenerator] Initialized with base_url=%s",
+            summarize_url_for_log(self.base_url),
+        )
     
     async def generate_speech(
         self,
@@ -70,7 +74,11 @@ class SpeechGenerator:
                 - format: 音频格式
         """
         try:
-            logger.info(f"[OpenAI SpeechGenerator] Speech generation: voice={voice}, text={text[:50]}...")
+            logger.info(
+                "[OpenAI SpeechGenerator] Speech generation: voice=%s, text=%s",
+                voice,
+                summarize_text_for_log(text, label="text"),
+            )
             request_kwargs = self._normalize_generate_kwargs(kwargs)
             model = request_kwargs.pop("model")
             audio_format = request_kwargs.get("response_format", "mp3")
@@ -93,12 +101,15 @@ class SpeechGenerator:
                 "format": audio_format,
             }
             
-            logger.info(f"[OpenAI SpeechGenerator] Speech generated: size={len(audio_content)} bytes")
+            logger.info("[OpenAI SpeechGenerator] Speech generated: size=%s bytes", len(audio_content))
             
             return result
         
         except Exception as e:
-            logger.error(f"[OpenAI SpeechGenerator] Speech generation error: {e}", exc_info=True)
+            logger.error(
+                "[OpenAI SpeechGenerator] Speech generation error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise
 
     def _normalize_generate_kwargs(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:

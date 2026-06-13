@@ -9,7 +9,20 @@ interface SearchProcessProps {
   isThinking: boolean;
 }
 
+const SEARCH_ENTRY_POINT_SANITIZE_CONFIG = {
+  ALLOWED_TAGS: ['b', 'br', 'div', 'em', 'i', 'li', 'ol', 'p', 'small', 'span', 'strong', 'ul'],
+  ALLOWED_ATTR: [],
+};
+
 export const SearchProcess: React.FC<SearchProcessProps> = ({ queries, entryPoint, isThinking }) => {
+  const sanitizedEntryPoint = React.useMemo(
+    () =>
+      entryPoint
+        ? DOMPurify.sanitize(entryPoint, SEARCH_ENTRY_POINT_SANITIZE_CONFIG)
+        : '',
+    [entryPoint]
+  );
+
   return (
     <div className="flex flex-col gap-2 mb-1 bg-slate-900/60 p-3 rounded-lg border border-slate-700/50 animate-[fadeIn_0.5s_ease-out]">
         <div className="flex items-center gap-2 text-xs text-blue-300 font-bold uppercase tracking-wider mb-1">
@@ -31,10 +44,10 @@ export const SearchProcess: React.FC<SearchProcessProps> = ({ queries, entryPoin
         ) : (
         !entryPoint && <div className="text-xs text-slate-500 italic pl-3">Analyzing search results...</div>
         )}
-        {entryPoint && (
+        {sanitizedEntryPoint && (
             <div
                 className="mt-2 overflow-hidden rounded bg-white text-black"
-                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(entryPoint) }}
+                dangerouslySetInnerHTML={{ __html: sanitizedEntryPoint }}
             />
         )}
     </div>

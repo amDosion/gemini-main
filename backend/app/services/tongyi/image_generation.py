@@ -24,6 +24,7 @@ from .base import (
     is_wan27_image_model,
 )
 from ...utils.attachment_handler import is_http_url
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +118,14 @@ class ImageGenerationService:
                     request.prompt = optimize_result.optimized_prompt
                     optimized_prompt = optimize_result.optimized_prompt
                     logger.info(f"[ImageGenerationService] ✅ [Prompt优化] 优化成功: language={optimize_result.language}")
-                    logger.info(f"[ImageGenerationService]     - 原始: {original_prompt[:50]}...")
-                    logger.info(f"[ImageGenerationService]     - 优化后: {optimized_prompt[:80]}...")
+                    logger.info(
+                        "[ImageGenerationService]     - 原始: %s",
+                        summarize_text_for_log(original_prompt, label="original_prompt"),
+                    )
+                    logger.info(
+                        "[ImageGenerationService]     - 优化后: %s",
+                        summarize_text_for_log(optimized_prompt, label="optimized_prompt"),
+                    )
                 else:
                     logger.warning(f"[ImageGenerationService] ⚠️ [Prompt优化] 优化失败，使用原始 Prompt: {optimize_result.error}")
             except Exception as e:
@@ -127,13 +134,16 @@ class ImageGenerationService:
         logger.info(f"[ImageGenerationService] ========== 开始图片生成 ==========")
         logger.info(f"[ImageGenerationService] 📥 请求参数:")
         logger.info(f"[ImageGenerationService]     - model_id: {request.model_id}")
-        logger.info(f"[ImageGenerationService]     - prompt: {request.prompt[:100] + '...' if len(request.prompt) > 100 else request.prompt}")
+        logger.info(f"[ImageGenerationService]     - prompt: {summarize_text_for_log(request.prompt, label='prompt')}")
         logger.info(f"[ImageGenerationService]     - prompt长度: {len(request.prompt)}")
         logger.info(f"[ImageGenerationService]     - aspect_ratio: {request.aspect_ratio}")
         logger.info(f"[ImageGenerationService]     - resolution: {request.resolution}")
         logger.info(f"[ImageGenerationService]     - num_images: {request.num_images}")
         if request.negative_prompt:
-            logger.info(f"[ImageGenerationService]     - negative_prompt: {request.negative_prompt[:50] + '...' if len(request.negative_prompt) > 50 else request.negative_prompt}")
+            logger.info(
+                "[ImageGenerationService]     - negative_prompt: %s",
+                summarize_text_for_log(request.negative_prompt, label="negative_prompt"),
+            )
         if request.seed is not None:
             logger.info(f"[ImageGenerationService]     - seed: {request.seed}")
         if request.style:

@@ -19,6 +19,7 @@ from ...services.storage.local_provider import (
     resolve_local_public_file_path,
 )
 from ...utils.attachment_handler import is_base64_url
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 from ...utils.url_security import get_with_redirect_guard, validate_outbound_http_url
 from ._shared import (
     IMAGE_EDIT_ALLOWED_OPTION_KEYS,
@@ -62,7 +63,10 @@ class ImageEditor:
             client=kwargs.get("client"),
         )
 
-        logger.info(f"[OpenAI ImageEditor] Initialized with base_url={self.base_url}")
+        logger.info(
+            "[OpenAI ImageEditor] Initialized with base_url=%s",
+            summarize_url_for_log(self.base_url),
+        )
 
     async def edit_image(
         self,
@@ -72,7 +76,11 @@ class ImageEditor:
     ) -> List[Dict[str, Any]]:
         operation_start = time.perf_counter()
         try:
-            logger.info(f"[OpenAI ImageEditor] Image edit: model={model}, prompt={prompt[:50]}...")
+            logger.info(
+                "[OpenAI ImageEditor] Image edit: model=%s, prompt=%s",
+                model,
+                summarize_text_for_log(prompt, label="prompt"),
+            )
             references = self._extract_reference_sources(kwargs)
             enhanced_prompt = None
             effective_prompt = prompt
@@ -177,7 +185,10 @@ class ImageEditor:
             )
             return results
         except Exception as exc:
-            logger.error(f"[OpenAI ImageEditor] Image edit error: {exc}", exc_info=True)
+            logger.error(
+                "[OpenAI ImageEditor] Image edit error: %s",
+                summarize_text_for_log(exc, label="error"),
+            )
             raise
 
     async def _call_edit_image_api(
@@ -251,7 +262,7 @@ class ImageEditor:
             request_kwargs.get("n", 1),
             request_kwargs.get("quality"),
             request_kwargs.get("output_format"),
-            self.base_url,
+            summarize_url_for_log(self.base_url),
             self.image_timeout,
             self.image_max_retries,
             len(prompt or ""),

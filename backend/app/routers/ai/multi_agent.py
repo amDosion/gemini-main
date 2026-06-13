@@ -8,8 +8,8 @@ Multi-Agent API Router - 多智能体系统 API 路由
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Request, Query, Response
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Any, Callable
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel
+from typing import Annotated, Optional, List, Dict, Any, Callable, Union
 from sqlalchemy.orm import Session
 import logging
 import time
@@ -61,6 +61,7 @@ from ...services.gemini.agent.memory_manager import MemoryManager
 from ...services.gemini.agent.memory_bank_service import VertexAiMemoryBankService
 from ...services.common.provider_factory import ProviderFactory
 from ...utils.attachment_handler import is_base64_url, is_blob_url
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -112,11 +113,57 @@ _SHEET_STAGE_MAX_SESSION_CACHE_SIZE = 2000
 _SHEET_STAGE_SESSIONS: Dict[str, Dict[str, Any]] = {}
 _sheet_stage_runtime_store = get_default_sheet_stage_runtime_store()
 _sheet_stage_artifact_service = get_default_sheet_stage_artifact_service()
+FREE_TEXT_PATTERN = r"^[\s\S]*$"
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+MULTI_AGENT_TEXT_MAX_LENGTH = 100_000
+MULTI_AGENT_SHORT_TEXT_MAX_LENGTH = 512
+MULTI_AGENT_URL_MAX_LENGTH = 4096
+MULTI_AGENT_MAX_IDS = 64
+MULTI_AGENT_MAX_TOOLS = 128
+ADK_LIVE_MAX_REQUESTS = 64
+ADK_LIVE_MAX_EVENTS = 1000
+SHEET_STAGE_MAX_CONTENT_LENGTH = 5_000_000
+SHEET_STAGE_MAX_SAMPLE_ROWS = 1000
+TICKET_TIMESTAMP_MAX_MS = 4_102_444_800_000
+
+NoControlText = Annotated[
+    str,
+    Field(max_length=MULTI_AGENT_SHORT_TEXT_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN),
+]
+FreeText = Annotated[
+    str,
+    Field(max_length=MULTI_AGENT_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN),
+]
+SheetNameValue = Union[
+    Annotated[int, Field(ge=0, le=10_000)],
+    Annotated[str, Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)],
+]
+TicketTimestampValue = Union[
+    Annotated[int, Field(ge=0, le=TICKET_TIMESTAMP_MAX_MS)],
+    Annotated[float, Field(ge=0, le=TICKET_TIMESTAMP_MAX_MS)],
+    Annotated[str, Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)],
+]
+TicketTtlValue = Union[
+    Annotated[int, Field(ge=1, le=ADK_CONFIRM_TICKET_MAX_TTL_SECONDS)],
+    Annotated[float, Field(ge=1, le=ADK_CONFIRM_TICKET_MAX_TTL_SECONDS)],
+    Annotated[str, Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)],
+]
+LooseJsonPayload = Union[Dict[str, Any], List[Any], str, int, float, bool]
+MultiAgentJsonObject = Annotated[Dict[str, JsonValue], Field(max_length=256)]
+
+
+def _json_response(model: type[BaseModel] | type[RootModel[Any]], description: str) -> dict[int, dict[str, Any]]:
+    return {200: {"model": model, "description": description}}
 
 
 # ==================== Health Check Endpoint ====================
 
-@router.get("/health")
+class MultiAgentHealthResponse(BaseModel):
+    status: str = Field(max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    message: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+@router.get("/health", response_model=MultiAgentHealthResponse)
 async def health_check():
     """健康检查端点，用于验证路由是否正常工作"""
     return {"status": "ok", "message": "Multi-Agent API is working"}
@@ -126,87 +173,170 @@ async def health_check():
 
 class OrchestrateRequest(BaseModel):
     """编排任务请求"""
-    task: str
-    agent_ids: Optional[List[str]] = None
-    mode: Optional[str] = None  # 模式：coordinator, sequential, parallel, default
+    model_config = ConfigDict(extra="forbid")
+
+    task: str = Field(min_length=1, max_length=MULTI_AGENT_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    agent_ids: Optional[List[NoControlText]] = Field(default=None, max_length=MULTI_AGENT_MAX_IDS)
+    mode: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )  # 模式：coordinator, sequential, parallel, default
     workflow_config: Optional[Dict[str, Any]] = None  # 工作流配置（用于 sequential/parallel 模式）
 
 
 class RegisterAgentRequest(BaseModel):
     """注册智能体请求"""
-    name: str
-    agent_type: str
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    agent_type: str = Field(min_length=1, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
     agent_card: Optional[Dict[str, Any]] = None
-    endpoint_url: Optional[str] = None
-    tools: Optional[List[str]] = None  # 工具名称列表
-    mcp_session_id: Optional[str] = None  # MCP 会话 ID（用于加载 MCP 工具）
+    endpoint_url: Optional[str] = Field(default=None, max_length=MULTI_AGENT_URL_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    tools: Optional[List[NoControlText]] = Field(default=None, max_length=MULTI_AGENT_MAX_TOOLS)  # 工具名称列表
+    mcp_session_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)  # MCP 会话 ID（用于加载 MCP 工具）
 
 
 class ADKRunRequest(BaseModel):
     """ADK 运行请求"""
-    input: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+    input: Optional[str] = Field(default=None, max_length=MULTI_AGENT_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
     input_message: Optional[Dict[str, Any]] = None
-    session_id: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
     run_config: Optional[Dict[str, Any]] = None
     state_delta: Optional[Dict[str, Any]] = None
-    invocation_id: Optional[str] = None
+    invocation_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
 
 
 class ADKLiveRunRequest(BaseModel):
     """ADK live 运行请求"""
-    input: Optional[str] = None
-    session_id: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+    input: Optional[str] = Field(default=None, max_length=MULTI_AGENT_TEXT_MAX_LENGTH, pattern=FREE_TEXT_PATTERN)
+    session_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
     run_config: Optional[Dict[str, Any]] = None
-    live_requests: Optional[List[Dict[str, Any]]] = None
+    live_requests: Optional[List[Dict[str, Any]]] = Field(default=None, max_length=ADK_LIVE_MAX_REQUESTS)
     close_queue: Optional[bool] = True
-    max_events: Optional[int] = 200
+    max_events: Optional[int] = Field(default=200, ge=1, le=ADK_LIVE_MAX_EVENTS)
 
 
 class ADKToolConfirmationRequest(BaseModel):
     """ADK 工具确认恢复请求"""
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    function_call_id: str = Field(..., alias="functionCallId")
+    function_call_id: str = Field(..., alias="functionCallId", max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
     confirmed: Optional[bool] = False
-    hint: Optional[str] = None
-    payload: Optional[Any] = None
-    invocation_id: Optional[str] = Field(default=None, alias="invocationId")
-    nonce: Optional[str] = None
+    hint: Optional[str] = Field(default=None, max_length=4096, pattern=FREE_TEXT_PATTERN)
+    payload: Optional[LooseJsonPayload] = None
+    invocation_id: Optional[str] = Field(default=None, alias="invocationId", max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    nonce: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
     approval_ticket: Optional[Dict[str, Any]] = Field(default=None, alias="approvalTicket")
     # 兼容历史前端字段（BE-601），用于物化 approval_ticket 对象。
-    ticket: Optional[Any] = None
-    confirmation_ticket: Optional[Any] = Field(default=None, alias="confirmationTicket")
-    nonce_expires_at: Optional[Any] = Field(default=None, alias="nonceExpiresAt")
-    nonce_expiry: Optional[Any] = Field(default=None, alias="nonceExpiry")
-    tenant_id: Optional[str] = Field(default=None, alias="tenantId")
-    ticket_timestamp_ms: Optional[Any] = Field(default=None, alias="ticketTimestampMs")
-    ticket_ttl_seconds: Optional[Any] = Field(default=None, alias="ticketTtlSeconds")
+    ticket: Optional[LooseJsonPayload] = None
+    confirmation_ticket: Optional[LooseJsonPayload] = Field(default=None, alias="confirmationTicket")
+    nonce_expires_at: Optional[TicketTimestampValue] = Field(default=None, alias="nonceExpiresAt")
+    nonce_expiry: Optional[TicketTimestampValue] = Field(default=None, alias="nonceExpiry")
+    tenant_id: Optional[str] = Field(default=None, alias="tenantId", max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    ticket_timestamp_ms: Optional[TicketTimestampValue] = Field(default=None, alias="ticketTimestampMs")
+    ticket_ttl_seconds: Optional[TicketTtlValue] = Field(default=None, alias="ticketTtlSeconds")
     run_config: Optional[Dict[str, Any]] = Field(default=None, alias="runConfig")
 
 
 class ADKRewindRequest(BaseModel):
     """ADK rewind 请求"""
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    rewind_before_invocation_id: str = Field(..., alias="rewindBeforeInvocationId")
+    rewind_before_invocation_id: str = Field(
+        ...,
+        alias="rewindBeforeInvocationId",
+        min_length=1,
+        max_length=256,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )
 
 
 class ADKSessionMemoryIndexRequest(BaseModel):
     """会话记忆索引请求"""
-    memory_bank_id: Optional[str] = None
-    project: Optional[str] = None
-    location: Optional[str] = None
-    agent_engine_id: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+    memory_bank_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    project: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    location: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    agent_engine_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
 
 
 class ADKMemorySearchRequest(BaseModel):
     """记忆搜索请求"""
-    query: str
-    memory_bank_id: Optional[str] = None
-    limit: Optional[int] = 10
-    project: Optional[str] = None
-    location: Optional[str] = None
-    agent_engine_id: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=4096, pattern=FREE_TEXT_PATTERN)
+    memory_bank_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    limit: Optional[int] = Field(default=10, ge=1, le=1000)
+    project: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    location: Optional[str] = Field(default=None, max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    agent_engine_id: Optional[str] = Field(default=None, max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class MultiAgentDynamicObjectResponse(RootModel[MultiAgentJsonObject]):
+    root: MultiAgentJsonObject
+
+
+class MultiAgentAgentListResponse(BaseModel):
+    agents: List[MultiAgentJsonObject] = Field(default_factory=list, max_length=10_000)
+    count: int = Field(ge=0, le=10_000)
+
+
+class ADKRunResponse(BaseModel):
+    status: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    agent_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    agent_name: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    provider_id: str = Field(max_length=128, pattern=NO_CONTROL_CHARS_PATTERN)
+    model_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    session_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    invocation_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    output: str = Field(max_length=1_000_000, pattern=FREE_TEXT_PATTERN)
+    usage: Dict[str, JsonValue] = Field(default_factory=dict, max_length=64)
+    event_count: int = Field(ge=0, le=10_000)
+    actions: Dict[str, JsonValue] = Field(default_factory=dict, max_length=256)
+    long_running_tool_ids: List[NoControlText] = Field(default_factory=list, max_length=128)
+    response_signature: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    action_signature: str = Field(max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class ADKLiveRunResponse(ADKRunResponse):
+    events: List[MultiAgentJsonObject] = Field(default_factory=list, max_length=ADK_LIVE_MAX_EVENTS)
+
+
+class ADKSessionListResponse(BaseModel):
+    agent_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    sessions: List[MultiAgentJsonObject] = Field(default_factory=list, max_length=10_000)
+    count: int = Field(ge=0, le=10_000)
+
+
+class ADKSessionDetailResponse(BaseModel):
+    agent_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    session: MultiAgentJsonObject
+
+
+class ADKMemoryIndexResponse(BaseModel):
+    status: str = Field(max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    agent_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    session_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    memories: List[MultiAgentJsonObject] = Field(default_factory=list, max_length=10_000)
+    count: int = Field(ge=0, le=10_000)
+
+
+class ADKMemorySearchResponse(BaseModel):
+    agent_id: str = Field(max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    query: str = Field(max_length=4096, pattern=FREE_TEXT_PATTERN)
+    memories: List[MultiAgentJsonObject] = Field(default_factory=list, max_length=1000)
+    count: int = Field(ge=0, le=1000)
+
+
+class ADKSamplesTemplatesResponse(BaseModel):
+    templates: List[MultiAgentJsonObject] = Field(default_factory=list, max_length=1000)
+    count: int = Field(ge=0, le=1000)
 
 
 def _normalize_provider_id(value: Any) -> str:
@@ -1217,9 +1347,20 @@ def _build_sheet_ingest_kwargs(
         kwargs["data_url"] = str(request_body.data_url or "")
         return kwargs
 
-    if str(request_body.file_url or "").strip():
-        kwargs["file_url"] = str(request_body.file_url or "")
-        return kwargs
+    normalized_file_url = str(request_body.file_url or "").strip()
+    if normalized_file_url:
+        lower_file_url = normalized_file_url.lower()
+        if is_base64_url(normalized_file_url):
+            kwargs["data_url"] = normalized_file_url
+            return kwargs
+        if lower_file_url.startswith(("http://", "https://")):
+            _validate_excel_reference_suffix(normalized_file_url)
+            kwargs["file_url"] = normalized_file_url
+            return kwargs
+        raise HTTPException(
+            status_code=400,
+            detail="file_url only supports http/https/data URL for excel workflow",
+        )
 
     file_reference = _resolve_excel_file_reference(
         db=db,
@@ -1644,8 +1785,11 @@ def _classify_orchestration_http_error(exc: HTTPException) -> Dict[str, Any]:
             classified = _classify_orchestration_http_exception(exc)
             if isinstance(classified, dict):
                 return classified
-        except Exception:
-            logger.warning("[Multi-Agent API] classify_orchestration_http_exception failed", exc_info=True)
+        except Exception as log_exc:
+            logger.warning(
+                "[Multi-Agent API] classify_orchestration_http_exception failed: %s",
+                summarize_text_for_log(log_exc, label="error"),
+            )
 
     status_code = int(exc.status_code)
     cause = str(exc.detail or "").strip() or "orchestration request failed"
@@ -1788,6 +1932,7 @@ async def _execute_orchestration_with_runtime_contract(
     "/orchestrate",
     deprecated=True,
     summary="Legacy multi-agent orchestrator (compatibility only)",
+    responses=_json_response(MultiAgentDynamicObjectResponse, "Legacy orchestration result"),
 )
 async def orchestrate(
     request_body: OrchestrateRequest,
@@ -1821,7 +1966,10 @@ async def orchestrate(
                 db=db
             )
         except Exception as e:
-            logger.warning(f"[Multi-Agent API] Failed to create GoogleService for smart decomposition: {e}")
+            logger.warning(
+                "[Multi-Agent API] Failed to create GoogleService for smart decomposition: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             # 继续使用简单任务分解
         
         # 根据模式选择执行方式
@@ -1940,11 +2088,17 @@ async def orchestrate(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Multi-Agent API] Error orchestrating task: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] Error orchestrating task: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to orchestrate task")
 
 
-@router.get("/agents")
+@router.get(
+    "/agents",
+    responses=_json_response(MultiAgentAgentListResponse, "Available agent list"),
+)
 async def list_agents(
     agent_type: Optional[str] = None,
     user_id: str = Depends(require_current_user),
@@ -1967,11 +2121,17 @@ async def list_agents(
         return {"agents": agents, "count": len(agents)}
         
     except Exception as e:
-        logger.error(f"[Multi-Agent API] Error listing agents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] Error listing agents: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to list agents")
 
 
-@router.post("/agents/register")
+@router.post(
+    "/agents/register",
+    responses=_json_response(MultiAgentDynamicObjectResponse, "Registered agent"),
+)
 async def register_agent(
     request_body: RegisterAgentRequest,
     user_id: str = Depends(require_current_user),
@@ -1999,17 +2159,24 @@ async def register_agent(
         return agent
         
     except Exception as e:
-        logger.error(f"[Multi-Agent API] Error registering agent: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] Error registering agent: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to register agent")
 
 
 # ==================== Runtime API (primary alias + legacy ADK compatibility) ====================
 
-@router.post("/agents/{agent_id}/runtime/run")
+@router.post(
+    "/agents/{agent_id}/runtime/run",
+    responses=_json_response(ADKRunResponse, "ADK runtime run result"),
+)
 @router.post(
     "/adk/agents/{agent_id}/run",
     deprecated=True,
     summary="Legacy ADK runtime run endpoint (compatibility only)",
+    responses=_json_response(ADKRunResponse, "ADK runtime run result"),
 )
 async def adk_run_agent(
     agent_id: str,
@@ -2065,15 +2232,22 @@ async def adk_run_agent(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("[Multi-Agent API] ADK run failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] ADK run failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="ADK run failed")
 
 
-@router.post("/agents/{agent_id}/runtime/run-live")
+@router.post(
+    "/agents/{agent_id}/runtime/run-live",
+    responses=_json_response(ADKLiveRunResponse, "ADK runtime live run result"),
+)
 @router.post(
     "/adk/agents/{agent_id}/run-live",
     deprecated=True,
     summary="Legacy ADK runtime live endpoint (compatibility only)",
+    responses=_json_response(ADKLiveRunResponse, "ADK runtime live run result"),
 )
 async def adk_run_live_agent(
     agent_id: str,
@@ -2188,15 +2362,22 @@ async def adk_run_live_agent(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("[Multi-Agent API] ADK run_live failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] ADK run_live failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="ADK live run failed")
 
 
-@router.post("/agents/{agent_id}/runtime/sessions/{session_id}/confirm-tool")
+@router.post(
+    "/agents/{agent_id}/runtime/sessions/{session_id}/confirm-tool",
+    responses=_json_response(ADKRunResponse, "ADK tool confirmation run result"),
+)
 @router.post(
     "/adk/agents/{agent_id}/sessions/{session_id}/confirm-tool",
     deprecated=True,
     summary="Legacy ADK confirm-tool endpoint (compatibility only)",
+    responses=_json_response(ADKRunResponse, "ADK tool confirmation run result"),
 )
 async def confirm_adk_tool_call(
     agent_id: str,
@@ -2277,15 +2458,22 @@ async def confirm_adk_tool_call(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("[Multi-Agent API] ADK tool confirmation failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] ADK tool confirmation failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="ADK tool confirmation failed")
 
 
-@router.get("/agents/{agent_id}/runtime/sessions")
+@router.get(
+    "/agents/{agent_id}/runtime/sessions",
+    responses=_json_response(ADKSessionListResponse, "ADK runtime sessions"),
+)
 @router.get(
     "/adk/agents/{agent_id}/sessions",
     deprecated=True,
     summary="Legacy ADK session list endpoint (compatibility only)",
+    responses=_json_response(ADKSessionListResponse, "ADK runtime sessions"),
 )
 @case_conversion_options(always_convert_response=True)
 async def list_adk_agent_sessions(
@@ -2314,15 +2502,22 @@ async def list_adk_agent_sessions(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("[Multi-Agent API] ADK list sessions failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] ADK list sessions failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to list ADK sessions")
 
 
-@router.get("/agents/{agent_id}/runtime/sessions/{session_id}")
+@router.get(
+    "/agents/{agent_id}/runtime/sessions/{session_id}",
+    responses=_json_response(ADKSessionDetailResponse, "ADK runtime session snapshot"),
+)
 @router.get(
     "/adk/agents/{agent_id}/sessions/{session_id}",
     deprecated=True,
     summary="Legacy ADK session detail endpoint (compatibility only)",
+    responses=_json_response(ADKSessionDetailResponse, "ADK runtime session snapshot"),
 )
 @case_conversion_options(always_convert_response=True)
 async def get_adk_agent_session(
@@ -2353,15 +2548,22 @@ async def get_adk_agent_session(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("[Multi-Agent API] ADK get session failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] ADK get session failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to get ADK session")
 
 
-@router.post("/agents/{agent_id}/runtime/sessions/{session_id}/rewind")
+@router.post(
+    "/agents/{agent_id}/runtime/sessions/{session_id}/rewind",
+    responses=_json_response(MultiAgentDynamicObjectResponse, "ADK runtime rewind result"),
+)
 @router.post(
     "/adk/agents/{agent_id}/sessions/{session_id}/rewind",
     deprecated=True,
     summary="Legacy ADK rewind endpoint (compatibility only)",
+    responses=_json_response(MultiAgentDynamicObjectResponse, "ADK runtime rewind result"),
 )
 async def rewind_adk_agent_session(
     agent_id: str,
@@ -2393,15 +2595,22 @@ async def rewind_adk_agent_session(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("[Multi-Agent API] ADK rewind failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] ADK rewind failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="ADK rewind failed")
 
 
-@router.post("/agents/{agent_id}/runtime/sessions/{session_id}/memory/index")
+@router.post(
+    "/agents/{agent_id}/runtime/sessions/{session_id}/memory/index",
+    responses=_json_response(ADKMemoryIndexResponse, "ADK session memory index result"),
+)
 @router.post(
     "/adk/agents/{agent_id}/sessions/{session_id}/memory/index",
     deprecated=True,
     summary="Legacy ADK memory index endpoint (compatibility only)",
+    responses=_json_response(ADKMemoryIndexResponse, "ADK session memory index result"),
 )
 async def index_adk_session_memory(
     agent_id: str,
@@ -2438,15 +2647,22 @@ async def index_adk_session_memory(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("[Multi-Agent API] ADK memory index failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] ADK memory index failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="ADK memory index failed")
 
 
-@router.post("/agents/{agent_id}/runtime/memory/search")
+@router.post(
+    "/agents/{agent_id}/runtime/memory/search",
+    responses=_json_response(ADKMemorySearchResponse, "ADK memory search result"),
+)
 @router.post(
     "/adk/agents/{agent_id}/memory/search",
     deprecated=True,
     summary="Legacy ADK memory search endpoint (compatibility only)",
+    responses=_json_response(ADKMemorySearchResponse, "ADK memory search result"),
 )
 async def search_adk_memory(
     agent_id: str,
@@ -2490,8 +2706,11 @@ async def search_adk_memory(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("[Multi-Agent API] ADK memory search failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] ADK memory search failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="ADK memory search failed")
 
 
 # ==================== Workflow Templates API ====================
@@ -2514,26 +2733,36 @@ class ExcelAnalysisWorkflowRequest(BaseModel):
 
 class SheetStageProtocolRequest(BaseModel):
     """Sheet stage protocol v1 请求。"""
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    protocol_version: Optional[str] = Field(default=SHEET_STAGE_PROTOCOL_VERSION, alias="protocolVersion")
-    stage: str
-    session_id: Optional[str] = Field(default=None, alias="sessionId")
-    invocation_id: Optional[str] = Field(default=None, alias="invocationId")
+    protocol_version: Optional[str] = Field(
+        default=SHEET_STAGE_PROTOCOL_VERSION,
+        alias="protocolVersion",
+        max_length=32,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )
+    stage: str = Field(min_length=1, max_length=64, pattern=NO_CONTROL_CHARS_PATTERN)
+    session_id: Optional[str] = Field(default=None, alias="sessionId", max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    invocation_id: Optional[str] = Field(default=None, alias="invocationId", max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
     artifact: Optional[Dict[str, Any]] = None
-    attachment_id: Optional[str] = Field(default=None, alias="attachmentId")
-    file_url: Optional[str] = Field(default=None, alias="fileUrl")
-    file_path: Optional[str] = Field(default=None, alias="filePath")
-    file_name: Optional[str] = Field(default="sheet.csv", alias="fileName")
-    file_format: Optional[str] = Field(default=None, alias="fileFormat")
-    data_url: Optional[str] = Field(default=None, alias="dataUrl")
-    content: Optional[str] = None
-    content_encoding: Optional[str] = Field(default="plain", alias="contentEncoding")
-    csv_encoding: Optional[str] = Field(default="utf-8", alias="csvEncoding")
-    sheet_name: Optional[Any] = Field(default=0, alias="sheetName")
-    sample_rows: Optional[int] = Field(default=5, alias="sampleRows")
-    query: Optional[str] = None
-    export_format: Optional[str] = Field(default="markdown", alias="exportFormat")
+    attachment_id: Optional[str] = Field(default=None, alias="attachmentId", max_length=256, pattern=NO_CONTROL_CHARS_PATTERN)
+    file_url: Optional[str] = Field(default=None, alias="fileUrl", max_length=MULTI_AGENT_URL_MAX_LENGTH, pattern=NO_CONTROL_CHARS_PATTERN)
+    file_path: Optional[str] = Field(
+        default=None,
+        alias="filePath",
+        max_length=MULTI_AGENT_URL_MAX_LENGTH,
+        pattern=NO_CONTROL_CHARS_PATTERN,
+    )
+    file_name: Optional[str] = Field(default="sheet.csv", alias="fileName", max_length=512, pattern=NO_CONTROL_CHARS_PATTERN)
+    file_format: Optional[str] = Field(default=None, alias="fileFormat", max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    data_url: Optional[str] = Field(default=None, alias="dataUrl", max_length=SHEET_STAGE_MAX_CONTENT_LENGTH)
+    content: Optional[str] = Field(default=None, max_length=SHEET_STAGE_MAX_CONTENT_LENGTH, pattern=FREE_TEXT_PATTERN)
+    content_encoding: Optional[str] = Field(default="plain", alias="contentEncoding", max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    csv_encoding: Optional[str] = Field(default="utf-8", alias="csvEncoding", max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
+    sheet_name: Optional[SheetNameValue] = Field(default=0, alias="sheetName")
+    sample_rows: Optional[int] = Field(default=5, alias="sampleRows", ge=1, le=SHEET_STAGE_MAX_SAMPLE_ROWS)
+    query: Optional[str] = Field(default=None, max_length=100_000, pattern=FREE_TEXT_PATTERN)
+    export_format: Optional[str] = Field(default="markdown", alias="exportFormat", max_length=32, pattern=NO_CONTROL_CHARS_PATTERN)
 
 
 def _resolve_sheet_stage_from_artifact_key(artifact_key: str) -> str:
@@ -2543,7 +2772,10 @@ def _resolve_sheet_stage_from_artifact_key(artifact_key: str) -> str:
     return "ingest"
 
 
-@router.post("/workflows/excel-analysis/stage")
+@router.post(
+    "/workflows/excel-analysis/stage",
+    responses=_json_response(MultiAgentDynamicObjectResponse, "Sheet stage protocol response"),
+)
 async def execute_sheet_stage_protocol(
     request_body: SheetStageProtocolRequest,
     user_id: str = Depends(require_current_user),
@@ -2594,17 +2826,23 @@ async def execute_sheet_stage_protocol(
             error_code="SHEET_STAGE_FORBIDDEN",
         )
     except Exception as exc:
-        logger.error("[Multi-Agent API] Sheet stage protocol failed: %s", exc, exc_info=True)
+        logger.error(
+            "[Multi-Agent API] Sheet stage protocol failed: %s",
+            summarize_text_for_log(exc, label="error"),
+        )
         _raise_sheet_stage_http_error(
             status_code=500,
             stage=requested_stage,
             session_id=requested_session_id,
-            message=str(exc),
+            message="Sheet stage protocol failed",
             error_code="SHEET_STAGE_INTERNAL_ERROR",
         )
 
 
-@router.get("/workflows/excel-analysis/stage/lineage")
+@router.get(
+    "/workflows/excel-analysis/stage/lineage",
+    responses=_json_response(MultiAgentDynamicObjectResponse, "Sheet stage artifact lineage"),
+)
 async def query_sheet_stage_artifact_lineage(
     session_id: str = Query(..., alias="sessionId"),
     artifact_key: str = Query(..., alias="artifactKey"),
@@ -2685,17 +2923,23 @@ async def query_sheet_stage_artifact_lineage(
             error_code="SHEET_STAGE_INVALID_REQUEST",
         )
     except Exception as exc:
-        logger.error("[Multi-Agent API] Sheet stage lineage query failed: %s", exc, exc_info=True)
+        logger.error(
+            "[Multi-Agent API] Sheet stage lineage query failed: %s",
+            summarize_text_for_log(exc, label="error"),
+        )
         _raise_sheet_stage_http_error(
             status_code=500,
             stage=normalized_stage,
             session_id=normalized_session_id,
-            message=str(exc),
+            message="Sheet stage lineage query failed",
             error_code="SHEET_STAGE_INTERNAL_ERROR",
         )
 
 
-@router.post("/workflows/image-edit")
+@router.post(
+    "/workflows/image-edit",
+    responses=_json_response(MultiAgentDynamicObjectResponse, "Image edit workflow result"),
+)
 async def execute_image_edit_workflow(
     request_body: ImageEditWorkflowRequest,
     user_id: str = Depends(require_current_user),
@@ -2728,11 +2972,17 @@ async def execute_image_edit_workflow(
         return result
 
     except Exception as e:
-        logger.error(f"[Multi-Agent API] Error executing image edit workflow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] Error executing image edit workflow: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Image edit workflow failed")
 
 
-@router.post("/workflows/excel-analysis")
+@router.post(
+    "/workflows/excel-analysis",
+    responses=_json_response(MultiAgentDynamicObjectResponse, "Excel analysis workflow result"),
+)
 async def execute_excel_analysis_workflow(
     request_body: ExcelAnalysisWorkflowRequest,
     user_id: str = Depends(require_current_user),
@@ -2779,13 +3029,19 @@ async def execute_excel_analysis_workflow(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Multi-Agent API] Error executing Excel analysis workflow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] Error executing Excel analysis workflow: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Excel analysis workflow failed")
 
 
 # ==================== ADK Samples Template Import API ====================
 
-@router.get("/workflows/adk-samples/templates")
+@router.get(
+    "/workflows/adk-samples/templates",
+    responses=_json_response(ADKSamplesTemplatesResponse, "Available ADK sample templates"),
+)
 async def list_adk_samples_templates(
     request_obj: Request,
     db: Session = Depends(get_db),
@@ -2803,8 +3059,11 @@ async def list_adk_samples_templates(
         templates = await importer.list_available_templates()
         return {"templates": templates, "count": len(templates)}
     except Exception as e:
-        logger.error(f"[Multi-Agent API] Error listing ADK samples templates: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] Error listing ADK samples templates: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to list ADK sample templates")
 
 
 class ImportADKSampleRequest(BaseModel):
@@ -2814,7 +3073,10 @@ class ImportADKSampleRequest(BaseModel):
     is_public: Optional[bool] = False  # snake_case
 
 
-@router.post("/workflows/adk-samples/import")
+@router.post(
+    "/workflows/adk-samples/import",
+    responses=_json_response(MultiAgentDynamicObjectResponse, "Imported ADK sample template"),
+)
 async def import_adk_samples_template(
     request_body: ImportADKSampleRequest,
     user_id: str = Depends(require_current_user),
@@ -2843,11 +3105,17 @@ async def import_adk_samples_template(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"[Multi-Agent API] Error importing ADK samples template: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] Error importing ADK samples template: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to import ADK sample template")
 
 
-@router.post("/workflows/adk-samples/import-all")
+@router.post(
+    "/workflows/adk-samples/import-all",
+    responses=_json_response(ADKSamplesTemplatesResponse, "Imported ADK sample templates"),
+)
 async def import_all_adk_samples_templates(
     is_public: bool = False,  # snake_case Query 参数
     user_id: str = Depends(require_current_user),
@@ -2872,5 +3140,8 @@ async def import_all_adk_samples_templates(
         return {"templates": templates, "count": len(templates)}
         
     except Exception as e:
-        logger.error(f"[Multi-Agent API] Error importing all ADK samples templates: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Multi-Agent API] Error importing all ADK samples templates: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Failed to import ADK sample templates")

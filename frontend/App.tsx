@@ -6,13 +6,9 @@ import { llmService } from './services/llmService';
 import { initGlobalErrorHandlers, registerGlobalErrorNotifier } from './utils/globalErrorHandler';
 import { ConfigProfile } from './services/db'; // ✅ 新增：ConfigProfile 类型
 
-// Cleaner Imports via Barrel Files
-import {
-  SettingsModal,
-  LoadingSpinner,
-  ErrorView,
-  WelcomeScreen,
-} from './components';
+import { LoadingSpinner } from './components/common/LoadingSpinner';
+import { ErrorView } from './components/common/ErrorView';
+import { WelcomeScreen } from './components/common/WelcomeScreen';
 import { getErrorMessage } from './utils/errorMessage';
 
 import {
@@ -48,6 +44,10 @@ import { authService } from './services/auth';
 import { isStudioAppMode } from './utils/appModes';
 import { AppShell } from './components/app/AppShell';
 import { useWorkspaceModeHandlers } from './hooks/useWorkspaceModeHandlers';
+
+const SettingsModal = React.lazy(() =>
+  import('./components/modals/SettingsModal').then((m) => ({ default: m.SettingsModal }))
+);
 
 const AppContent: React.FC = () => {
   // --- Router Hooks ---
@@ -618,24 +618,26 @@ const AppContent: React.FC = () => {
   // --- 准备 SettingsModal（需要在所有地方都能访问） ---
   // ✅ 必须在 Early Return 之前定义，否则会报错 "Cannot access before initialization"
   const settingsModal = isSettingsOpen && (
-    <SettingsModal
-      isOpen={isSettingsOpen}
-      onClose={() => setIsSettingsOpen(false)}
-      profiles={profiles}
-      activeProfileId={activeProfileId}
-      onSaveProfile={saveProfile}
-      onDeleteProfile={deleteProfile}
-      onActivateProfile={activateProfile}
-      storageConfigs={storageConfigs}
-      activeStorageId={activeStorageId}
-      onSaveStorage={handleSaveStorage}
-      onDeleteStorage={handleDeleteStorage}
-      onActivateStorage={handleActivateStorage}
-      initialApiKey={config.apiKey}
-      initialBaseUrl={config.baseUrl}
-      hiddenModelIds={hiddenModelIds}
-      initialTab={settingsInitialTab}
-    />
+    <React.Suspense fallback={<LoadingSpinner fullscreen={false} showMessage={false} />}>
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        profiles={profiles}
+        activeProfileId={activeProfileId}
+        onSaveProfile={saveProfile}
+        onDeleteProfile={deleteProfile}
+        onActivateProfile={activateProfile}
+        storageConfigs={storageConfigs}
+        activeStorageId={activeStorageId}
+        onSaveStorage={handleSaveStorage}
+        onDeleteStorage={handleDeleteStorage}
+        onActivateStorage={handleActivateStorage}
+        initialApiKey={config.apiKey}
+        initialBaseUrl={config.baseUrl}
+        hiddenModelIds={hiddenModelIds}
+        initialTab={settingsInitialTab}
+      />
+    </React.Suspense>
   );
 
   // ✅ 优化：统一加载状态（合并认证和初始化加载）

@@ -48,6 +48,42 @@ describe('RetainedImage', () => {
     );
   });
 
+  it('does not render internal local-blob image keys', () => {
+    render(
+      <RetainedImage
+        src="local-blob:retained-file-only-image"
+        alt="Internal Preview"
+      />
+    );
+
+    expect(screen.queryByAltText('Internal Preview')).toBeNull();
+    expect(mediaCacheMock.retainMediaObjectUrl).not.toHaveBeenCalled();
+  });
+
+  it('renders safe inline raster image data urls', () => {
+    render(
+      <RetainedImage
+        src="data:image/png;base64,YWJj"
+        alt="Inline Raster Preview"
+      />
+    );
+
+    expect(screen.getByAltText('Inline Raster Preview').getAttribute('src')).toBe(
+      'data:image/png;base64,YWJj'
+    );
+  });
+
+  it('does not render inline svg image data urls', () => {
+    render(
+      <RetainedImage
+        src="data:image/svg+xml;base64,PHN2Zy8+"
+        alt="Inline Svg Preview"
+      />
+    );
+
+    expect(screen.queryByAltText('Inline Svg Preview')).toBeNull();
+  });
+
   it('lets callers recover failed retained image blobs before surfacing onError', () => {
     const onRecoverImageError = vi.fn(() => true);
     const onError = vi.fn();

@@ -19,7 +19,7 @@ mock ONLY the external boundaries:
   * provider services (``generate_image`` / ``edit_image`` / ``expand_image`` / ``chat``)
   * provider profile ranking / candidate model listing / reference-image normalization
   * the MCP manager and per-user MCP config DB row
-  * the network (DuckDuckGo ``urlopen`` via ``fetch_duckduckgo_results``)
+  * the network (DuckDuckGo guarded fetch via ``fetch_duckduckgo_results``)
   * the browser functions (``read_webpage`` / ``selenium_browse``)
 
 The module-under-test's own logic (mode routing, kwargs assembly, retry loop,
@@ -38,9 +38,12 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.agent.execution_context import ExecutionContext
-from app.services.agent.workflow_engine import WorkflowEngine
-from app.services.agent.workflow_engine import builtin_tools, flow_control, image_pipeline
-
+from app.services.agent.workflow_engine import (
+    WorkflowEngine,
+    builtin_tools,
+    flow_control,
+    image_pipeline,
+)
 
 # ---------------------------------------------------------------------------
 # Fakes / fixtures
@@ -1229,6 +1232,39 @@ class TestNormalizeSearchItems:
 
     def test_invalid_json_string_yields_empty(self):
         assert builtin_tools.normalize_search_items("not json", max_items=5) == []
+
+    def test_fetch_duckduckgo_uses_sync_redirect_guard(self, monkeypatch):
+        calls = []
+
+        class FakeResponse:
+            content = b'{"RelatedTopics":[{"Text":"guarded","FirstURL":"https://example.com/r"}]}'
+
+            def raise_for_status(self):
+                return None
+
+        def fake_guard(url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse()
+
+        monkeypatch.setattr(builtin_tools, "sync_get_with_redirect_guard", fake_guard)
+
+        items = builtin_tools.fetch_duckduckgo_results("ssrf test", "us-en")
+
+        assert items == [
+            {
+                "title": "guarded",
+                "snippet": "guarded",
+                "url": "https://example.com/r",
+            }
+        ]
+        assert calls
+        url, kwargs = calls[0]
+        assert url.startswith("https://api.duckduckgo.com/?")
+        assert "q=ssrf+test" in url
+        assert "kl=us-en" in url
+        assert kwargs["timeout"] == 8
+        assert kwargs["max_redirects"] == 5
+        assert kwargs["headers"]["Accept"] == "application/json"
 
 
 class TestMcpHelpers:

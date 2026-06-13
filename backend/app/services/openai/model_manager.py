@@ -9,6 +9,7 @@ from typing import List, Optional
 import logging
 from openai import AsyncOpenAI
 
+from ...utils.log_sanitization import summarize_text_for_log
 from ..common.model_capabilities import (
     Capabilities,
     ModelConfig,
@@ -85,12 +86,15 @@ class ModelManager:
                 result.append(config)
 
             result.sort(key=lambda item: (str(item.name or "").lower(), str(item.id or "").lower()))
-            logger.info(f"[OpenAI ModelManager] Found {len(result)} models")
+            logger.info("[OpenAI ModelManager] Found %s models", len(result))
             
             return result
         
         except Exception as e:
-            logger.error(f"[OpenAI ModelManager] Error fetching models: {e}", exc_info=True)
+            logger.error(
+                "[OpenAI ModelManager] Error fetching models: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise
 
     def _build_display_name(self, model_id: str, fallback: str) -> str:

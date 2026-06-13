@@ -2,11 +2,44 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 const proxyDebugEnabled = process.env.VITE_PROXY_DEBUG === '1';
+const DEFAULT_ALLOWED_HOSTS = ['gemini.lspon.com', 'geminiai.lspon.com', 'gemini.dicry.cn'];
+const DEFAULT_DEV_CORS_ORIGINS = ['http://localhost:21573', 'http://127.0.0.1:21573'];
+
+export function shouldEmitBuildSourcemap(value = process.env.VITE_BUILD_SOURCEMAP): boolean {
+  return value === '1';
+}
+
+function splitCsv(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function isHttpOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.origin === value.replace(/\/$/, '');
+  } catch {
+    return false;
+  }
+}
+
+export function resolveAllowedHosts(value = process.env.VITE_ALLOWED_HOSTS): string[] {
+  const hosts = splitCsv(value).filter((host) => host !== '*');
+  return hosts.length > 0 ? hosts : DEFAULT_ALLOWED_HOSTS;
+}
+
+export function resolveDevCorsOrigins(value = process.env.VITE_DEV_CORS_ORIGINS): string[] {
+  const origins = splitCsv(value).filter((origin) => origin !== '*' && isHttpOrigin(origin));
+  return origins.length > 0 ? origins : DEFAULT_DEV_CORS_ORIGINS;
+}
 
 const CHUNK_GROUPS: Record<string, Set<string>> = {
   'react-vendor': new Set(['react', 'react-dom', 'scheduler']),
   'router-vendor': new Set(['react-router', 'react-router-dom']),
   'ui-vendor': new Set(['lucide-react', '@heroicons/react']),
+  'syntax-vendor': new Set(['react-syntax-highlighter', 'refractor']),
   'flow-vendor': new Set([
     'reactflow',
     '@xyflow/react',
@@ -24,8 +57,6 @@ const CHUNK_GROUPS: Record<string, Set<string>> = {
   'markdown-vendor': new Set([
     'react-markdown',
     'rehype-raw',
-    'react-syntax-highlighter',
-    'refractor',
     'parse5',
     'unified',
     'micromark',
@@ -43,6 +74,10 @@ const CHUNK_GROUPS: Record<string, Set<string>> = {
   'sanitize-vendor': new Set(['dompurify']),
 };
 
+function isAntDesignPackage(pkg: string): boolean {
+  return pkg === 'antd' || pkg.startsWith('@ant-design/') || pkg.startsWith('@rc-component/') || pkg.startsWith('rc-');
+}
+
 function resolvePackageName(id: string): string | null {
   const marker = '/node_modules/';
   const markerIndex = id.lastIndexOf(marker);
@@ -58,6 +93,25 @@ function resolvePackageName(id: string): string | null {
     return `${parts[0]}/${parts[1]}`;
   }
   return parts[0];
+}
+
+export function resolveManualChunk(id: string): string | undefined {
+  const pkg = resolvePackageName(id);
+  if (!pkg) {
+    return undefined;
+  }
+
+  if (isAntDesignPackage(pkg)) {
+    return 'antd-vendor';
+  }
+
+  for (const [chunkName, packages] of Object.entries(CHUNK_GROUPS)) {
+    if (packages.has(pkg)) {
+      return chunkName;
+    }
+  }
+
+  return undefined;
 }
 
 // Dev-only: inject the standalone React DevTools agent (`npx react-devtools`,
@@ -107,13 +161,15 @@ export default defineConfig({
     strictPort: false, // 如果端口被占用，自动尝试下一个可用端口
     // 允许的域名：可通过 VITE_ALLOWED_HOSTS（逗号分隔）覆盖，避免把生产域名硬编码到提交里
     // 安全：过滤掉裸 "*" 字面值——Vite 会把 ['*'] 当通配匹配所有 Host，导致 DNS rebinding 攻击面
-    allowedHosts: process.env.VITE_ALLOWED_HOSTS
-      ? process.env.VITE_ALLOWED_HOSTS.split(',')
-          .map((s) => s.trim())
-          .filter((h) => h && h !== '*')
-      : ['gemini.lspon.com', 'geminiai.lspon.com', 'gemini.dicry.cn'],
+    allowedHosts: resolveAllowedHosts(),
     open: '/login', // 自动打开浏览器到登录页面
-    cors: true, // 启用 CORS
+    // Avoid Vite's `cors: true` wildcard in shared/reverse-proxied dev deployments.
+    cors: {
+      origin: resolveDevCorsOrigins(),
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'Authorization', 'X-Request-ID'],
+    },
     hmr: {
       // 协议：默认 wss，保持反向代理(HTTPS 终结)部署兼容；本地纯 HTTP 直连开发用
       // VITE_HMR_PROTOCOL=ws 覆盖（见 scripts/start_all.ps1）。否则浏览器会去连不存在的
@@ -172,26 +228,15 @@ export default defineConfig({
   // Provider API key 现在统一通过 profile UI 配置，由后端加密存储与中转使用。
   // 优化构建配置
   build: {
-    sourcemap: true, // 生成 source map，方便调试
+    // Production source maps expose source structure and increase asset size.
+    // Enable only for explicit deployment debugging.
+    sourcemap: shouldEmitBuildSourcemap(),
     rollupOptions: {
       output: {
         // 手动分包，优化首屏加载与缓存命中。
         // 只固定边界清晰的依赖组；未显式分组的包交给 Rollup 自动归属，
         // 避免把子依赖强塞进 vendor 后形成跨 chunk 循环依赖。
-        manualChunks: (id: string) => {
-          const pkg = resolvePackageName(id);
-          if (!pkg) {
-            return undefined;
-          }
-
-          for (const [chunkName, packages] of Object.entries(CHUNK_GROUPS)) {
-            if (packages.has(pkg)) {
-              return chunkName;
-            }
-          }
-
-          return undefined;
-        },
+        manualChunks: resolveManualChunk,
       },
     },
     // 提高 chunk 大小警告阈值（默认 500kB，使用 Vite 默认值以警示大 chunk）

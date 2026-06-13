@@ -288,6 +288,20 @@ def resolve_safe_redirect_url(current_url: str, location: str) -> str:
     return validate_outbound_http_url(candidate)
 
 
+async def resolve_safe_redirect_url_async(current_url: str, location: str) -> str:
+    """Async counterpart of resolve_safe_redirect_url for event-loop callers."""
+    location_value = str(location or "").strip()
+    if not location_value:
+        raise UnsafeURLError("重定向缺少 Location")
+
+    try:
+        candidate = str(httpx.URL(current_url).join(location_value))
+    except Exception as exc:  # noqa: BLE001 - normalize all parsing failures
+        raise UnsafeURLError("重定向目标非法") from exc
+
+    return await validate_outbound_http_url_async(candidate)
+
+
 async def get_with_redirect_guard(
     client: httpx.AsyncClient,
     url: str,
@@ -303,7 +317,7 @@ async def get_with_redirect_guard(
     # W02R-016: pin DNS resolution to a validated IP at connect time so a
     # rebinding flip between validation and connect cannot reach an internal host.
     _ensure_client_pinned(client)
-    current_url = validate_outbound_http_url(url)
+    current_url = await validate_outbound_http_url_async(url)
     redirect_count = 0
 
     while True:
@@ -314,7 +328,10 @@ async def get_with_redirect_guard(
         if redirect_count >= max_redirects:
             raise UnsafeURLError(f"重定向次数超过限制 ({max_redirects})")
 
-        next_url = resolve_safe_redirect_url(current_url, response.headers.get("location", ""))
+        next_url = await resolve_safe_redirect_url_async(
+            current_url,
+            response.headers.get("location", ""),
+        )
         current_url = next_url
         redirect_count += 1
 
@@ -446,3 +463,13 @@ def _ensure_sync_client_pinned(client: httpx.Client) -> None:
         raise UnsafeURLError("无法为出站连接启用 SSRF 固定后端（httpx 内部结构不兼容）")
     if not isinstance(pool._network_backend, _PinningSyncBackend):
         pool._network_backend = _PinningSyncBackend()
+
+
+def pin_sync_client_for_outbound_guard(client: httpx.Client) -> None:
+    """Public wrapper for callers that need custom sync redirect/allowlist loops.
+
+    Use this when a caller must keep additional per-hop policy checks around a
+    synchronous ``httpx.Client`` request, but still needs the same DNS-pinning
+    egress guard used by ``sync_get_with_redirect_guard``.
+    """
+    _ensure_sync_client_pinned(client)

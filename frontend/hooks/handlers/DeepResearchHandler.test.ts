@@ -7,6 +7,7 @@ vi.mock('../../services/httpProgress', () => ({
 import { DeepResearchHandler } from './DeepResearchHandler';
 import { uploadFormDataWithXhr } from '../../services/httpProgress';
 import type { ExecutionContext } from './types';
+import { DEFAULT_DEEP_RESEARCH_STREAM_POLICY } from '../../services/runtimePolicies';
 
 class MockEventSource {
   static instances: MockEventSource[] = [];
@@ -59,6 +60,75 @@ describe('DeepResearchHandler', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('redacts sensitive credentials from failed research start responses', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/research/stream/start') {
+        return new Response(
+          'start failed for https://files.example.com/start.json?token=secret-start-token&safe=1 with Bearer secret-start-bearer and api_key=secret-start-key',
+          {
+            status: 502,
+            statusText: 'Bad Gateway',
+            headers: { 'Content-Type': 'text/plain' },
+          }
+        );
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const context: ExecutionContext = {
+      sessionId: 's-start',
+      userMessageId: 'u-start',
+      modelMessageId: 'm-start',
+      mode: 'chat',
+      text: '启动失败脱敏测试',
+      attachments: [],
+      currentModel: {
+        id: 'gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro',
+        description: 'test',
+        capabilities: { vision: true, search: true, reasoning: true, coding: true },
+      },
+      options: {
+        enableSearch: false,
+        enableThinking: false,
+        enableCodeExecution: false,
+        enableDeepResearch: true,
+        deepResearchAgentId: 'deep-research-pro-preview-12-2025',
+        imageAspectRatio: '1:1',
+        imageResolution: '1024x1024',
+      },
+      protocol: 'google',
+      llmService: {} as any,
+      storageService: {} as any,
+      pollingManager: {
+        startPolling: vi.fn(async () => undefined),
+        stopPolling: vi.fn(),
+        cleanup: vi.fn(),
+      },
+      registerCancel: vi.fn(),
+    };
+
+    const handler = new DeepResearchHandler();
+    let message = '';
+    try {
+      await handler.execute(context);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toContain('Failed to start research task');
+    expect(message).not.toContain('secret-start-token');
+    expect(message).not.toContain('secret-start-bearer');
+    expect(message).not.toContain('secret-start-key');
+    expect(message).toContain('token=REDACTED');
+    expect(message).toContain('safe=1');
+    expect(message).toContain('Bearer REDACTED');
+    expect(message).toContain('api_key=REDACTED');
   });
 
   it('passes previous_interaction_id and cancels via /api/research/stream/cancel', async () => {
@@ -520,6 +590,130 @@ describe('DeepResearchHandler', () => {
     expect(resumedUpdate).toBeTruthy();
   });
 
+  it('redacts sensitive credentials from failed requires_action submissions', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/research/stream/start') {
+        return new Response(JSON.stringify({ interactionId: 'interaction_action_secret' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (url === '/api/research/stream/action') {
+        return new Response(
+          JSON.stringify({
+            detail:
+              'action failed for https://files.example.com/action.json?token=secret-action-token&safe=1 with Bearer secret-action-bearer and api_key=secret-action-key',
+          }),
+          {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const actionHandlers = new Map<string, (selectedInput: unknown) => Promise<void>>();
+    const context: ExecutionContext = {
+      sessionId: 's-action',
+      userMessageId: 'u-action',
+      modelMessageId: 'm-action',
+      mode: 'chat',
+      text: '动作提交失败脱敏测试',
+      attachments: [],
+      currentModel: {
+        id: 'gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro',
+        description: 'test',
+        capabilities: { vision: true, search: true, reasoning: true, coding: true },
+      },
+      options: {
+        enableSearch: false,
+        enableThinking: false,
+        enableCodeExecution: false,
+        enableDeepResearch: true,
+        deepResearchAgentId: 'deep-research-pro-preview-12-2025',
+        imageAspectRatio: '1:1',
+        imageResolution: '1024x1024',
+      },
+      protocol: 'google',
+      llmService: {} as any,
+      storageService: {} as any,
+      pollingManager: {
+        startPolling: vi.fn(async () => undefined),
+        stopPolling: vi.fn(),
+        cleanup: vi.fn(),
+      },
+      registerCancel: vi.fn(),
+      registerResearchActionHandler: (interactionId, handler) => {
+        if (handler) {
+          actionHandlers.set(interactionId, handler);
+        } else {
+          actionHandlers.delete(interactionId);
+        }
+      },
+    };
+
+    const handler = new DeepResearchHandler();
+    const executionPromise = handler.execute(context);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const sse = MockEventSource.instances[0];
+    expect(sse).toBeTruthy();
+
+    emitSse(sse, {
+      eventType: 'content.delta',
+      eventId: 'evt_action_secret_1',
+      delta: {
+        type: 'function_call',
+        id: 'call_secret_1',
+        name: 'confirm_scope',
+        args: { label: '范围' },
+      },
+    });
+    emitSse(sse, {
+      eventType: 'interaction.status_update',
+      eventId: 'evt_action_secret_2',
+      interaction: {
+        status: 'requires_action',
+        requiresAction: {
+          act: { name: 'confirm_scope' },
+          inputs: ['确认'],
+        },
+      },
+    });
+
+    const submitAction = actionHandlers.get('interaction_action_secret');
+    expect(submitAction).toBeTypeOf('function');
+
+    let message = '';
+    try {
+      await submitAction?.('确认');
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toContain('提交 Deep Research 动作失败');
+    expect(message).not.toContain('secret-action-token');
+    expect(message).not.toContain('secret-action-bearer');
+    expect(message).not.toContain('secret-action-key');
+    expect(message).toContain('token=REDACTED');
+    expect(message).toContain('safe=1');
+    expect(message).toContain('Bearer REDACTED');
+    expect(message).toContain('api_key=REDACTED');
+
+    emitSse(sse, {
+      eventType: 'interaction.complete',
+      eventId: 'evt_action_secret_3',
+    });
+    await executionPromise;
+  });
+
   it('recovers by polling status endpoint and completes when status is completed', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -698,5 +892,96 @@ describe('DeepResearchHandler', () => {
     const result = await executionPromise;
     expect(result.researchStatus?.status).toBe('completed');
     expect(result.content).toContain('最终输出');
+  });
+
+  it('redacts sensitive credentials from failed recovery status responses', async () => {
+    const previousMaxRecoveryAttempts = DEFAULT_DEEP_RESEARCH_STREAM_POLICY.maxRecoveryAttempts;
+    DEFAULT_DEEP_RESEARCH_STREAM_POLICY.maxRecoveryAttempts = 0;
+
+    try {
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === '/api/research/stream/start') {
+          return new Response(JSON.stringify({ interactionId: 'interaction_status_secret' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        if (url === '/api/research/stream/status/interaction_status_secret') {
+          return new Response(
+            'status failed for https://files.example.com/status.json?token=secret-status-token&safe=1 with Bearer secret-status-bearer and api_key=secret-status-key',
+            {
+              status: 502,
+              statusText: 'Bad Gateway',
+              headers: { 'Content-Type': 'text/plain' },
+            }
+          );
+        }
+
+        throw new Error(`Unexpected fetch URL: ${url}`);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const context: ExecutionContext = {
+        sessionId: 's6',
+        userMessageId: 'u6',
+        modelMessageId: 'm6',
+        mode: 'chat',
+        text: '状态恢复失败脱敏测试',
+        attachments: [],
+        currentModel: {
+          id: 'gemini-2.5-pro',
+          name: 'Gemini 2.5 Pro',
+          description: 'test',
+          capabilities: { vision: true, search: true, reasoning: true, coding: true },
+        },
+        options: {
+          enableSearch: false,
+          enableThinking: false,
+          enableCodeExecution: false,
+          enableDeepResearch: true,
+          deepResearchAgentId: 'deep-research-pro-preview-12-2025',
+          imageAspectRatio: '1:1',
+          imageResolution: '1024x1024',
+        },
+        protocol: 'google',
+        llmService: {} as any,
+        storageService: {} as any,
+        pollingManager: {
+          startPolling: vi.fn(async () => undefined),
+          stopPolling: vi.fn(),
+          cleanup: vi.fn(),
+        },
+        registerCancel: vi.fn(),
+      };
+
+      const handler = new DeepResearchHandler();
+      const executionPromise = handler.execute(context);
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const firstSse = MockEventSource.instances[0];
+      expect(firstSse).toBeTruthy();
+      firstSse.readyState = MockEventSource.CLOSED;
+      firstSse.onerror?.({ type: 'error' } as Event);
+
+      let message = '';
+      try {
+        await executionPromise;
+      } catch (error) {
+        message = (error as Error).message;
+      }
+
+      expect(message).toContain('自动恢复失败');
+      expect(message).not.toContain('secret-status-token');
+      expect(message).not.toContain('secret-status-bearer');
+      expect(message).not.toContain('secret-status-key');
+      expect(message).toContain('token=REDACTED');
+      expect(message).toContain('safe=1');
+      expect(message).toContain('Bearer REDACTED');
+      expect(message).toContain('api_key=REDACTED');
+    } finally {
+      DEFAULT_DEEP_RESEARCH_STREAM_POLICY.maxRecoveryAttempts = previousMaxRecoveryAttempts;
+    }
   });
 });

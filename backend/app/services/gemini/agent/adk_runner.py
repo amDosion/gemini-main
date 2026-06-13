@@ -26,6 +26,7 @@ from typing import Dict, Any, List, Optional, AsyncGenerator, Iterable
 from sqlalchemy.orm import Session
 
 from ....models.db_models import ADKSession
+from ....utils.log_sanitization import summarize_text_for_log
 from .memory_manager import MemoryManager
 
 logger = logging.getLogger(__name__)
@@ -245,9 +246,12 @@ class ADKRunner:
                     runtime_key=runtime_key,
                     factory=ADKInMemoryMemoryService,
                 )
-        except Exception:
+        except Exception as exc:
             self._adk_available = False
-            logger.warning("[ADKRunner] ADK SDK not available, strict fail-closed mode enabled", exc_info=True)
+            logger.warning(
+                "[ADKRunner] ADK SDK not available, strict fail-closed mode enabled: error=%s",
+                summarize_text_for_log(exc, label="adk_import_error"),
+            )
 
         if adk_agent is not None and self._adk_available:
             self.set_agent(adk_agent)
@@ -380,8 +384,11 @@ class ADKRunner:
         if hasattr(adk_agent, "get_adk_agent"):
             try:
                 return adk_agent.get_adk_agent()
-            except Exception:
-                logger.warning("[ADKRunner] Failed to fetch wrapped ADK agent", exc_info=True)
+            except Exception as exc:
+                logger.warning(
+                    "[ADKRunner] Failed to fetch wrapped ADK agent: error=%s",
+                    summarize_text_for_log(exc, label="wrapped_agent_error"),
+                )
                 return None
         return adk_agent
 
@@ -395,8 +402,11 @@ class ADKRunner:
                 app = adk_agent.get_adk_app()
                 if app is not None:
                     return app
-            except Exception:
-                logger.warning("[ADKRunner] Failed to fetch wrapped ADK app", exc_info=True)
+            except Exception as exc:
+                logger.warning(
+                    "[ADKRunner] Failed to fetch wrapped ADK app: error=%s",
+                    summarize_text_for_log(exc, label="wrapped_app_error"),
+                )
         if self._AppClass is None or coerced_agent is None:
             return None
         return self._AppClass(
@@ -1149,7 +1159,11 @@ class ADKRunner:
                 "session_id": session_id,
             }
         except Exception as exc:
-            logger.error("[ADKRunner] Error running ADK agent: %s", exc, exc_info=True)
+            logger.error(
+                "[ADKRunner] Error running ADK agent: session=%s error=%s",
+                summarize_text_for_log(session_id, label="session_id"),
+                summarize_text_for_log(exc, label="adk_run_error"),
+            )
             yield {
                 "type": "error",
                 "error": str(exc),
@@ -1296,7 +1310,11 @@ class ADKRunner:
                 "session_id": session_id,
             }
         except Exception as exc:
-            logger.error("[ADKRunner] Error running ADK live stream: %s", exc, exc_info=True)
+            logger.error(
+                "[ADKRunner] Error running ADK live stream: session=%s error=%s",
+                summarize_text_for_log(session_id, label="session_id"),
+                summarize_text_for_log(exc, label="adk_live_error"),
+            )
             yield {
                 "type": "error",
                 "error": str(exc),
@@ -1497,8 +1515,12 @@ class ADKRunner:
                         "runtime_state": snapshot.get("state") or {},
                     })
                     merged[session_id] = current
-            except Exception:
-                logger.warning("[ADKRunner] list_sessions from ADK session service failed", exc_info=True)
+            except Exception as exc:
+                logger.warning(
+                    "[ADKRunner] list_sessions from ADK session service failed: user=%s error=%s",
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(exc, label="session_service_error"),
+                )
 
         ordered = sorted(
             merged.values(),
@@ -1550,8 +1572,13 @@ class ADKRunner:
                         "runtime_last_update_time": serialized_runtime.get("last_update_time"),
                         "events": serialized_runtime.get("events") or [],
                     })
-            except Exception:
-                logger.warning("[ADKRunner] get_session_snapshot from ADK session service failed", exc_info=True)
+            except Exception as exc:
+                logger.warning(
+                    "[ADKRunner] get_session_snapshot from ADK session service failed: user=%s session=%s error=%s",
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(normalized_session_id, label="session_id"),
+                    summarize_text_for_log(exc, label="session_service_error"),
+                )
 
         return snapshot
 
@@ -1584,13 +1611,13 @@ class ADKRunner:
             session.last_used_at = now
             try:
                 self.db.commit()
-            except Exception:
+            except Exception as exc:
                 self.db.rollback()
                 logger.error(
-                    "[ADKRunner] Failed to update session %s for user %s",
-                    session_id,
-                    user_id,
-                    exc_info=True,
+                    "[ADKRunner] Failed to update session: session=%s user=%s error=%s",
+                    summarize_text_for_log(session_id, label="session_id"),
+                    summarize_text_for_log(user_id, label="user_id"),
+                    summarize_text_for_log(exc, label="session_update_error"),
                 )
                 raise
             return session.to_dict()
@@ -1616,15 +1643,19 @@ class ADKRunner:
         try:
             self.db.commit()
             self.db.refresh(session)
-        except Exception:
+        except Exception as exc:
             self.db.rollback()
             logger.error(
-                "[ADKRunner] Failed to create session %s for user %s",
-                session_id,
-                user_id,
-                exc_info=True,
+                "[ADKRunner] Failed to create session: session=%s user=%s error=%s",
+                summarize_text_for_log(session_id, label="session_id"),
+                summarize_text_for_log(user_id, label="user_id"),
+                summarize_text_for_log(exc, label="session_create_error"),
             )
             raise
 
-        logger.info("[ADKRunner] Created session %s for user %s", session_id, user_id)
+        logger.info(
+            "[ADKRunner] Created session: session=%s user=%s",
+            summarize_text_for_log(session_id, label="session_id"),
+            summarize_text_for_log(user_id, label="user_id"),
+        )
         return session.to_dict()

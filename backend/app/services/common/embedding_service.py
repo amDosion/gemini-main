@@ -9,8 +9,8 @@ from typing import List, Dict, Any, Optional
 import json
 import hashlib
 import logging
+import math
 from datetime import datetime
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -205,12 +205,12 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     Returns:
         Cosine similarity score (0 to 1)
     """
-    vec1_array = np.array(vec1)
-    vec2_array = np.array(vec2)
+    if len(vec1) != len(vec2):
+        raise ValueError("Vectors must have the same length")
 
-    dot_product = np.dot(vec1_array, vec2_array)
-    norm1 = np.linalg.norm(vec1_array)
-    norm2 = np.linalg.norm(vec2_array)
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    norm1 = math.sqrt(sum(value * value for value in vec1))
+    norm2 = math.sqrt(sum(value * value for value in vec2))
 
     if norm1 == 0 or norm2 == 0:
         return 0.0

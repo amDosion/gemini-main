@@ -38,6 +38,7 @@ from ..base.image_edit_common import (
     VALID_ASPECT_RATIOS
 )
 from ....utils.attachment_handler import is_base64_url
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +152,11 @@ class VertexAIEditBase(BaseImageEditor):
         self._ensure_initialized()
         self.validate_parameters(prompt, reference_images, config)
 
-        logger.info(f"[{self.__class__.__name__}] Editing image: prompt={prompt[:50]}...")
+        logger.info(
+            "[%s] Editing image: prompt=%s",
+            self.__class__.__name__,
+            summarize_text_for_log(prompt, label="prompt"),
+        )
 
         # Config from middleware is already in snake_case
         effective_config = self._apply_service_defaults(config or {})

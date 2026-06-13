@@ -10,6 +10,8 @@
 import asyncio
 import time
 
+import logging
+
 import pytest
 
 from app.services.common.upload_worker_pool import UploadWorkerPool
@@ -39,6 +41,7 @@ class _RecordingQueue:
         self.enqueued = []  # (task_id, priority, monotonic_ts)
         self.stats = {}
         self.dead = []
+        self.logs = []
 
     async def enqueue(self, task_id, priority="normal"):
         self.enqueued.append((task_id, priority, time.monotonic()))
@@ -48,6 +51,7 @@ class _RecordingQueue:
         self.stats[field] = self.stats.get(field, 0) + increment
 
     async def append_task_log(self, *args, **kwargs):
+        self.logs.append((args, kwargs))
         return None
 
     async def move_to_dead_letter(self, task_id):
@@ -220,3 +224,41 @@ async def test_max_retries_moves_to_dead_letter(monkeypatch):
     assert fake_queue.dead == ["task-C"]
     assert fake_queue.enqueued == []
     assert fake_queue.stats.get("total_failed") == 1
+
+
+@pytest.mark.asyncio
+async def test_handle_failure_sanitizes_error_diagnostics(monkeypatch, caplog):
+    """Failure diagnostics must not persist signed URLs or token-shaped values."""
+    pool = UploadWorkerPool()
+    pool.max_retries = 1
+
+    fake_queue = _RecordingQueue()
+    monkeypatch.setattr(
+        "app.services.common.upload_worker_pool.redis_queue", fake_queue
+    )
+    monkeypatch.setattr(pool, "_log_task_db_state", _async_noop)
+
+    task = _FakeTask("task-D", retry_count=0)
+    signed_url = (
+        "https://cdn.example.com/private.png"
+        "?X-Amz-Signature=secret-signature&token=secret-token#private-fragment"
+    )
+    raw_error = (
+        f"provider failed for {signed_url} with "
+        "Bearer abcd1234567890SECRET and api_key=sk-1234567890SECRET"
+    )
+
+    with caplog.at_level(logging.INFO, logger="app.services.common.upload_worker_pool"):
+        await pool._handle_failure(_FakeDB(task), "task-D", raw_error, "Worker-0")
+
+    queue_messages = "\n".join(kwargs.get("message", "") for _args, kwargs in fake_queue.logs)
+    persisted_and_logged = "\n".join([task.error_message or "", caplog.text, queue_messages])
+
+    assert "http(len=" in persisted_and_logged
+    assert "Bearer abcd...redacted" in persisted_and_logged
+    assert "api_key=sk-1...redacted" in persisted_and_logged
+    assert signed_url not in persisted_and_logged
+    assert "secret-signature" not in persisted_and_logged
+    assert "secret-token" not in persisted_and_logged
+    assert "private-fragment" not in persisted_and_logged
+    assert "1234567890SECRET" not in persisted_and_logged

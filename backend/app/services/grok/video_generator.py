@@ -5,11 +5,13 @@ Grok 视频生成器
 使用 httpx 调用 grok2api 的 /videos 端点。
 """
 from __future__ import annotations
+
 import logging
 from typing import Any, Dict, Optional
 
 import httpx
 
+from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 from ..common.video_extension_chain import (
     is_video_extension_strategy,
     normalize_video_extension_count,
@@ -66,7 +68,10 @@ class VideoGenerator:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        logger.info(f"[Grok VideoGenerator] Initialized with base_url={self.base_url}")
+        logger.info(
+            "[Grok VideoGenerator] Initialized with base_url=%s",
+            summarize_url_for_log(self.base_url),
+        )
 
     def _resolve_size(self, kwargs: Dict[str, Any]) -> str:
         """Resolve video size from kwargs."""
@@ -192,7 +197,11 @@ class VideoGenerator:
             包含 url/mime_type/filename 等字段的统一视频结果
         """
         try:
-            logger.info(f"[Grok VideoGenerator] Video generation: model={model}, prompt={prompt[:80]}...")
+            logger.info(
+                "[Grok VideoGenerator] Video generation: model=%s, prompt=%s",
+                model,
+                summarize_text_for_log(prompt, label="prompt"),
+            )
 
             size = self._resolve_size(kwargs)
             seconds = self._resolve_seconds(kwargs)
@@ -243,20 +252,24 @@ class VideoGenerator:
                 kwargs=request_kwargs,
             )
             apply_video_prompt_enhancement_metadata(result, enhancement)
-            logger.info(f"[Grok VideoGenerator] Video generated: url={str(result.get('url', ''))[:80]}...")
+            logger.info(
+                "[Grok VideoGenerator] Video generated: url=%s",
+                summarize_url_for_log(result.get("url", "")),
+            )
             return result
 
         except httpx.HTTPStatusError as e:
-            # Truncate body to avoid logging potentially sensitive provider data (svc-providers-4)
             logger.error(
-                "[Grok VideoGenerator] HTTP error: %s - %s",
+                "[Grok VideoGenerator] HTTP error: status=%s body=%s",
                 e.response.status_code,
-                e.response.text[:200],
-                exc_info=True,
+                summarize_text_for_log(e.response.text, label="provider_error"),
             )
             raise
         except Exception as e:
-            logger.error(f"[Grok VideoGenerator] Video generation error: {e}", exc_info=True)
+            logger.error(
+                "[Grok VideoGenerator] Video generation error: %s",
+                summarize_text_for_log(e, label="error"),
+            )
             raise
 
     async def _generate_video_once(

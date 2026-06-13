@@ -1,8 +1,8 @@
 """Browse routes - Web browsing and content extraction"""
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, Callable
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from typing import Any, Optional, Callable
 import asyncio
 import uuid
 import json
@@ -13,10 +13,31 @@ import httpx
 from ...core.dependencies import require_admin, require_current_user
 
 logger = logging.getLogger(__name__)
+from ...utils.log_sanitization import (
+    redact_exact_value_in_log_text,
+    summarize_text_for_log,
+    summarize_url_for_log,
+)
 from ...utils.url_security import validate_outbound_http_url
 from ...utils.sse import encode_sse_data
 
 router = APIRouter(prefix="/api", tags=["browse"])
+NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+
+
+class BrowserStopResponse(BaseModel):
+    success: bool
+    message: str = Field(max_length=640, pattern=NO_CONTROL_CHARS_PATTERN)
+
+
+class BrowserSessionsResponse(BaseModel):
+    sessions: list[dict[str, Any]] = Field(max_length=10_000)
+    count: int = Field(ge=0, le=10_000)
+
+
+class WebSearchResponse(BaseModel):
+    results: JsonValue
+
 
 # Module-level lazy httpx.AsyncClient for the browse route. Reusing a single
 # client avoids tearing down TCP/TLS handshakes per request and keeps the
@@ -41,7 +62,7 @@ async def _get_async_http_client() -> httpx.AsyncClient:
 
 # ==================== Browser Session Management ====================
 
-@router.post("/browser/stop")
+@router.post("/browser/stop", response_model=BrowserStopResponse)
 async def stop_browser_session(
     user_id: str = Depends(require_current_user)
 ):
@@ -59,11 +80,14 @@ async def stop_browser_session(
         return {"success": True, "message": f"Browser session closed for user {user_id}"}
     except Exception as e:
         if _logger:
-            _logger.error(f"[Browse] Failed to stop browser session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            _logger.error(
+                "[Browse] Failed to stop browser session: %s",
+                summarize_text_for_log(e, label="error"),
+            )
+        raise HTTPException(status_code=500, detail="Failed to stop browser session")
 
 
-@router.get("/browser/sessions")
+@router.get("/browser/sessions", response_model=BrowserSessionsResponse)
 async def get_browser_sessions(
     user_id: str = Depends(require_admin)
 ):
@@ -80,8 +104,11 @@ async def get_browser_sessions(
         return {"sessions": sessions, "count": len(sessions)}
     except Exception as e:
         if _logger:
-            _logger.error(f"[Browse] Failed to get browser sessions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            _logger.error(
+                "[Browse] Failed to get browser sessions: %s",
+                summarize_text_for_log(e, label="error"),
+            )
+        raise HTTPException(status_code=500, detail="Failed to get browser sessions")
 
 # Service references (set in main.py)
 _selenium_browse = None
@@ -266,7 +293,10 @@ def take_screenshot_selenium(url: str) -> Optional[str]:
             driver.quit()
 
     except Exception as e:
-        logger.info(f"Error taking screenshot: {e}")
+        logger.info(
+            "Error taking screenshot: %s",
+            summarize_text_for_log(e, label="error"),
+        )
         return None
 
 
@@ -274,7 +304,23 @@ def take_screenshot_selenium(url: str) -> Optional[str]:
 # API Endpoints
 # ============================================================================
 
-@router.get("/browse/progress/{operation_id}")
+@router.get(
+    "/browse/progress/{operation_id}",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Server-sent browse progress events",
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "type": "string",
+                        "maxLength": 1_000_000,
+                    }
+                }
+            },
+        }
+    },
+)
 async def browse_progress_stream(operation_id: str, request: Request, user_id: str = Depends(require_current_user)):
     """
     Server-Sent Events endpoint for real-time browse progress updates.
@@ -360,9 +406,10 @@ async def browse_webpage(
 
     # Validate URL to prevent SSRF
     validate_outbound_http_url(url)
+    log_url = summarize_url_for_log(url)
 
     if _logger and _LOG_PREFIXES:
-        _logger.info(f"{_LOG_PREFIXES['request']} Received browse request for URL: {url} (operation_id: {operation_id}, user: {user_id})")
+        _logger.info(f"{_LOG_PREFIXES['request']} Received browse request for URL: {log_url} (operation_id: {operation_id}, user: {user_id})")
 
     try:
         # Send initial progress
@@ -379,7 +426,7 @@ async def browse_webpage(
         if _SELENIUM_AVAILABLE and _selenium_browse:
             try:
                 if _logger and _LOG_PREFIXES:
-                    _logger.info(f"{_LOG_PREFIXES['selenium']} Attempting to browse with Selenium: {url} (user: {user_id})")
+                    _logger.info(f"{_LOG_PREFIXES['selenium']} Attempting to browse with Selenium: {log_url} (user: {user_id})")
                 
                 if _progress_tracker:
                     await _progress_tracker.send_progress(
@@ -446,7 +493,7 @@ async def browse_webpage(
                 screenshot_base64 = take_screenshot_selenium(url)
 
                 if _logger and _LOG_PREFIXES:
-                    _logger.info(f"{_LOG_PREFIXES['success']} Successfully browsed with Selenium: {url}")
+                    _logger.info(f"{_LOG_PREFIXES['success']} Successfully browsed with Selenium: {log_url}")
                 
                 if _progress_tracker:
                     await _progress_tracker.send_progress(
@@ -466,7 +513,12 @@ async def browse_webpage(
 
             except Exception as selenium_error:
                 if _logger and _LOG_PREFIXES:
-                    _logger.warning(f"{_LOG_PREFIXES['warning']} Selenium error: {selenium_error}, falling back to requests")
+                    safe_selenium_error = redact_exact_value_in_log_text(
+                        selenium_error,
+                        url,
+                        log_url,
+                    )
+                    _logger.warning(f"{_LOG_PREFIXES['warning']} Selenium error: {safe_selenium_error}, falling back to requests")
                 
                 if _progress_tracker:
                     await _progress_tracker.send_progress(
@@ -479,7 +531,7 @@ async def browse_webpage(
 
         # Method 2: Fallback to simple requests + BeautifulSoup
         if _logger and _LOG_PREFIXES:
-            _logger.info(f"{_LOG_PREFIXES['webpage']} Browsing with requests (no Selenium): {url}")
+            _logger.info(f"{_LOG_PREFIXES['webpage']} Browsing with requests (no Selenium): {log_url}")
         
         if _progress_tracker:
             await _progress_tracker.send_progress(
@@ -522,7 +574,7 @@ async def browse_webpage(
             markdown_content = markdown_content[:50000] + "\n\n[Content truncated...]"
 
         if _logger and _LOG_PREFIXES:
-            _logger.info(f"{_LOG_PREFIXES['success']} Successfully browsed with requests: {url}")
+            _logger.info(f"{_LOG_PREFIXES['success']} Successfully browsed with requests: {log_url}")
         
         if _progress_tracker:
             await _progress_tracker.send_progress(
@@ -543,7 +595,7 @@ async def browse_webpage(
     except Exception as e:
         if isinstance(e, httpx.TimeoutException):
             if _logger and _LOG_PREFIXES:
-                _logger.error(f"{_LOG_PREFIXES['error']} Timeout while accessing {url}")
+                _logger.error(f"{_LOG_PREFIXES['error']} Timeout while accessing {log_url}")
             if _progress_tracker:
                 await _progress_tracker.send_error(operation_id, f"Timeout while accessing {url}")
             raise HTTPException(
@@ -552,7 +604,8 @@ async def browse_webpage(
             )
         elif isinstance(e, (httpx.RequestError, httpx.HTTPStatusError)):
             if _logger and _LOG_PREFIXES:
-                _logger.error(f"{_LOG_PREFIXES['error']} Request error accessing {url}: {str(e)}")
+                safe_error = redact_exact_value_in_log_text(e, url, log_url)
+                _logger.error(f"{_LOG_PREFIXES['error']} Request error accessing {log_url}: {safe_error}")
             if _progress_tracker:
                 await _progress_tracker.send_error(operation_id, f"Request error: {str(e)}")
             raise HTTPException(
@@ -561,17 +614,25 @@ async def browse_webpage(
             )
         else:
             if _logger and _LOG_PREFIXES:
-                _logger.exception(f"{_LOG_PREFIXES['error']} Internal server error while browsing {url}")
+                _logger.error(
+                    "%s Internal server error while browsing %s: %s",
+                    _LOG_PREFIXES["error"],
+                    log_url,
+                    summarize_text_for_log(e, label="error"),
+                )
             if _progress_tracker:
-                await _progress_tracker.send_error(operation_id, f"Internal error: {str(e)}")
+                await _progress_tracker.send_error(operation_id, "Internal error while browsing")
             raise HTTPException(
                 status_code=500,
-                detail=f"Internal server error: {str(e)}"
+                detail="Internal server error while browsing"
             )
 
 
-@router.post("/search")
-async def web_search_endpoint(query: str, user_id: str = Depends(require_current_user)):
+@router.post("/search", response_model=WebSearchResponse)
+async def web_search_endpoint(
+    query: str = Query(..., min_length=1, max_length=4096, pattern=NO_CONTROL_CHARS_PATTERN),
+    user_id: str = Depends(require_current_user),
+):
     """
     Web search endpoint
     
@@ -594,4 +655,8 @@ async def web_search_endpoint(query: str, user_id: str = Depends(require_current
         result = _web_search(query)
         return {"results": result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "[Browse] Web search failed: %s",
+            summarize_text_for_log(e, label="error"),
+        )
+        raise HTTPException(status_code=500, detail="Web search failed")

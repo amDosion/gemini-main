@@ -764,6 +764,17 @@ def test_decode_data_url_base64_and_plain_and_invalid():
         adk._decode_data_url("not-a-data-url")
 
 
+def test_decode_data_url_rejects_oversized_payload(monkeypatch):
+    monkeypatch.setattr(adk, "_MAX_DOWNLOAD_BYTES", 3)
+
+    b64 = base64.b64encode(b"abcd").decode()
+    with pytest.raises(ValueError, match="data URL too large"):
+        adk._decode_data_url(f"data:text/csv;base64,{b64}")
+
+    with pytest.raises(ValueError, match="data URL too large"):
+        adk._decode_data_url("data:text/csv,abcd")
+
+
 def test_resolve_allowed_sheet_hosts_parsing(monkeypatch):
     monkeypatch.setenv(adk._SHEET_ALLOWED_HOSTS_ENV, "Example.com, *.cdn.net, https://files.org/, ,*.cdn.net")
     hosts = adk._resolve_allowed_sheet_hosts()
@@ -796,6 +807,102 @@ def test_validate_sheet_file_url_allowlist():
         adk._validate_sheet_file_url_allowlist("https://evil.com/x.csv", ["good.com"])
     # allowed host does not raise
     adk._validate_sheet_file_url_allowlist("https://good.com/x.csv", ["good.com"])
+
+
+def test_download_remote_file_installs_sync_dns_pinning_before_fetch(monkeypatch):
+    events = []
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "text/csv"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self):
+            yield b"a,b\n"
+            yield b"1,2\n"
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def stream(self, method, url, *, headers):
+            assert method == "GET"
+            events.append(("get", url, headers["User-Agent"]))
+            return FakeResponse()
+
+    def fake_pin(client):
+        events.append(("pin", client.kwargs))
+
+    monkeypatch.setenv(adk._SHEET_ALLOWED_HOSTS_ENV, "files.example.com")
+    monkeypatch.setattr(adk.httpx, "Client", FakeClient)
+    monkeypatch.setattr(adk, "validate_outbound_http_url", lambda url: url)
+    monkeypatch.setattr(adk, "pin_sync_client_for_outbound_guard", fake_pin)
+
+    payload, final_url, content_type = adk._download_remote_file(
+        "https://files.example.com/report.csv"
+    )
+
+    assert payload == b"a,b\n1,2\n"
+    assert final_url == "https://files.example.com/report.csv"
+    assert content_type == "text/csv"
+    assert events[0][0] == "pin"
+    assert events[1] == ("get", "https://files.example.com/report.csv", "ADKSheetAnalyzeTool/1.0")
+
+
+def test_download_remote_file_rejects_stream_over_limit(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "text/csv"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self):
+            yield b"abc"
+            yield b"de"
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def stream(self, method, url, *, headers):
+            assert method == "GET"
+            return FakeResponse()
+
+    monkeypatch.setenv(adk._SHEET_ALLOWED_HOSTS_ENV, "files.example.com")
+    monkeypatch.setattr(adk, "_MAX_DOWNLOAD_BYTES", 4)
+    monkeypatch.setattr(adk.httpx, "Client", FakeClient)
+    monkeypatch.setattr(adk, "validate_outbound_http_url", lambda url: url)
+    monkeypatch.setattr(adk, "pin_sync_client_for_outbound_guard", lambda _client: None)
+
+    with pytest.raises(ValueError, match="remote file too large"):
+        adk._download_remote_file("https://files.example.com/report.csv")
 
 
 # ===========================================================================
@@ -858,6 +965,23 @@ def test_sheet_analyze_inline_base64_content(sheet_analyze):
     assert result["status"] == "success"
     # json export path renders a dict serialized to text
     assert json.loads(result["text"])["rendered_as"] == "json"
+
+
+def test_sheet_analyze_rejects_oversized_inline_content(monkeypatch, sheet_analyze):
+    monkeypatch.setattr(adk, "_MAX_DOWNLOAD_BYTES", 3)
+
+    plain_result = sheet_analyze(file_name="data.csv", content="abcd")
+    assert plain_result["status"] == "failed"
+    assert "inline content too large" in plain_result["error"]
+
+    raw = base64.b64encode(b"abcd").decode()
+    b64_result = sheet_analyze(
+        file_name="data.csv",
+        content=raw,
+        content_encoding="base64",
+    )
+    assert b64_result["status"] == "failed"
+    assert "inline content too large" in b64_result["error"]
 
 
 def test_sheet_analyze_data_url_path_infers_xlsx_name(sheet_analyze):

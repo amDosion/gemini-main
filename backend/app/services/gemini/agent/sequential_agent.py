@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional, AsyncGenerator
 from dataclasses import dataclass
 
 from .base_agent_executor import BaseAgentExecutor
+from ....utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +132,11 @@ class SequentialAgent:
                 logger.info(f"[SequentialAgent] Step {idx + 1} completed: {step.agent_name}")
 
             except Exception as e:
-                logger.error(f"[SequentialAgent] Step {idx + 1} failed: {e}", exc_info=True)
+                logger.error(
+                    "[SequentialAgent] Step %s failed: %s",
+                    idx + 1,
+                    summarize_text_for_log(e, label="step_error"),
+                )
                 session_state["steps"].append({
                     "step": idx + 1,
                     "agent_id": step.agent_id,
@@ -220,7 +225,11 @@ class SequentialAgent:
                 }
 
             except Exception as e:
-                logger.error(f"[SequentialAgent] Step {idx + 1} failed: {e}", exc_info=True)
+                logger.error(
+                    "[SequentialAgent] Step %s failed: %s",
+                    idx + 1,
+                    summarize_text_for_log(e, label="step_error"),
+                )
                 yield {
                     "event_type": "step_error",
                     "step": idx + 1,

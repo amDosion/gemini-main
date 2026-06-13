@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_SAFE_INLINE_IMAGE_MAX_BYTES } from '../../utils/safeMediaDataUrl';
 import {
   extractImageUrls,
   extractTextContent,
@@ -207,6 +208,19 @@ describe('mergePreviewImagesIntoResult', () => {
     expect(extractVideoUrls({ videoUrl: 'blob:https://gemini.dicry.cn:18443/stale-video' })).toEqual(
       []
     );
+  });
+
+  it('only treats safe raster data image urls as directly renderable workflow result images', () => {
+    expect(isDirectlyRenderableImageUrl('data:image/png;base64,YWJj')).toBe(true);
+    expect(isDirectlyRenderableImageUrl('data:image/svg+xml;base64,PHN2Zy8+')).toBe(false);
+    expect(isDirectlyRenderableImageUrl('data:image/png,<svg onload=alert(1)>')).toBe(false);
+  });
+
+  it('does not directly render oversized inline workflow result images', () => {
+    const payloadLength = Math.ceil(((DEFAULT_SAFE_INLINE_IMAGE_MAX_BYTES + 1) * 4) / 3);
+    const oversizedImageUrl = `data:image/png;base64,${'A'.repeat(payloadLength)}`;
+
+    expect(isDirectlyRenderableImageUrl(oversizedImageUrl)).toBe(false);
   });
 
   it('ignores source and reference images when extracting generated result images', () => {

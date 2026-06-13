@@ -1,4 +1,8 @@
-const INLINE_MEDIA_DATA_URL_MAX_CHARS = 4096;
+import {
+  isSafeInlineAudioDataUrl,
+  isSafeInlineImageDataUrl,
+  isSafeInlineVideoDataUrl,
+} from '../utils/safeMediaDataUrl';
 
 const normalizeString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -16,7 +20,7 @@ export const isSafeWorkflowPreviewImageUrl = (value: unknown): value is string =
   if (!trimmed || isBrowserLocalBlobUrl(trimmed)) return false;
   const lowered = trimmed.toLowerCase();
   return (
-    lowered.startsWith('data:image/') ||
+    (lowered.startsWith('data:image/') && isSafeInlineImageDataUrl(trimmed)) ||
     lowered.startsWith('/api/') ||
     lowered.startsWith('https://') ||
     lowered.startsWith('http://')
@@ -41,9 +45,8 @@ export const isSafeWorkflowPreviewMediaUrl = (value: unknown): value is string =
   const trimmed = normalizeString(value);
   if (!trimmed || isBrowserLocalBlobUrl(trimmed)) return false;
   const lowered = trimmed.toLowerCase();
-  if (lowered.startsWith('data:audio/') || lowered.startsWith('data:video/')) {
-    return trimmed.length <= INLINE_MEDIA_DATA_URL_MAX_CHARS;
-  }
+  if (lowered.startsWith('data:audio/')) return isSafeInlineAudioDataUrl(trimmed);
+  if (lowered.startsWith('data:video/')) return isSafeInlineVideoDataUrl(trimmed);
   return (
     lowered.startsWith('/api/') ||
     lowered.startsWith('https://') ||

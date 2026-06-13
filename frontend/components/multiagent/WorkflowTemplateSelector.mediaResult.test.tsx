@@ -361,4 +361,46 @@ describe('WorkflowTemplateSelector media result preview', () => {
       expect(screen.getByText('Legacy Data Copy')).toBeInTheDocument();
     });
   });
+
+  it('redacts sensitive credentials from failed template list responses', async () => {
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async (input: string) => {
+      if (input === '/api/auth/me') {
+        return {
+          ok: true,
+          json: async () => ({ id: 'user-1' }),
+        };
+      }
+      if (input === '/api/workflows/templates') {
+        return new Response(
+          'load failed for https://files.example.com/templates.json?token=secret-list-token&safe=1 with Bearer secret-list-bearer and api_key=secret-list-key',
+          {
+            status: 503,
+            headers: { 'content-type': 'text/plain' },
+          },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${input}`);
+    });
+
+    render(
+      <WorkflowTemplateSelector
+        isOpen
+        onClose={vi.fn()}
+        onLoadTemplate={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('加载失败')).toBeInTheDocument();
+      expect(screen.getByText(/token=REDACTED/)).toBeInTheDocument();
+    });
+
+    expect(document.body.textContent).not.toContain('secret-list-token');
+    expect(document.body.textContent).not.toContain('secret-list-bearer');
+    expect(document.body.textContent).not.toContain('secret-list-key');
+    expect(document.body.textContent).toContain('safe=1');
+    expect(document.body.textContent).toContain('Bearer REDACTED');
+    expect(document.body.textContent).toContain('api_key=REDACTED');
+  });
 });

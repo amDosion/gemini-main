@@ -5,16 +5,14 @@ This service provides functionality to extract structured data from PDF document
 using Gemini's function calling capabilities.
 """
 
-from typing import Dict, Any, List, Optional
-import json
-import time
 import logging
+from typing import Any, Dict, List, Optional
+
 import pypdf
-from google import genai
 from google.genai import types
 
+from ....utils.url_security import get_with_redirect_guard, validate_outbound_http_url_async
 from ..client_pool import get_client_pool
-from ....utils.url_security import validate_outbound_http_url_async
 
 logger = logging.getLogger(__name__)
 
@@ -287,7 +285,7 @@ class PDFExtractorService:
             cleaned = "\n".join([line.rstrip() for line in extracted_text.splitlines()])
             cleaned = "\n\n".join([blk.strip() for blk in cleaned.split("\n\n") if blk.strip()])
 
-            logger.info(f"[PDF Extractor Service] Full-text extraction completed")
+            logger.info("[PDF Extractor Service] Full-text extraction completed")
             return {
                 'success': True,
                 'template_type': template_type,
@@ -352,7 +350,7 @@ Document Text:
                     }
 
         # No function call was made
-        logger.warning(f"[PDF Extractor Service] Model did not return structured data")
+        logger.warning("[PDF Extractor Service] Model did not return structured data")
         return {
             'success': False,
             'error': 'Model did not return structured data',
@@ -392,10 +390,16 @@ Document Text:
                 pdf_url = reference_images.get("pdf_url")
                 if pdf_url:
                     import httpx
-                    # CANON-010: pdf_url is attachment/user-controlled — enforce SSRF policy.
+                    # CANON-010: pdf_url is attachment/user-controlled. Validate
+                    # first, then use guarded GET for connect-time pinning and
+                    # per-hop redirect checks.
                     safe_pdf_url = await validate_outbound_http_url_async(str(pdf_url))
                     async with httpx.AsyncClient() as client:
-                        response = await client.get(safe_pdf_url)
+                        response, _final_url = await get_with_redirect_guard(
+                            client,
+                            safe_pdf_url,
+                            max_redirects=5,
+                        )
                         response.raise_for_status()
                         pdf_bytes = response.content
         

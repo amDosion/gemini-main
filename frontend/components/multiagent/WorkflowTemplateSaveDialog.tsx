@@ -14,6 +14,7 @@ import type { CustomNodeData } from './CustomNode';
 import type { WorkflowTemplate } from './WorkflowTemplateSelector';
 import { WorkflowTemplateCategoryCreateDialog } from './WorkflowTemplateCategoryCreateDialog';
 import { getAuthHeaders } from '../../services/apiClient';
+import { parseHttpError } from '../../services/http';
 import {
   createWorkflowTemplateCategory,
   listWorkflowTemplateCategories,
@@ -340,20 +341,11 @@ export const WorkflowTemplateSaveDialog: React.FC<WorkflowTemplateSaveDialogProp
       });
 
       if (!response.ok) {
-        let message = isUpdateMode ? '更新模板失败' : '保存模板失败';
-        const text = await response.text();
-        try {
-          const errorPayload = JSON.parse(text) as { detail?: unknown; message?: unknown };
-          const detail = typeof errorPayload?.detail === 'string' ? errorPayload.detail : undefined;
-          const fallback =
-            typeof errorPayload?.message === 'string' ? errorPayload.message : undefined;
-          message = detail || fallback || message;
-        } catch {
-          if (text) {
-            message = text;
-          }
-        }
-        throw new Error(message);
+        const parsedError = await parseHttpError(
+          response,
+          isUpdateMode ? '更新模板失败' : '保存模板失败'
+        );
+        throw new Error(parsedError.message);
       }
 
       const savedTemplate = normalizeTemplateResponse(await response.json());

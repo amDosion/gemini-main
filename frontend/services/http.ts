@@ -73,6 +73,43 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
+const REDACTED_ERROR_VALUE = 'REDACTED';
+const SENSITIVE_ERROR_FIELD_PATTERN =
+  /^(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|id[_-]?token|token|secret|password|signature|sig|credential|authorization)$/i;
+const URL_IN_ERROR_PATTERN = /\bhttps?:\/\/[^\s"'<>]+/gi;
+const BEARER_ERROR_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
+const SENSITIVE_ERROR_PAIR_PATTERN =
+  /\b((?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|id[_-]?token|token|secret|password|signature|sig|credential|authorization)=)[^&\s"'<>]+/gi;
+const SENSITIVE_JSON_FIELD_PATTERN =
+  /("(?:(?:api[_-]?key)|(?:access[_-]?token)|(?:refresh[_-]?token)|(?:auth[_-]?token)|(?:id[_-]?token)|token|secret|password|signature|sig|credential|authorization)"\s*:\s*")[^"]*(")/gi;
+
+function redactSensitiveUrlParams(rawUrl: string): string {
+  const trailingPunctuation = rawUrl.match(/[),.;:!?]+$/)?.[0] ?? '';
+  const urlText = trailingPunctuation
+    ? rawUrl.slice(0, -trailingPunctuation.length)
+    : rawUrl;
+
+  try {
+    const url = new URL(urlText);
+    url.searchParams.forEach((_value, key) => {
+      if (SENSITIVE_ERROR_FIELD_PATTERN.test(key)) {
+        url.searchParams.set(key, REDACTED_ERROR_VALUE);
+      }
+    });
+    return `${url.toString()}${trailingPunctuation}`;
+  } catch {
+    return rawUrl;
+  }
+}
+
+function sanitizeErrorMessage(message: string): string {
+  return message
+    .replace(URL_IN_ERROR_PATTERN, redactSensitiveUrlParams)
+    .replace(BEARER_ERROR_PATTERN, `Bearer ${REDACTED_ERROR_VALUE}`)
+    .replace(SENSITIVE_JSON_FIELD_PATTERN, `$1${REDACTED_ERROR_VALUE}$2`)
+    .replace(SENSITIVE_ERROR_PAIR_PATTERN, `$1${REDACTED_ERROR_VALUE}`);
+}
+
 function extractErrorMessageFromPayload(payload: Record<string, unknown>): string | null {
   if (!payload || typeof payload !== 'object') {
     return null;
@@ -125,16 +162,18 @@ export async function parseHttpError(
   if (contentType.includes('application/json')) {
     const payload = await response.json().catch(() => null);
     const parsedMessage = extractErrorMessageFromPayload(payload);
+    const message = parsedMessage || fallbackMessage || `Request failed: ${response.status}`;
     return {
-      message: parsedMessage || fallbackMessage || `Request failed: ${response.status}`,
+      message: sanitizeErrorMessage(message),
       status: response.status,
       payload: payload ?? undefined,
     };
   }
 
   const text = (await response.text().catch(() => '')).trim();
+  const message = text || fallbackMessage || `Request failed: ${response.status}`;
   return {
-    message: text || fallbackMessage || `Request failed: ${response.status}`,
+    message: sanitizeErrorMessage(message),
     status: response.status,
     payload: text || undefined,
   };

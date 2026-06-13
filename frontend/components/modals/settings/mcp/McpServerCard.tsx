@@ -9,6 +9,7 @@ import React from 'react';
 import { MoreHorizontal, RefreshCcw, Pencil, Play, Trash2, ExternalLink } from 'lucide-react';
 import type { ServerCard, ServerToolsState, ServerInvokeState } from '../mcpTabHelpers';
 import { TOOL_PREVIEW_COUNT } from '../mcpTabHelpers';
+import { openSafeUrlInNewTab } from '../../../../utils/safeOpen';
 
 export interface McpServerCardProps {
   card: ServerCard;
@@ -164,7 +165,7 @@ export const McpServerCard: React.FC<McpServerCardProps> = ({
       {typeof card.config.introUrl === 'string' && card.config.introUrl.trim() && (
         <button
           type="button"
-          onClick={() => window.open(card.config.introUrl, '_blank', 'noopener,noreferrer')}
+          onClick={() => openSafeUrlInNewTab(card.config.introUrl)}
           className="mt-2 inline-flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 transition-colors text-left break-all"
           title={card.config.introUrl}
         >

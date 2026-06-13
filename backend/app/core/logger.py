@@ -38,6 +38,8 @@ class FlushingStreamHandler(logging.StreamHandler):
             self.stream = sys.stderr
     
     def emit(self, record):
+        if getattr(self.stream, "closed", False):
+            return
         try:
             super().emit(record)
             self.flush()

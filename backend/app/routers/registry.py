@@ -35,20 +35,25 @@ from .models import (
 # 特殊提供商路由已统一到 core/chat.py 和 core/modes.py
 # from .providers import google_chat_router, tongyi_image_router
 
+
+def _log_auth_router_import_failure(prefix: str, exc: BaseException) -> None:
+    logger.error(
+        "[Registry] %s importing auth router: error_type=%s",
+        prefix,
+        type(exc).__name__,
+    )
+
+
 # 认证路由（可选）
 try:
     from .auth import router as auth_router
     AUTH_ROUTER_AVAILABLE = True
 except ImportError as e:
-    import traceback
-    logger.error(f"[Registry] Failed to import auth router: {e}")
-    logger.error(f"[Registry] Traceback: {traceback.format_exc()}")
+    _log_auth_router_import_failure("Failed to import", e)
     AUTH_ROUTER_AVAILABLE = False
     auth_router = None
 except Exception as e:
-    import traceback
-    logger.error(f"[Registry] Unexpected error importing auth router: {e}")
-    logger.error(f"[Registry] Traceback: {traceback.format_exc()}")
+    _log_auth_router_import_failure("Unexpected error", e)
     AUTH_ROUTER_AVAILABLE = False
     auth_router = None
 

@@ -10,25 +10,30 @@ import json
 import logging
 import time
 from collections import deque
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from collections.abc import Callable
+from typing import Any, Optional
 
 from ..execution_context import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
 
-def record_trace_event(engine: Any, event_type: str, payload: Optional[Dict[str, Any]] = None) -> None:
+def record_trace_event(
+    engine: Any, event_type: str, payload: Optional[dict[str, Any]] = None
+) -> None:
     event_payload = payload if isinstance(payload, dict) else {}
-    engine._trace_events.append({
-        "event": str(event_type or "").strip() or "unknown",
-        "timestamp": int(time.time() * 1000),
-        "payload": event_payload,
-    })
+    engine._trace_events.append(
+        {
+            "event": str(event_type or "").strip() or "unknown",
+            "timestamp": int(time.time() * 1000),
+            "payload": event_payload,
+        }
+    )
     if len(engine._trace_events) > 500:
         engine._trace_events = engine._trace_events[-500:]
 
 
-async def emit_callback(engine: Any, hook_name: str, payload: Dict[str, Any]) -> None:
+async def emit_callback(engine: Any, hook_name: str, payload: dict[str, Any]) -> None:
     if not engine.callback_plugins:
         return
     for plugin in engine.callback_plugins:
@@ -48,7 +53,7 @@ async def emit_callback(engine: Any, hook_name: str, payload: Dict[str, Any]) ->
             )
 
 
-def resolve_agent_timeout_seconds(engine: Any, node_data: Dict[str, Any]) -> int:
+def resolve_agent_timeout_seconds(engine: Any, node_data: dict[str, Any]) -> int:
     raw_timeout = (
         node_data.get("agent_timeout_seconds")
         or node_data.get("agentTimeoutSeconds")
@@ -62,11 +67,12 @@ def resolve_agent_timeout_seconds(engine: Any, node_data: Dict[str, Any]) -> int
             parsed = engine.DEFAULT_AGENT_TIMEOUT_SECONDS
         return max(1, min(parsed, 7200))
 
-    task_type = str(
-        node_data.get("agent_task_type")
-        or node_data.get("agentTaskType")
-        or ""
-    ).strip().lower().replace("_", "-")
+    task_type = (
+        str(node_data.get("agent_task_type") or node_data.get("agentTaskType") or "")
+        .strip()
+        .lower()
+        .replace("_", "-")
+    )
     if task_type in {
         "image-edit",
         "image-gen",
@@ -85,11 +91,11 @@ def resolve_agent_timeout_seconds(engine: Any, node_data: Dict[str, Any]) -> int
 
 async def execute(
     engine: Any,
-    nodes: List[Dict[str, Any]],
-    edges: List[Dict[str, Any]],
-    initial_input: Dict[str, Any],
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    initial_input: dict[str, Any],
     on_event: Optional[Callable] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     context = ExecutionContext(initial_input or {})
     engine._trace_events = []
     workflow_started_at = int(time.time() * 1000)
@@ -104,8 +110,8 @@ async def execute(
     if not node_map:
         raise ValueError("工作流为空，缺少可执行节点")
 
-    outgoing_edges: Dict[str, List[Dict[str, Any]]] = {node_id: [] for node_id in node_map}
-    incoming_edges: Dict[str, List[Dict[str, Any]]] = {node_id: [] for node_id in node_map}
+    outgoing_edges: dict[str, list[dict[str, Any]]] = {node_id: [] for node_id in node_map}
+    incoming_edges: dict[str, list[dict[str, Any]]] = {node_id: [] for node_id in node_map}
 
     for edge in edges:
         source_id = edge.get("source")
@@ -116,9 +122,7 @@ async def execute(
         incoming_edges[target_id].append(edge)
 
     start_node_ids = [
-        node_id
-        for node_id, node in node_map.items()
-        if engine._get_node_type(node) == "start"
+        node_id for node_id, node in node_map.items() if engine._get_node_type(node) == "start"
     ]
     if len(start_node_ids) == 0:
         raise ValueError("工作流必须包含一个开始节点")
@@ -126,9 +130,7 @@ async def execute(
         raise ValueError("工作流只能包含一个开始节点")
 
     end_node_ids = [
-        node_id
-        for node_id, node in node_map.items()
-        if engine._get_node_type(node) == "end"
+        node_id for node_id, node in node_map.items() if engine._get_node_type(node) == "end"
     ]
     if len(end_node_ids) == 0:
         raise ValueError("工作流必须包含一个结束节点")
@@ -147,11 +149,11 @@ async def execute(
     if outgoing_edges.get(end_node_id):
         raise ValueError("结束节点不能有输出连接")
 
-    def _bfs(seed: str, graph: Dict[str, List[Dict[str, Any]]], direction: str) -> Set[str]:
+    def _bfs(seed: str, graph: dict[str, list[dict[str, Any]]], direction: str) -> set[str]:
         # deque.popleft() is O(1); list.pop(0) was O(n), making this BFS O(n^2)
         # on large graphs. Traversal order and the resulting visited set are
         # identical to the previous list-based queue.
-        visited: Set[str] = set()
+        visited: set[str] = set()
         queue: deque[str] = deque([seed])
         while queue:
             current = queue.popleft()
@@ -177,12 +179,12 @@ async def execute(
     if no_end_path_nodes:
         raise ValueError(f"存在无法流向结束节点的节点: {', '.join(no_end_path_nodes[:3])}")
 
-    pending_inputs: Dict[str, List[Dict[str, Any]]] = {node_id: [] for node_id in node_map}
-    execution_queue: List[str] = []
-    queued: Set[str] = set()
-    in_flight: Set[str] = set()
-    node_states: Dict[str, str] = {node_id: "pending" for node_id in node_map}
-    node_visit_counts: Dict[str, int] = {}
+    pending_inputs: dict[str, list[dict[str, Any]]] = {node_id: [] for node_id in node_map}
+    execution_queue: list[str] = []
+    queued: set[str] = set()
+    in_flight: set[str] = set()
+    node_states: dict[str, str] = {node_id: "pending" for node_id in node_map}
+    node_visit_counts: dict[str, int] = {}
 
     def should_defer_node_enqueue(node_id: str, trigger_source_id: Optional[str] = None) -> bool:
         # INVARIANT: must be called while state_lock is held (or before task dispatch
@@ -245,11 +247,13 @@ async def execute(
         execution_queue.append(node_id)
         queued.add(node_id)
 
-    pending_inputs[start_node_id].append({
-        "sourceNodeId": "__input__",
-        "viaEdgeId": "__start__",
-        "output": initial_input,
-    })
+    pending_inputs[start_node_id].append(
+        {
+            "sourceNodeId": "__input__",
+            "viaEdgeId": "__start__",
+            "output": initial_input,
+        }
+    )
     # Safe without lock: state_lock and worker tasks have not been created yet;
     # this is the only call site before concurrent execution begins.
     enqueue(start_node_id)
@@ -287,7 +291,9 @@ async def execute(
             total_steps += 1
             if total_steps > engine.MAX_TOTAL_STEPS:
                 in_flight.discard(node_id)
-                raise RuntimeError(f"工作流执行步数超过上限 {engine.MAX_TOTAL_STEPS}，请检查循环配置")
+                raise RuntimeError(
+                    f"工作流执行步数超过上限 {engine.MAX_TOTAL_STEPS}，请检查循环配置"
+                )
 
             input_packets = pending_inputs.get(node_id, [])
             pending_inputs[node_id] = []
@@ -296,13 +302,16 @@ async def execute(
             if not on_event:
                 return
             safe_progress = max(0, min(int(progress), 100))
-            await on_event("node_progress", {
-                "nodeId": node_id,
-                "timestamp": int(time.time() * 1000),
-                "visit": current_visit,
-                "progress": safe_progress,
-                "stage": stage,
-            })
+            await on_event(
+                "node_progress",
+                {
+                    "nodeId": node_id,
+                    "timestamp": int(time.time() * 1000),
+                    "visit": current_visit,
+                    "progress": safe_progress,
+                    "stage": stage,
+                },
+            )
 
         async def stop_progress_task():
             nonlocal progress_task
@@ -314,12 +323,15 @@ async def execute(
             progress_task = None
 
         if on_event:
-            await on_event("node_start", {
-                "nodeId": node_id,
-                "timestamp": int(time.time() * 1000),
-                "visit": current_visit,
-                "input": engine._build_node_input_snapshot(input_packets=input_packets),
-            })
+            await on_event(
+                "node_start",
+                {
+                    "nodeId": node_id,
+                    "timestamp": int(time.time() * 1000),
+                    "visit": current_visit,
+                    "input": engine._build_node_input_snapshot(input_packets=input_packets),
+                },
+            )
             await emit_node_progress(progress_seed, "started")
 
             async def progress_heartbeat():
@@ -333,7 +345,7 @@ async def execute(
 
             progress_task = asyncio.create_task(progress_heartbeat())
 
-        async def run_node_operation() -> Tuple[Any, Dict[str, Any]]:
+        async def run_node_operation() -> tuple[Any, dict[str, Any]]:
             node_task = asyncio.create_task(
                 engine._execute_node(
                     node=node,
@@ -392,13 +404,16 @@ async def execute(
             if on_event:
                 await stop_progress_task()
                 await emit_node_progress(100, "completed")
-                await on_event("node_complete", {
-                    "nodeId": node_id,
-                    "status": "completed",
-                    "timestamp": int(time.time() * 1000),
-                    "visit": current_visit,
-                    "output": output,
-                })
+                await on_event(
+                    "node_complete",
+                    {
+                        "nodeId": node_id,
+                        "status": "completed",
+                        "timestamp": int(time.time() * 1000),
+                        "visit": current_visit,
+                        "output": output,
+                    },
+                )
 
             engine._record_trace_event(
                 "node_complete",
@@ -430,19 +445,23 @@ async def execute(
                     target_id = edge.get("target")
                     if target_id not in node_map:
                         continue
-                    pending_inputs[target_id].append({
-                        "sourceNodeId": node_id,
-                        "viaEdgeId": edge.get("id"),
-                        "output": output,
-                        "sourceHandle": engine._get_source_handle(edge),
-                    })
+                    pending_inputs[target_id].append(
+                        {
+                            "sourceNodeId": node_id,
+                            "viaEdgeId": edge.get("id"),
+                            "output": output,
+                            "sourceHandle": engine._get_source_handle(edge),
+                        }
+                    )
                     enqueue(target_id, trigger_source_id=node_id)
 
         except Exception as exc:
             error_msg = str(exc)
             context.set_error(node_id, error_msg)
             node_states[node_id] = "failed"
-            logger.error(f"[WorkflowEngine] Node {node_id} ({node_type}) failed: {error_msg}", exc_info=True)
+            logger.error(
+                f"[WorkflowEngine] Node {node_id} ({node_type}) failed: {error_msg}", exc_info=True
+            )
             continue_on_error = engine._to_bool(
                 node_data.get("continue_on_error", node_data.get("continueOnError", False)),
                 default=False,
@@ -451,12 +470,15 @@ async def execute(
             if on_event:
                 await stop_progress_task()
                 await emit_node_progress(100, "failed")
-                await on_event("node_error", {
-                    "nodeId": node_id,
-                    "timestamp": int(time.time() * 1000),
-                    "error": error_msg,
-                    "continueOnError": continue_on_error,
-                })
+                await on_event(
+                    "node_error",
+                    {
+                        "nodeId": node_id,
+                        "timestamp": int(time.time() * 1000),
+                        "error": error_msg,
+                        "continueOnError": continue_on_error,
+                    },
+                )
             engine._record_trace_event(
                 "node_error",
                 {
@@ -497,12 +519,14 @@ async def execute(
                         target_id = edge.get("target")
                         if target_id not in node_map:
                             continue
-                        pending_inputs[target_id].append({
-                            "sourceNodeId": node_id,
-                            "viaEdgeId": edge.get("id"),
-                            "output": fallback_output,
-                            "sourceHandle": engine._get_source_handle(edge),
-                        })
+                        pending_inputs[target_id].append(
+                            {
+                                "sourceNodeId": node_id,
+                                "viaEdgeId": edge.get("id"),
+                                "output": fallback_output,
+                                "sourceHandle": engine._get_source_handle(edge),
+                            }
+                        )
                         enqueue(target_id, trigger_source_id=node_id)
                 return
             raise
@@ -517,10 +541,10 @@ async def execute(
         async with node_semaphore:
             await run_single_node(node_id)
 
-    running_tasks: Set[asyncio.Task] = set()
+    running_tasks: set[asyncio.Task] = set()
     try:
         while True:
-            ready_batch: List[str] = []
+            ready_batch: list[str] = []
             async with state_lock:
                 if execution_queue:
                     ready_batch = list(execution_queue)
@@ -577,11 +601,14 @@ async def execute(
                 },
             )
             if on_event:
-                await on_event("node_skipped", {
-                    "nodeId": node_id,
-                    "timestamp": int(time.time() * 1000),
-                    "reason": "unreachable_or_not_routed",
-                })
+                await on_event(
+                    "node_skipped",
+                    {
+                        "nodeId": node_id,
+                        "timestamp": int(time.time() * 1000),
+                        "reason": "unreachable_or_not_routed",
+                    },
+                )
 
         result = context.get_final_result()
         result["node_states"] = node_states
@@ -640,20 +667,22 @@ async def execute(
 
 async def execute_node(
     engine: Any,
-    node: Dict[str, Any],
+    node: dict[str, Any],
     context: ExecutionContext,
-    initial_input: Dict[str, Any],
-    input_packets: List[Dict[str, Any]],
-    outgoing_edges: List[Dict[str, Any]],
+    initial_input: dict[str, Any],
+    input_packets: list[dict[str, Any]],
+    outgoing_edges: list[dict[str, Any]],
     incoming_edge_count: Optional[int] = None,
-) -> Tuple[Any, Dict[str, Any]]:
+) -> tuple[Any, dict[str, Any]]:
     _ = incoming_edge_count
     node_id = node.get("id", "")
     node_data = node.get("data", {}) or {}
     node_type = engine._get_node_type(node)
 
     if node_type == "start":
-        output = initial_input.get("task") or initial_input.get("input") or initial_input.get("text")
+        output = (
+            initial_input.get("task") or initial_input.get("input") or initial_input.get("text")
+        )
         if output is None:
             output = json.dumps(initial_input, ensure_ascii=False)
         return {
@@ -662,16 +691,20 @@ async def execute_node(
         }, {"mode": "all"}
 
     if node_type in {"input_text", "input_image", "input_video", "input_file"}:
-        latest_value = input_packets[-1].get("output") if input_packets else context.get_latest_output()
+        latest_value = (
+            input_packets[-1].get("output") if input_packets else context.get_latest_output()
+        )
         if isinstance(latest_value, dict):
-            output_payload: Dict[str, Any] = dict(latest_value)
+            output_payload: dict[str, Any] = dict(latest_value)
         else:
             output_payload = {}
             if latest_value is not None:
                 output_payload["text"] = engine._extract_text_from_value(latest_value)
 
         if "text" not in output_payload:
-            output_payload["text"] = engine._derive_node_input_text(context, initial_input, input_packets)
+            output_payload["text"] = engine._derive_node_input_text(
+                context, initial_input, input_packets
+            )
         if "input" not in output_payload and isinstance(initial_input, dict):
             output_payload["input"] = initial_input
 
@@ -690,7 +723,9 @@ async def execute_node(
             return None
 
         if node_type == "input_text":
-            configured_text = resolve_config_value("start_task", "startTask", "input_text", "inputText", "text")
+            configured_text = resolve_config_value(
+                "start_task", "startTask", "input_text", "inputText", "text"
+            )
             if configured_text is not None:
                 text_value = engine._extract_text_from_value(configured_text).strip()
                 if text_value:
@@ -698,8 +733,9 @@ async def execute_node(
                     output_payload["task"] = text_value
 
         if node_type == "input_image":
-            def resolve_config_values(*keys: str) -> List[Any]:
-                values: List[Any] = []
+
+            def resolve_config_values(*keys: str) -> list[Any]:
+                values: list[Any] = []
                 for key in keys:
                     raw_value = node_data.get(key)
                     if raw_value is None:
@@ -723,46 +759,52 @@ async def execute_node(
                     values.append(raw_value)
                 return values
 
-            candidate_images: List[Any] = []
+            candidate_images: list[Any] = []
             if isinstance(initial_input, dict):
-                candidate_images.extend([
-                    initial_input.get("imageUrl"),
-                    initial_input.get("image_url"),
-                    initial_input.get("sourceImageUrl"),
-                    initial_input.get("source_image_url"),
-                ])
+                candidate_images.extend(
+                    [
+                        initial_input.get("imageUrl"),
+                        initial_input.get("image_url"),
+                        initial_input.get("sourceImageUrl"),
+                        initial_input.get("source_image_url"),
+                    ]
+                )
                 input_image_urls = initial_input.get("imageUrls")
                 if isinstance(input_image_urls, list):
                     candidate_images.extend(input_image_urls)
                 input_image_urls_snake = initial_input.get("image_urls")
                 if isinstance(input_image_urls_snake, list):
                     candidate_images.extend(input_image_urls_snake)
-            candidate_images.extend(resolve_config_values(
-                "start_image_url",
-                "startImageUrl",
-                "start_image_urls",
-                "startImageUrls",
-                "input_image_url",
-                "inputImageUrl",
-                "input_image_urls",
-                "inputImageUrls",
-                "image_url",
-                "imageUrl",
-                "image_urls",
-                "imageUrls",
-                "url",
-                "urls",
-            ))
+            candidate_images.extend(
+                resolve_config_values(
+                    "start_image_url",
+                    "startImageUrl",
+                    "start_image_urls",
+                    "startImageUrls",
+                    "input_image_url",
+                    "inputImageUrl",
+                    "input_image_urls",
+                    "inputImageUrls",
+                    "image_url",
+                    "imageUrl",
+                    "image_urls",
+                    "imageUrls",
+                    "url",
+                    "urls",
+                )
+            )
 
-            normalized_images: List[str] = []
-            seen_images: Set[str] = set()
+            normalized_images: list[str] = []
+            seen_images: set[str] = set()
 
             def collect_image(candidate: Any):
                 if isinstance(candidate, list):
                     for item in candidate:
                         collect_image(item)
                     return
-                normalized_candidate = engine._normalize_possible_image_url(candidate, key_hint="image_url")
+                normalized_candidate = engine._normalize_possible_image_url(
+                    candidate, key_hint="image_url"
+                )
                 if normalized_candidate and normalized_candidate not in seen_images:
                     seen_images.add(normalized_candidate)
                     normalized_images.append(normalized_candidate)
@@ -776,8 +818,9 @@ async def execute_node(
             output_payload["imageUrls"] = normalized_images
 
         if node_type == "input_video":
-            def resolve_config_values(*keys: str) -> List[Any]:
-                values: List[Any] = []
+
+            def resolve_config_values(*keys: str) -> list[Any]:
+                values: list[Any] = []
                 for key in keys:
                     raw_value = node_data.get(key)
                     if raw_value is None:
@@ -801,7 +844,7 @@ async def execute_node(
                     values.append(raw_value)
                 return values
 
-            candidate_videos: List[Any] = []
+            candidate_videos: list[Any] = []
             if isinstance(initial_input, dict):
                 candidate_videos.append(initial_input)
                 candidate_videos.extend(
@@ -850,9 +893,9 @@ async def execute_node(
                 )
             )
 
-            normalized_video_payloads: List[Any] = []
-            normalized_video_urls: List[str] = []
-            seen_video_urls: Set[str] = set()
+            normalized_video_payloads: list[Any] = []
+            normalized_video_urls: list[str] = []
+            seen_video_urls: set[str] = set()
 
             def collect_video(candidate: Any):
                 if isinstance(candidate, list):
@@ -915,8 +958,9 @@ async def execute_node(
                     output_payload["gcsUri"] = primary_text
 
         if node_type == "input_file":
-            def resolve_config_values(*keys: str) -> List[Any]:
-                values: List[Any] = []
+
+            def resolve_config_values(*keys: str) -> list[Any]:
+                values: list[Any] = []
                 for key in keys:
                     raw_value = node_data.get(key)
                     if raw_value is None:
@@ -940,14 +984,16 @@ async def execute_node(
                     values.append(raw_value)
                 return values
 
-            candidate_files: List[Any] = []
+            candidate_files: list[Any] = []
             if isinstance(initial_input, dict):
-                candidate_files.extend([
-                    initial_input.get("fileUrl"),
-                    initial_input.get("file_url"),
-                    initial_input.get("table"),
-                    initial_input.get("csv"),
-                ])
+                candidate_files.extend(
+                    [
+                        initial_input.get("fileUrl"),
+                        initial_input.get("file_url"),
+                        initial_input.get("table"),
+                        initial_input.get("csv"),
+                    ]
+                )
                 input_file_urls = initial_input.get("fileUrls")
                 if isinstance(input_file_urls, list):
                     candidate_files.extend(input_file_urls)
@@ -958,25 +1004,27 @@ async def execute_node(
                 if isinstance(input_files, list):
                     candidate_files.extend(input_files)
 
-            candidate_files.extend(resolve_config_values(
-                "start_file_url",
-                "startFileUrl",
-                "start_file_urls",
-                "startFileUrls",
-                "input_file_url",
-                "inputFileUrl",
-                "input_file_urls",
-                "inputFileUrls",
-                "file_url",
-                "fileUrl",
-                "file_urls",
-                "fileUrls",
-                "url",
-                "urls",
-            ))
+            candidate_files.extend(
+                resolve_config_values(
+                    "start_file_url",
+                    "startFileUrl",
+                    "start_file_urls",
+                    "startFileUrls",
+                    "input_file_url",
+                    "inputFileUrl",
+                    "input_file_urls",
+                    "inputFileUrls",
+                    "file_url",
+                    "fileUrl",
+                    "file_urls",
+                    "fileUrls",
+                    "url",
+                    "urls",
+                )
+            )
 
-            normalized_files: List[str] = []
-            seen_files: Set[str] = set()
+            normalized_files: list[str] = []
+            seen_files: set[str] = set()
 
             def collect_file(candidate: Any):
                 if isinstance(candidate, list):
@@ -1025,11 +1073,12 @@ async def execute_node(
                 timeout=timeout_seconds,
             )
         except asyncio.TimeoutError as exc:
-            task_type = str(
-                node_data.get("agent_task_type")
-                or node_data.get("agentTaskType")
+            task_type = (
+                str(node_data.get("agent_task_type") or node_data.get("agentTaskType") or "chat")
+                .strip()
+                .lower()
                 or "chat"
-            ).strip().lower() or "chat"
+            )
             raise TimeoutError(
                 f"Agent node '{node_id}' timed out after {timeout_seconds}s (taskType={task_type})"
             ) from exc
@@ -1055,7 +1104,9 @@ async def execute_node(
         }
 
     if node_type == "router":
-        strategy = (node_data.get("router_strategy") or node_data.get("routerStrategy") or "intent").strip()
+        strategy = (
+            node_data.get("router_strategy") or node_data.get("routerStrategy") or "intent"
+        ).strip()
         router_prompt = node_data.get("router_prompt") or node_data.get("routerPrompt") or ""
         input_text = engine._derive_node_input_text(context, initial_input, input_packets)
         selected_index, route_reason = await engine._select_router_branch(
@@ -1079,10 +1130,12 @@ async def execute_node(
     if node_type == "parallel":
         inputs = [packet.get("output") for packet in input_packets if "output" in packet]
         latest_input_payload = inputs[-1] if inputs else None
-        output_payload: Dict[str, Any] = {
+        output_payload: dict[str, Any] = {
             "mode": "parallel",
             "joinMode": node_data.get("join_mode") or node_data.get("joinMode") or "wait_all",
-            "timeoutSeconds": node_data.get("timeout_seconds") or node_data.get("timeoutSeconds") or 60,
+            "timeoutSeconds": node_data.get("timeout_seconds")
+            or node_data.get("timeoutSeconds")
+            or 60,
             "branchCount": len(outgoing_edges),
         }
         if latest_input_payload is not None:
@@ -1098,7 +1151,9 @@ async def execute_node(
 
     if node_type == "merge":
         inputs = [packet.get("output") for packet in input_packets if "output" in packet]
-        merge_strategy = (node_data.get("merge_strategy") or node_data.get("mergeStrategy") or "append").strip()
+        merge_strategy = (
+            node_data.get("merge_strategy") or node_data.get("mergeStrategy") or "append"
+        ).strip()
         merged = engine._merge_outputs(inputs, merge_strategy)
         return {
             "mergeStrategy": merge_strategy,
@@ -1109,7 +1164,9 @@ async def execute_node(
 
     if node_type == "loop":
         max_iterations = int(node_data.get("max_iterations") or node_data.get("maxIterations") or 3)
-        loop_condition = node_data.get("loop_condition") or node_data.get("loopCondition") or "false"
+        loop_condition = (
+            node_data.get("loop_condition") or node_data.get("loopCondition") or "false"
+        )
         iteration = context.increment_loop_iteration(node_id)
         condition_result, resolved_expression = engine._evaluate_expression(
             expression=loop_condition,
@@ -1133,7 +1190,9 @@ async def execute_node(
         tool_name = (node_data.get("tool_name") or node_data.get("toolName") or "").strip()
         if not tool_name:
             tool_name = "mock_tool"
-        tool_args_template = node_data.get("tool_args_template") or node_data.get("toolArgsTemplate") or ""
+        tool_args_template = (
+            node_data.get("tool_args_template") or node_data.get("toolArgsTemplate") or ""
+        )
         tool_args_raw = engine._resolve_tool_args_template(
             template=tool_args_template,
             context=context,
@@ -1223,19 +1282,40 @@ async def execute_node(
             audio_url = tool_result.get("audioUrl") or tool_result.get("audio_url")
             if not audio_url:
                 raw_url = tool_result.get("url")
-                raw_mime_type = str(tool_result.get("mime_type") or tool_result.get("mimeType") or "").strip().lower()
-                if isinstance(raw_url, str) and raw_url.strip() and raw_mime_type.startswith("audio/"):
+                raw_mime_type = (
+                    str(tool_result.get("mime_type") or tool_result.get("mimeType") or "")
+                    .strip()
+                    .lower()
+                )
+                if (
+                    isinstance(raw_url, str)
+                    and raw_url.strip()
+                    and raw_mime_type.startswith("audio/")
+                ):
                     audio_url = raw_url
             if isinstance(audio_url, str) and audio_url.strip():
                 output["audioUrl"] = audio_url.strip()
                 output["audioUrls"] = [audio_url.strip()]
-            for key in ("provider_file_name", "providerFileName", "provider_file_uri", "providerFileUri", "gcs_uri", "gcsUri", "mime_type", "mimeType"):
+            for key in (
+                "provider_file_name",
+                "providerFileName",
+                "provider_file_uri",
+                "providerFileUri",
+                "gcs_uri",
+                "gcsUri",
+                "mime_type",
+                "mimeType",
+            ):
                 if tool_result.get(key) is not None:
                     output[key] = tool_result.get(key)
         return output, {"mode": "all"}
 
     if node_type == "human":
-        approval_prompt = node_data.get("approval_prompt") or node_data.get("approvalPrompt") or "请人工确认是否继续执行"
+        approval_prompt = (
+            node_data.get("approval_prompt")
+            or node_data.get("approvalPrompt")
+            or "请人工确认是否继续执行"
+        )
         has_explicit_auto_approve = "auto_approve" in node_data or "autoApprove" in node_data
         auto_approve = engine._to_bool(
             node_data.get("auto_approve", node_data.get("autoApprove")),
