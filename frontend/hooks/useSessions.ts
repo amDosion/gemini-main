@@ -188,23 +188,6 @@ export const useSessions = (
     return Boolean(latestSession);
   }, []);
 
-  useEffect(() => {
-    if (sessions.length === 0) {
-      return;
-    }
-
-    const hasValidCurrentSession =
-      currentSessionId !== null && sessions.some((session) => session.id === currentSessionId);
-    if (hasValidCurrentSession) {
-      return;
-    }
-
-    const latestSession = sortSessionsByCreatedAtDesc(sessions)[0];
-    if (latestSession) {
-      writeCurrentSessionIdForMode(appMode, latestSession.id);
-    }
-  }, [appMode, currentSessionId, sessions]);
-
   const updateSessionsForCurrentMode = useCallback(
     (updater: (prev: ChatSession[]) => ChatSession[]) => {
       updateCachedSessionsForMode(appMode, updater);

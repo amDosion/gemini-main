@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 
+import { readCachedSessionsForMode } from '../services/sessionCache';
 import { AppMode } from '../types/types';
 
 export interface UseWorkspaceModeHandlersParams {
@@ -8,7 +9,6 @@ export interface UseWorkspaceModeHandlersParams {
   setOpenWorkspaceModes: React.Dispatch<React.SetStateAction<AppMode[]>>;
   setWorkspaceReloadKeys: React.Dispatch<React.SetStateAction<Partial<Record<AppMode, number>>>>;
   handleModeSwitch: (mode: AppMode) => void;
-  selectLatestSessionForMode: (mode: AppMode) => boolean;
   refreshSessions: (options?: { force?: boolean }) => void | Promise<void>;
 }
 
@@ -35,7 +35,6 @@ export const useWorkspaceModeHandlers = (
     setOpenWorkspaceModes,
     setWorkspaceReloadKeys,
     handleModeSwitch,
-    selectLatestSessionForMode,
     refreshSessions,
   } = params;
 
@@ -57,13 +56,12 @@ export const useWorkspaceModeHandlers = (
   const handleModeNavigationSelect = useCallback(
     (mode: AppMode) => {
       openWorkspaceMode(mode);
-      const hasCachedLatest = selectLatestSessionForMode(mode);
       handleModeSwitch(mode);
-      if (mode === appMode && !hasCachedLatest) {
+      if (mode === appMode && readCachedSessionsForMode(mode) === null) {
         refreshSessions();
       }
     },
-    [appMode, handleModeSwitch, openWorkspaceMode, refreshSessions, selectLatestSessionForMode]
+    [appMode, handleModeSwitch, openWorkspaceMode, refreshSessions]
   );
 
   const handleWorkspaceModesClose = useCallback(

@@ -384,12 +384,11 @@ def test_storage_browse_and_batch_opts_into_always_convert():
 
 def test_init_endpoints_opt_into_always_convert():
     # The bootstrap endpoints return composite app data — profiles (to_dict snake,
-    # with unbounded saved_models) + storage configs + personas + first-message
-    # sessions — consumed camelCase only by useInitData. A large account must not get
+    # with unbounded saved_models) + storage configs + personas + session-list
+    # metadata — consumed camelCase only by useInitData. A large account must not get
     # the whole app init in snake_case past the 2 MiB valve. /init/sessions/more is a
-    # paginated page (limit<=50) but each row carries a first message that can be long,
-    # so a page can still cross 2 MiB and it feeds camelCase-only normalizeChatSession
-    # -> marked too (count-cap != byte-cap).
+    # paginated page (limit<=50) and feeds camelCase-only normalizeChatSession
+    # -> marked too.
     from app.routers.user import init
 
     for fn in (

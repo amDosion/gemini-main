@@ -115,7 +115,7 @@ export const selectCurrentSessionIdForMode = (
   if (cachedSessionId && sessions.some((session) => session.id === cachedSessionId)) {
     return cachedSessionId;
   }
-  return sessions[0]?.id ?? null;
+  return null;
 };
 
 export const writeSessionHasMoreForMode = (mode: AppMode, hasMore: boolean): void => {

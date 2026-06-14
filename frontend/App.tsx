@@ -306,7 +306,6 @@ const AppContent: React.FC = () => {
     updateSessionPersona,
     updateSessionTitle, // ✅ 新增
     deleteSession,
-    selectLatestSessionForMode,
     // 缓存相关
     cacheStatus,
     refreshSessions,
@@ -391,7 +390,6 @@ const AppContent: React.FC = () => {
     setOpenWorkspaceModes,
     setWorkspaceReloadKeys,
     handleModeSwitch,
-    selectLatestSessionForMode,
     refreshSessions,
   });
 

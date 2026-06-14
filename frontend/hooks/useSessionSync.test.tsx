@@ -46,6 +46,30 @@ describe('useSessionSync stale request protection', () => {
     skipModeRestoreFlag.current = false;
   });
 
+  it('does not lazy-load session details when no current session is selected', () => {
+    const setAppMode = vi.fn();
+
+    renderHook(() =>
+      useSessionSync({
+        currentSessionId: null,
+        sessions: [
+          {
+            id: 'latest-session',
+            title: 'Latest',
+            messages: [],
+            createdAt: 2,
+            mode: 'chat',
+          },
+        ],
+        setAppMode,
+      })
+    );
+
+    expect(apiGetMock).not.toHaveBeenCalled();
+    expect(getModeMessages('chat')).toEqual([]);
+    expect(setAppMode).not.toHaveBeenCalled();
+  });
+
   it('ignores late /api/sessions response from previous session switch for messages and mode', async () => {
     const staleLoad = createDeferred<ChatSession>();
     apiGetMock.mockImplementation((url: string) => {

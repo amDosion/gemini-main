@@ -154,6 +154,49 @@ describe('useSessions private cache scope', () => {
     }
   });
 
+  it('loads initial mode sessions without auto-selecting the latest session', async () => {
+    const olderSession = { ...createSession('older-session', 'chat'), createdAt: 1 };
+    const latestSession = { ...createSession('latest-session', 'chat'), createdAt: 2 };
+
+    const hook = renderHook(() =>
+      useSessions('chat', {
+        sessions: [olderSession, latestSession],
+        sessionsMode: 'chat',
+        sessionsHasMore: false,
+      })
+    );
+
+    await waitFor(() => {
+      expect(hook.result.current.sessions.map((session) => session.id)).toEqual([
+        'latest-session',
+        'older-session',
+      ]);
+    });
+
+    expect(hook.result.current.currentSessionId).toBeNull();
+    expect(readCurrentSessionIdForMode('chat')).toBeNull();
+    expect(apiGetMock).not.toHaveBeenCalledWith(expect.stringMatching(/^\/api\/sessions\//));
+  });
+
+  it('restores an explicitly selected cached session when it is still in the mode list', async () => {
+    const olderSession = { ...createSession('older-session', 'chat'), createdAt: 1 };
+    const latestSession = { ...createSession('latest-session', 'chat'), createdAt: 2 };
+    writeCurrentSessionIdForMode('chat', 'older-session');
+
+    const hook = renderHook(() =>
+      useSessions('chat', {
+        sessions: [olderSession, latestSession],
+        sessionsMode: 'chat',
+        sessionsHasMore: false,
+      })
+    );
+
+    await waitFor(() => {
+      expect(hook.result.current.currentSessionId).toBe('older-session');
+    });
+    expect(readCurrentSessionIdForMode('chat')).toBe('older-session');
+  });
+
   it('reuses cached empty mode lists instead of refetching when a mode is revisited', async () => {
     const chatSession = createSession('chat-session', 'chat');
 
@@ -303,7 +346,7 @@ describe('useSessions private cache scope', () => {
 
     await waitFor(() => {
       expect(result.current.sessions).toEqual([chatSession]);
-      expect(result.current.currentSessionId).toBe('session-mode-move');
+      expect(result.current.currentSessionId).toBeNull();
     });
 
     act(() => {

@@ -123,3 +123,75 @@ async def test_more_sessions_cursor_keeps_rows_with_same_created_at():
         assert first_ids.isdisjoint(second_ids)
     finally:
         db.close()
+
+
+@pytest.mark.asyncio
+async def test_non_critical_sessions_do_not_prefetch_first_session_messages():
+    from app.core.database import Base
+    from app.models.db_models import ChatSession, MessageIndex, MessagesChat
+    from app.services.common.init_service import _query_sessions_with_first_messages
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(
+        bind=engine,
+        tables=[ChatSession.__table__, MessageIndex.__table__, MessagesChat.__table__],
+    )
+    TestingSessionLocal = sessionmaker(bind=engine)
+
+    db = TestingSessionLocal()
+    try:
+        db.add_all(
+            [
+                ChatSession(
+                    id="latest-session",
+                    user_id="user-1",
+                    title="Latest",
+                    mode="chat",
+                    created_at=2000,
+                ),
+                ChatSession(
+                    id="older-session",
+                    user_id="user-1",
+                    title="Older",
+                    mode="chat",
+                    created_at=1000,
+                ),
+                MessageIndex(
+                    id="message-1",
+                    user_id="user-1",
+                    session_id="latest-session",
+                    mode="chat",
+                    table_name="messages_chat",
+                    seq=0,
+                    timestamp=2000,
+                ),
+                MessagesChat(
+                    id="message-1",
+                    user_id="user-1",
+                    session_id="latest-session",
+                    role="user",
+                    content="should not be prefetched",
+                    timestamp=2000,
+                ),
+            ]
+        )
+        db.commit()
+
+        result = await _query_sessions_with_first_messages(
+            "user-1",
+            db,
+            limit=20,
+            mode="chat",
+        )
+
+        assert result["total"] == 2
+        assert result["has_more"] is False
+        assert [session["id"] for session in result["sessions"]] == [
+            "latest-session",
+            "older-session",
+        ]
+        assert result["sessions"][0]["messageCount"] == 1
+        assert result["sessions"][0]["messages"] == []
+        assert result["sessions"][1]["messages"] == []
+    finally:
+        db.close()

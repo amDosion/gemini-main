@@ -391,7 +391,7 @@ describe('App welcome prompt quick send model selection', () => {
     expect(handleModeSwitchMock).not.toHaveBeenCalledWith('chat');
   });
 
-  it('selects the latest session for left mode navigation but preserves tag-view session cache', async () => {
+  it('switches modes from navigation without auto-selecting the latest session', async () => {
     render(
       <MemoryRouter initialEntries={['/']}>
         <App />
@@ -407,7 +407,7 @@ describe('App welcome prompt quick send model selection', () => {
 
     fireEvent.click(screen.getByTestId('mode-nav-image-gen'));
 
-    expect(selectLatestSessionForModeMock).toHaveBeenCalledWith('image-gen');
+    expect(selectLatestSessionForModeMock).not.toHaveBeenCalled();
     expect(handleModeSwitchMock).toHaveBeenCalledWith('image-gen');
 
     selectLatestSessionForModeMock.mockClear();

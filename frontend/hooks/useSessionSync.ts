@@ -99,7 +99,7 @@ export const useSessionSync = ({
           if (session.messages && session.messages.length > 0) {
             cancelInFlightFetch();
 
-            // ✅ 会话已有消息（第一个会话或已缓存的），直接使用
+            // ✅ 会话已有消息（例如已缓存的显式选择会话），直接使用
             setModeMessages(deriveMode(session.mode, session.messages), session.messages);
 
             // 检查是否跳过 mode 恢复（gen 模式下的会话切换）

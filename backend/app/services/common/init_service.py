@@ -248,12 +248,11 @@ async def _query_sessions_with_first_messages(
     mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    查询会话列表 + 第一个会话的完整消息
+    查询会话列表，不预取完整消息
     
     注意：
     1. 返回最近的 N 个会话元数据（用于左侧 Sidebar）
-    2. 第一个会话必须包含完整消息（不能分页，用于右侧 ChatView）
-    3. 其他会话的 messages 为空数组（按需加载）
+    2. 所有会话的 messages 为空数组（按需加载）
     
     Returns:
         {
@@ -264,7 +263,7 @@ async def _query_sessions_with_first_messages(
     """
     try:
         logger.info(
-            f"[InitService] 查询 Sessions（包含第一个会话的完整消息，limit={limit}, mode={mode}）..."
+            f"[InitService] 查询 Sessions（仅列表，无预取消息，limit={limit}, mode={mode}）..."
         )
 
         from sqlalchemy import func
@@ -306,64 +305,9 @@ async def _query_sessions_with_first_messages(
         
         message_count_map = {mc.session_id: mc.count for mc in message_counts}
         
-        # ✅ 获取第一个会话的完整消息（不能分页）
-        first_session = sessions[0]
-        first_session_messages = []
-        
-        # 查询第一个会话的所有消息索引
-        first_indexes = db.query(MessageIndex).filter(
-            MessageIndex.session_id == first_session.id,
-            MessageIndex.user_id == user_id
-        ).order_by(MessageIndex.seq.asc()).all()
-        
-        if first_indexes:
-            # 收集所有 message_ids 和 table_names
-            first_message_ids = set()
-            first_table_message_ids: Dict[str, set] = defaultdict(set)
-            
-            for idx in first_indexes:
-                first_message_ids.add(idx.id)
-                first_table_message_ids[idx.table_name].add(idx.id)
-            
-            # 按 table_name 批量查询各模式表
-            first_messages_by_table: Dict[str, Dict[str, Any]] = {}
-            
-            for table_name, msg_ids in first_table_message_ids.items():
-                if not msg_ids:
-                    continue
-                try:
-                    table_class = get_message_table_class_by_name(table_name)
-                    messages = db.query(table_class).filter(
-                        table_class.id.in_(list(msg_ids))
-                    ).all()
-                    first_messages_by_table[table_name] = {msg.id: msg for msg in messages}
-                except ValueError as e:
-                    logger.warning(f"[InitService] 未知表名: {table_name}, 错误: {e}")
-                    continue
-            
-            # 批量查询所有附件
-            first_attachments_by_message: Dict[str, List[MessageAttachment]] = defaultdict(list)
-            
-            if first_message_ids:
-                all_attachments = db.query(MessageAttachment).filter(
-                    MessageAttachment.message_id.in_(list(first_message_ids)),
-                    MessageAttachment.user_id == user_id
-                ).all()
-                
-                for att in all_attachments:
-                    first_attachments_by_message[att.message_id].append(att)
-            
-            # 组装第一个会话的消息
-            first_session_messages = assemble_messages_v3(
-                first_session.id,
-                first_indexes,
-                first_messages_by_table,
-                first_attachments_by_message
-            )
-        
         # ✅ 组装会话结果
         sessions_result = []
-        for idx, session in enumerate(sessions):
+        for session in sessions:
             session_dict = {
                 "id": session.id,
                 "title": session.title,
@@ -372,19 +316,13 @@ async def _query_sessions_with_first_messages(
                 "mode": session.mode,
                 "messageCount": message_count_map.get(session.id, 0)
             }
-            
-            if idx == 0:
-                # ✅ 第一个会话包含完整消息
-                session_dict["messages"] = first_session_messages
-            else:
-                # ✅ 其他会话 messages 为空数组
-                session_dict["messages"] = []
+            session_dict["messages"] = []
             
             sessions_result.append(session_dict)
         
         has_more = total_count > limit
         
-        logger.info(f"[InitService] Sessions 加载成功: {len(sessions_result)} 个会话（第一个包含 {len(first_session_messages)} 条消息）")
+        logger.info(f"[InitService] Sessions 加载成功: {len(sessions_result)} 个会话（仅列表，无预取消息）")
         
         return {
             "sessions": sessions_result,

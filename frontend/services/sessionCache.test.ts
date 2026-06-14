@@ -8,6 +8,7 @@ import {
   readCachedSessionsForMode,
   readCurrentSessionIdForMode,
   removeSessionFromCaches,
+  selectCurrentSessionIdForMode,
   upsertSessionInCaches,
   writeCachedHistoryPreference,
   writeCachedHistoryStates,
@@ -67,6 +68,25 @@ describe('sessionCache', () => {
     writeCurrentSessionIdForMode('chat', 'removed-session');
 
     expect(readCurrentSessionIdForMode('chat')).toBeNull();
+  });
+
+  it('does not select the newest session when no explicit current-session pointer exists', () => {
+    const olderSession = { ...createSession('older-session', 'chat'), createdAt: 1 };
+    const latestSession = { ...createSession('latest-session', 'chat'), createdAt: 2 };
+
+    expect(selectCurrentSessionIdForMode('chat', [latestSession, olderSession])).toBeNull();
+  });
+
+  it('returns an explicit current-session pointer when it is still in the mode list', () => {
+    const olderSession = { ...createSession('older-session', 'chat'), createdAt: 1 };
+    const latestSession = { ...createSession('latest-session', 'chat'), createdAt: 2 };
+
+    writeCachedSessionsForMode('chat', [latestSession, olderSession]);
+    writeCurrentSessionIdForMode('chat', 'older-session');
+
+    expect(selectCurrentSessionIdForMode('chat', [latestSession, olderSession])).toBe(
+      'older-session'
+    );
   });
 
   it('removes a deleted session from every cached mode and current-session pointer', () => {

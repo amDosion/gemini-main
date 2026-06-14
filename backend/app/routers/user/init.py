@@ -245,8 +245,7 @@ async def get_non_critical_init_data(
     
     非关键数据包括：
     - sessions: 会话列表（最近的 20 个）
-      * 第一个会话包含完整消息（不能分页，用于右侧 ChatView）
-      * 其他会话 messages 为空数组（按需加载）
+      * 所有会话 messages 为空数组（按需加载）
     - sessionsTotal: 总会话数量（用于分页）
     - sessionsHasMore: 是否还有更多会话（用于滚动加载）
     - personas: 角色列表
