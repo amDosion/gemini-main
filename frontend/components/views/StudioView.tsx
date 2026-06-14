@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useRef } from 'react';
-import { Message, AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
+import { AppMode, Attachment, ChatOptions, ModelConfig } from '../../types/types';
 import { LoadingSpinner } from '../common/LoadingSpinner';
-import { useViewMessages } from '../../hooks/useViewMessages';
+import { useModeMessages } from '../../hooks/modeMessageStore';
 
 // Lazy load all Studio sub-views
 const ImageGenView = lazy(() =>
@@ -56,7 +56,6 @@ const MODE_COMPONENTS: Record<string, React.LazyExoticComponent<React.ComponentT
 };
 
 interface StudioViewProps {
-  messages: Message[];
   mode: AppMode;
   modeReloadKeys?: Partial<Record<AppMode, number>>;
   setAppMode: (mode: AppMode) => void;
@@ -98,7 +97,7 @@ interface StudioViewProps {
  * - Unvisited modes cost zero memory
  */
 export const StudioView: React.FC<StudioViewProps> = React.memo((props) => {
-  const { mode: currentMode, modeReloadKeys = {}, messages, ...restProps } = props;
+  const { mode: currentMode, modeReloadKeys = {}, ...restProps } = props;
 
   // Track which modes have been visited (once mounted, stay alive)
   const mountedModesRef = useRef<Set<string>>(new Set());
@@ -129,7 +128,6 @@ export const StudioView: React.FC<StudioViewProps> = React.memo((props) => {
                 Component={Component}
                 mode={mode as AppMode}
                 isActive={isActive}
-                messages={messages}
                 {...restProps}
               />
             </Suspense>
@@ -148,22 +146,8 @@ const KeepAliveViewWrapper: React.FC<{
   Component: React.LazyExoticComponent<React.ComponentType<Record<string, unknown>>>;
   mode: AppMode;
   isActive: boolean;
-  messages: Message[];
   [key: string]: unknown;
-}> = React.memo(
-  ({ Component, mode, isActive, messages, ...props }) => {
-    // Each view gets its own filtered messages
-    const viewMessages = useViewMessages(messages, mode);
-
-    return <Component {...props} messages={viewMessages} mode={mode} />;
-  },
-  (prevProps, nextProps) => {
-    // Custom comparison: skip re-render for hidden views unless messages changed
-    if (!nextProps.isActive && !prevProps.isActive) {
-      // Both hidden - skip re-render unless messages changed
-      return prevProps.messages === nextProps.messages;
-    }
-    // Active or becoming active - let React decide
-    return false;
-  }
-);
+}> = React.memo(({ Component, mode, isActive: _isActive, ...props }) => {
+  const messages = useModeMessages(mode);
+  return <Component {...props} messages={messages} mode={mode} />;
+});

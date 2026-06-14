@@ -56,6 +56,8 @@ export const McpTab: React.FC = () => {
   const [expandedToolsMap, setExpandedToolsMap] = useState<Record<string, boolean>>({});
   const [serverInvokeMap, setServerInvokeMap] = useState<Record<string, ServerInvokeState>>({});
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
+  const serverToolsMapRef = useRef(serverToolsMap);
+  const serverInvokeMapRef = useRef(serverInvokeMap);
   const toolsCacheRef = useRef<
     Record<string, { expiresAt: number; tools: Array<{ name: string; description?: string }> }>
   >({});
@@ -109,6 +111,14 @@ export const McpTab: React.FC = () => {
   }, [loadConfig]);
 
   useEffect(() => {
+    serverToolsMapRef.current = serverToolsMap;
+  }, [serverToolsMap]);
+
+  useEffect(() => {
+    serverInvokeMapRef.current = serverInvokeMap;
+  }, [serverInvokeMap]);
+
+  useEffect(() => {
     if (!successMessage) return;
     const timer = window.setTimeout(() => setSuccessMessage(null), 2500);
     return () => window.clearTimeout(timer);
@@ -145,10 +155,11 @@ export const McpTab: React.FC = () => {
             error: undefined,
           },
         }));
-        return;
+        return cached.tools;
       }
     }
 
+    const previousTools = serverToolsMapRef.current[serverKey]?.tools || [];
     setServerToolsMap((prev) => ({
       ...prev,
       [serverKey]: {
@@ -176,16 +187,18 @@ export const McpTab: React.FC = () => {
           error: undefined,
         },
       }));
+      return tools;
     } catch (e: unknown) {
       setServerToolsMap((prev) => ({
         ...prev,
         [serverKey]: {
           loading: false,
           loaded: true,
-          tools: prev[serverKey]?.tools || [],
+          tools: prev[serverKey]?.tools || previousTools,
           error: (e instanceof Error ? e.message : undefined) || 'Failed to load tools',
         },
       }));
+      return previousTools;
     }
   }, []);
 
@@ -274,7 +287,7 @@ export const McpTab: React.FC = () => {
     setIsDialogOpen(true);
   };
 
-  const openEditDialog = (card: ServerCard) => {
+  const openEditDialog = useCallback((card: ServerCard) => {
     setDialogMode('edit');
     setEditingKey(card.key);
     setDialogError(null);
@@ -297,7 +310,7 @@ export const McpTab: React.FC = () => {
       )
     );
     setIsDialogOpen(true);
-  };
+  }, []);
 
   const normalizeIntroUrl = (rawUrl: string): string => {
     const trimmed = rawUrl.trim();
@@ -385,10 +398,10 @@ export const McpTab: React.FC = () => {
     }
   };
 
-  const handleDeleteClick = (key: string) => {
+  const handleDeleteClick = useCallback((key: string) => {
     setDeleteTargetKey(key);
     setOpenMenuKey(null);
-  };
+  }, []);
 
   const handleDeleteConfirm = async () => {
     if (!deleteTargetKey) return;
@@ -421,19 +434,23 @@ export const McpTab: React.FC = () => {
     setDeleteTargetKey(null);
   };
 
-  const openToolInvoke = async (
+  const openToolInvoke = useCallback(async (
     serverKey: string,
     availableTools: Array<{ name: string; description?: string }>
   ) => {
-    const currentToolsState = serverToolsMap[serverKey];
-    if (!currentToolsState?.loaded && !currentToolsState?.loading) {
-      await loadServerTools(serverKey);
-    }
+    const currentToolsState = serverToolsMapRef.current[serverKey];
+    const loaded =
+      !currentToolsState?.loaded && !currentToolsState?.loading
+        ? await loadServerTools(serverKey)
+        : undefined;
 
     const latestTools =
-      serverToolsMap[serverKey]?.tools ||
-      availableTools ||
-      toolsCacheRef.current[serverKey]?.tools ||
+      (loaded && loaded.length > 0 ? loaded : null) ??
+      (serverToolsMapRef.current[serverKey]?.tools?.length
+        ? serverToolsMapRef.current[serverKey]!.tools
+        : null) ??
+      (availableTools?.length ? availableTools : null) ??
+      toolsCacheRef.current[serverKey]?.tools ??
       [];
     const defaultToolName = latestTools[0]?.name || '';
     setServerInvokeMap((prev) => {
@@ -452,9 +469,9 @@ export const McpTab: React.FC = () => {
         },
       };
     });
-  };
+  }, [loadServerTools]);
 
-  const closeToolInvoke = (serverKey: string) => {
+  const closeToolInvoke = useCallback((serverKey: string) => {
     setServerInvokeMap((prev) => {
       if (!prev[serverKey]) return prev;
       return {
@@ -466,9 +483,9 @@ export const McpTab: React.FC = () => {
         },
       };
     });
-  };
+  }, []);
 
-  const updateInvokeState = (serverKey: string, patch: Partial<ServerInvokeState>) => {
+  const updateInvokeState = useCallback((serverKey: string, patch: Partial<ServerInvokeState>) => {
     setServerInvokeMap((prev) => {
       const current = prev[serverKey] || {
         open: true,
@@ -484,10 +501,10 @@ export const McpTab: React.FC = () => {
         },
       };
     });
-  };
+  }, []);
 
-  const runToolInvoke = async (serverKey: string) => {
-    const invokeState = serverInvokeMap[serverKey];
+  const runToolInvoke = useCallback(async (serverKey: string) => {
+    const invokeState = serverInvokeMapRef.current[serverKey];
     if (!invokeState) return;
 
     const toolName = String(invokeState.toolName || '').trim();
@@ -582,7 +599,19 @@ export const McpTab: React.FC = () => {
         mode: 'backend',
       });
     }
-  };
+  }, [updateInvokeState]);
+
+  const toggleMenu = useCallback((key: string) => {
+    setOpenMenuKey((prev) => (prev === key ? null : key));
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    setOpenMenuKey(null);
+  }, []);
+
+  const toggleToolsExpanded = useCallback((key: string) => {
+    setExpandedToolsMap((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   return (
     <div className="absolute inset-0 flex flex-col p-3 md:p-6 space-y-4 md:space-y-6">
@@ -651,12 +680,13 @@ export const McpTab: React.FC = () => {
               <McpServerCard
                 key={card.key}
                 card={card}
-                openMenuKey={openMenuKey}
-                setOpenMenuKey={setOpenMenuKey}
+                isMenuOpen={openMenuKey === card.key}
                 toolsState={serverToolsMap[card.key]}
                 invokeState={serverInvokeMap[card.key]}
-                expandedToolsMap={expandedToolsMap}
-                setExpandedToolsMap={setExpandedToolsMap}
+                isToolsExpanded={!!expandedToolsMap[card.key]}
+                toggleMenu={toggleMenu}
+                closeMenu={closeMenu}
+                toggleToolsExpanded={toggleToolsExpanded}
                 loadServerTools={loadServerTools}
                 openToolInvoke={openToolInvoke}
                 closeToolInvoke={closeToolInvoke}

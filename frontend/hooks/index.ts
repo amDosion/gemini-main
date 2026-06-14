@@ -1,4 +1,3 @@
-
 export * from './useSettings';
 export * from './useModels';
 export * from './useSessions';
@@ -11,7 +10,7 @@ export * from './useInitData';
 export * from './useToast';
 export * from './useStorageConfigs';
 export * from './useImageNavigation';
-export * from './useViewMessages';
+export * from './modeMessageStore';
 export * from './useLLMService';
 export * from './useModeSwitch';
 export * from './useImageHandlers';

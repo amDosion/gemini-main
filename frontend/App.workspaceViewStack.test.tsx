@@ -288,7 +288,9 @@ vi.mock('./hooks', () => {
       handlePrevImage: vi.fn(),
       handleImageClick: vi.fn(),
     }),
-    useViewMessages: (messages: unknown[]) => messages,
+    useModeMessages: () => [],
+    setModeMessages: vi.fn(),
+    resetModeMessages: vi.fn(),
     useLLMService: vi.fn(),
     useModeSwitch: ({ setAppMode }: { setAppMode: (mode: string) => void }) => ({
       // Mirror real behavior: the base switch drives setAppMode so the keep-alive

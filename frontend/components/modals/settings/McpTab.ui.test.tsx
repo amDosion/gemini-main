@@ -125,6 +125,28 @@ describe('McpTab UI-equivalent workflow tests', () => {
     expect(screen.getByText(/Mode:\s*Backend Bridge/i)).toBeInTheDocument();
   });
 
+  it('lazy loads tools before opening invocation from an unloaded server', async () => {
+    await renderAndWaitLoaded();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+
+    await waitFor(() => {
+      expect(mocks.mcpService.getServerTools).toHaveBeenCalledWith('demo-server');
+    });
+    expect(await screen.findByText('Tool Invocation')).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toHaveValue('analyze_excel');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run tool' }));
+
+    await waitFor(() => {
+      expect(mocks.mcpService.invokeServerTool).toHaveBeenCalledWith(
+        'demo-server',
+        'analyze_excel',
+        {}
+      );
+    });
+  });
+
   it('falls back to backend bridge when skybridge call fails', async () => {
     mocks.getSkybridgeHostType.mockReturnValue('mcp-app');
     mocks.isSkybridgeHostAvailable.mockReturnValue(true);

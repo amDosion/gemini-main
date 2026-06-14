@@ -107,8 +107,16 @@ vi.mock('./components', async () => {
       ReactModule.createElement(
         'div',
         null,
-        ReactModule.createElement('button', { onClick: onNewChat, 'data-testid': 'new-session' }, 'new session'),
-        ReactModule.createElement('button', { onClick: () => setAppMode?.('image-gen'), 'data-testid': 'mode-nav-image-gen' }, 'mode nav image gen'),
+        ReactModule.createElement(
+          'button',
+          { onClick: onNewChat, 'data-testid': 'new-session' },
+          'new session'
+        ),
+        ReactModule.createElement(
+          'button',
+          { onClick: () => setAppMode?.('image-gen'), 'data-testid': 'mode-nav-image-gen' },
+          'mode nav image gen'
+        ),
         ReactModule.createElement('div', { 'data-testid': 'workspace-tabs' }, workspaceTabs),
         children
       ),
@@ -217,7 +225,14 @@ vi.mock('./hooks', () => {
       updateSessionTitle: vi.fn(),
       deleteSession: vi.fn(),
       selectLatestSessionForMode: selectLatestSessionForModeMock,
-      cacheStatus: { isFromCache: false, isStale: false, isRefreshing: false, timestamp: Date.now(), refresh: vi.fn(), updateStatus: vi.fn() },
+      cacheStatus: {
+        isFromCache: false,
+        isStale: false,
+        isRefreshing: false,
+        timestamp: Date.now(),
+        refresh: vi.fn(),
+        updateStatus: vi.fn(),
+      },
       refreshSessions: refreshSessionsMock,
       hasMoreSessions: false,
       isLoadingMore: false,
@@ -288,7 +303,9 @@ vi.mock('./hooks', () => {
       handlePrevImage: vi.fn(),
       handleImageClick: vi.fn(),
     }),
-    useViewMessages: (messages: any[]) => messages,
+    useModeMessages: () => [],
+    setModeMessages: vi.fn(),
+    resetModeMessages: vi.fn(),
     useLLMService: vi.fn(),
     useModeSwitch: () => ({
       handleModeSwitch: handleModeSwitchMock,

@@ -91,7 +91,6 @@ export interface AppShellProps {
   handlePersonaSelect: (id: string) => void;
   chatViewMessages: Message[];
   multiAgentViewMessages: Message[];
-  messages: Message[];
   isLoadingModels: boolean;
   visibleModels: ModelConfig[];
   allVisibleModels: ModelConfig[];
@@ -179,7 +178,6 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
     handlePersonaSelect,
     chatViewMessages,
     multiAgentViewMessages,
-    messages,
     isLoadingModels,
     visibleModels,
     allVisibleModels,
@@ -280,7 +278,6 @@ export const AppShell: React.FC<AppShellProps> = (props) => {
           currentSessionId={currentSessionId}
           chatViewMessages={chatViewMessages}
           multiAgentViewMessages={multiAgentViewMessages}
-          messages={messages}
           isLoadingModels={isLoadingModels}
           visibleModels={visibleModels}
           allVisibleModels={allVisibleModels}

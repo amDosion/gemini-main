@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChat } from './useChat';
 import { AppMode, ChatOptions, Message, ModelConfig, Role } from '../types/types';
+import { getModeMessages, resetModeMessages } from './modeMessageStore';
 
 const {
   startNewChatMock,
@@ -82,13 +83,14 @@ describe('useChat race and rollback fixes', () => {
       attachments: [],
     });
     strategyGetHandlerMock.mockReturnValue({ execute: handlerExecuteMock });
+    resetModeMessages();
   });
 
   it('sends first message with explicit target session id even before currentSessionId sync', async () => {
     const updateSessionMessages = vi.fn();
 
     const { result } = renderHook(() =>
-      useChat(null, updateSessionMessages)
+      useChat(null, updateSessionMessages, undefined, undefined, 'chat')
     );
 
     await act(async () => {
@@ -125,7 +127,7 @@ describe('useChat race and rollback fixes', () => {
     const updateSessionMessages = vi.fn();
 
     const { result } = renderHook(() =>
-      useChat('session-1', updateSessionMessages)
+      useChat('session-1', updateSessionMessages, undefined, undefined, 'image-gen')
     );
 
     await act(async () => {
@@ -162,13 +164,84 @@ describe('useChat race and rollback fixes', () => {
     );
   });
 
+  it('writes send-time mode messages to the target mode cell when appMode has not committed yet', async () => {
+    const updateSessionMessages = vi.fn();
+
+    const { result } = renderHook(() =>
+      useChat('session-1', updateSessionMessages, undefined, undefined, 'chat')
+    );
+
+    await act(async () => {
+      await result.current.sendMessage(
+        'make an image from welcome',
+        DEFAULT_OPTIONS,
+        [],
+        'image-gen',
+        DEFAULT_MODEL,
+        'google'
+      );
+    });
+
+    expect(getModeMessages('chat')).toEqual([]);
+    expect(getModeMessages('image-gen')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: Role.USER,
+          content: 'make an image from welcome',
+          mode: 'image-gen',
+        }),
+        expect.objectContaining({
+          role: Role.MODEL,
+          content: 'model response',
+          mode: 'image-gen',
+        }),
+      ])
+    );
+  });
+
+  it('keeps send-time mode error rollback isolated from the active appMode cell', async () => {
+    const updateSessionMessages = vi.fn();
+    handlerExecuteMock.mockRejectedValueOnce(new Error('image handler failed'));
+
+    const { result } = renderHook(() =>
+      useChat('session-1', updateSessionMessages, undefined, undefined, 'chat')
+    );
+
+    await act(async () => {
+      await result.current.sendMessage(
+        'broken image request',
+        DEFAULT_OPTIONS,
+        [],
+        'image-gen',
+        DEFAULT_MODEL,
+        'google'
+      );
+    });
+
+    expect(getModeMessages('chat')).toEqual([]);
+    expect(getModeMessages('image-gen')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: Role.USER,
+          content: 'broken image request',
+          mode: 'image-gen',
+        }),
+        expect.objectContaining({
+          role: Role.MODEL,
+          content: expect.stringContaining('image handler failed'),
+          mode: 'image-gen',
+        }),
+      ])
+    );
+  });
+
   it('does not let stale in-flight request overwrite messages after switching sessions', async () => {
     const updateSessionMessages = vi.fn();
     const pending = createDeferred<{ content: string; attachments: never[] }>();
     handlerExecuteMock.mockReturnValueOnce(pending.promise);
 
     const { result, rerender } = renderHook(
-      ({ sessionId }) => useChat(sessionId, updateSessionMessages),
+      ({ sessionId }) => useChat(sessionId, updateSessionMessages, undefined, undefined, 'chat'),
       { initialProps: { sessionId: 'session-a' as string | null } }
     );
 
@@ -223,7 +296,7 @@ describe('useChat race and rollback fixes', () => {
     preprocessorProcessMock.mockRejectedValueOnce(new Error('upload failed'));
 
     const { result } = renderHook(() =>
-      useChat('session-1', updateSessionMessages)
+      useChat('session-1', updateSessionMessages, undefined, undefined, 'chat')
     );
 
     const existingMessage: Message = {
@@ -300,7 +373,7 @@ describe('useChat race and rollback fixes', () => {
     });
 
     const { result } = renderHook(() =>
-      useChat('session-1', updateSessionMessages)
+      useChat('session-1', updateSessionMessages, undefined, undefined, 'chat')
     );
 
     await act(async () => {
@@ -380,7 +453,7 @@ describe('useChat race and rollback fixes', () => {
     let renderCount = 0;
     const { result } = renderHook(() => {
       renderCount += 1;
-      return useChat('session-stream', updateSessionMessages);
+      return useChat('session-stream', updateSessionMessages, undefined, undefined, 'chat');
     });
 
     await act(async () => {
@@ -440,7 +513,13 @@ describe('useChat race and rollback fixes', () => {
     }));
 
     const { result } = renderHook(() =>
-      useChat('session-keep-required-action', updateSessionMessages)
+      useChat(
+        'session-keep-required-action',
+        updateSessionMessages,
+        undefined,
+        undefined,
+        'chat'
+      )
     );
 
     const deepResearchOptions: ChatOptions = {

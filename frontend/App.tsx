@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 import { AppMode, Attachment, ChatOptions } from './types/types';
@@ -30,7 +30,8 @@ import {
   useInitData,
   useStorageConfigs,
   useImageNavigation,
-  useViewMessages,
+  useModeMessages,
+  resetModeMessages,
   useLLMService,
   useModeSwitch,
   useImageHandlers,
@@ -230,6 +231,14 @@ const AppContent: React.FC = () => {
     if (!activeProfile) return 'no-profile';
     return `${activeProfile.id}:${activeProfile.providerId}:${activeProfile.updatedAt || 0}`;
   }, [activeProfile]);
+  const messageStoreScopeKey = useMemo(
+    () => `${user?.id ?? 'anonymous'}:${activeProfile?.id ?? 'no-profile'}`,
+    [activeProfile?.id, user?.id]
+  );
+
+  useLayoutEffect(() => {
+    resetModeMessages();
+  }, [messageStoreScopeKey]);
   const initialSavedModels = useMemo(() => {
     const fromActiveProfile = Array.isArray(activeProfile?.savedModels)
       ? activeProfile.savedModels
@@ -317,7 +326,7 @@ const AppContent: React.FC = () => {
   );
 
   const { messages, setMessages, loadingState, sendMessage, submitResearchAction, stopGeneration } =
-    useChat(currentSessionId, updateSessionMessages, config.apiKey, activeStorageId);
+    useChat(currentSessionId, updateSessionMessages, config.apiKey, activeStorageId, appMode);
 
   // --- Wave 2 #36: refs mirror state for stable useCallback handlers ---
   // 模式同 Wave 1 panRef:setter 引用稳定,ref.current 在每次渲染同步,handler 闭包稳定 deps=[]。
@@ -330,10 +339,10 @@ const AppContent: React.FC = () => {
   currentSessionIdRef.current = currentSessionId;
   messagesRef.current = messages;
 
-  // --- 消息过滤 ---
-  const currentViewMessages = useViewMessages(messages, appMode);
-  const chatViewMessages = useViewMessages(messages, 'chat');
-  const multiAgentViewMessages = useViewMessages(messages, 'multi-agent');
+  // --- 消息视图 ---
+  const currentViewMessages = messages;
+  const chatViewMessages = useModeMessages('chat');
+  const multiAgentViewMessages = useModeMessages('multi-agent');
 
   // --- 图片导航 ---
   const {
@@ -418,7 +427,6 @@ const AppContent: React.FC = () => {
     currentSessionId,
     sessions,
     activeModelConfig,
-    setMessages,
     setAppMode: handleModeSwitch,
   });
 
@@ -723,7 +731,6 @@ const AppContent: React.FC = () => {
       handlePersonaSelect={handlePersonaSelect}
       chatViewMessages={chatViewMessages}
       multiAgentViewMessages={multiAgentViewMessages}
-      messages={messages}
       isLoadingModels={isLoadingModels}
       visibleModels={visibleModels}
       allVisibleModels={allVisibleModels}

@@ -1,5 +1,29 @@
 import { AppMode } from '../types/types';
 
+export const APP_MODES = [
+  'chat',
+  'image-gen',
+  'image-chat-edit',
+  'image-mask-edit',
+  'image-inpainting',
+  'image-background-edit',
+  'image-recontext',
+  'video-gen',
+  'audio-gen',
+  'image-outpainting',
+  'pdf-extract',
+  'virtual-try-on',
+  'multi-agent',
+  'image-upscale',
+  'image-segmentation',
+  'product-recontext',
+] as const satisfies readonly AppMode[];
+
+const APP_MODE_SET = new Set<AppMode>(APP_MODES);
+
+export const isAppMode = (mode: unknown): mode is AppMode =>
+  typeof mode === 'string' && APP_MODE_SET.has(mode as AppMode);
+
 /**
  * Studio (media-generation) app modes.
  *

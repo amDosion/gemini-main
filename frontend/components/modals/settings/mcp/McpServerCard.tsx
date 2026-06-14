@@ -13,13 +13,17 @@ import { openSafeUrlInNewTab } from '../../../../utils/safeOpen';
 
 export interface McpServerCardProps {
   card: ServerCard;
-  openMenuKey: string | null;
-  setOpenMenuKey: React.Dispatch<React.SetStateAction<string | null>>;
+  isMenuOpen: boolean;
   toolsState: ServerToolsState | undefined;
   invokeState: ServerInvokeState | undefined;
-  expandedToolsMap: Record<string, boolean>;
-  setExpandedToolsMap: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
-  loadServerTools: (serverKey: string, force?: boolean) => Promise<void>;
+  isToolsExpanded: boolean;
+  toggleMenu: (key: string) => void;
+  closeMenu: () => void;
+  toggleToolsExpanded: (key: string) => void;
+  loadServerTools: (
+    serverKey: string,
+    force?: boolean
+  ) => Promise<Array<{ name: string; description?: string }>>;
   openToolInvoke: (
     serverKey: string,
     tools: Array<{ name: string; description?: string }>
@@ -31,14 +35,15 @@ export interface McpServerCardProps {
   runToolInvoke: (serverKey: string) => Promise<void>;
 }
 
-export const McpServerCard: React.FC<McpServerCardProps> = ({
+const McpServerCardComponent: React.FC<McpServerCardProps> = ({
   card,
-  openMenuKey,
-  setOpenMenuKey,
+  isMenuOpen,
   toolsState,
   invokeState,
-  expandedToolsMap,
-  setExpandedToolsMap,
+  isToolsExpanded,
+  toggleMenu,
+  closeMenu,
+  toggleToolsExpanded,
   loadServerTools,
   openToolInvoke,
   closeToolInvoke,
@@ -47,9 +52,7 @@ export const McpServerCard: React.FC<McpServerCardProps> = ({
   updateInvokeState,
   runToolInvoke,
 }) => {
-  const isMenuOpen = openMenuKey === card.key;
   const tools = toolsState?.tools || [];
-  const isToolsExpanded = !!expandedToolsMap[card.key];
   const visibleTools = isToolsExpanded ? tools : tools.slice(0, TOOL_PREVIEW_COUNT);
   const hiddenToolsCount = Math.max(0, tools.length - TOOL_PREVIEW_COUNT);
   const isToolsLoaded = !!toolsState?.loaded;
@@ -69,7 +72,7 @@ export const McpServerCard: React.FC<McpServerCardProps> = ({
           <div className="relative shrink-0" data-mcp-card-actions>
             <button
               type="button"
-              onClick={() => setOpenMenuKey((prev) => (prev === card.key ? null : card.key))}
+              onClick={() => toggleMenu(card.key)}
               className={`p-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-all ${
                 isMenuOpen
                   ? 'opacity-100'
@@ -86,7 +89,7 @@ export const McpServerCard: React.FC<McpServerCardProps> = ({
                   type="button"
                   onClick={() => {
                     void loadServerTools(card.key, true);
-                    setOpenMenuKey(null);
+                    closeMenu();
                   }}
                   className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded"
                 >
@@ -98,7 +101,7 @@ export const McpServerCard: React.FC<McpServerCardProps> = ({
                   type="button"
                   onClick={() => {
                     void openToolInvoke(card.key, tools);
-                    setOpenMenuKey(null);
+                    closeMenu();
                   }}
                   className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded"
                 >
@@ -110,11 +113,8 @@ export const McpServerCard: React.FC<McpServerCardProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setExpandedToolsMap((prev) => ({
-                        ...prev,
-                        [card.key]: !prev[card.key],
-                      }));
-                      setOpenMenuKey(null);
+                      toggleToolsExpanded(card.key);
+                      closeMenu();
                     }}
                     className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded"
                   >
@@ -130,7 +130,7 @@ export const McpServerCard: React.FC<McpServerCardProps> = ({
                   type="button"
                   onClick={() => {
                     openEditDialog(card);
-                    setOpenMenuKey(null);
+                    closeMenu();
                   }}
                   className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-800 rounded"
                 >
@@ -307,3 +307,7 @@ export const McpServerCard: React.FC<McpServerCardProps> = ({
     </div>
   );
 };
+
+export const McpServerCard = React.memo(McpServerCardComponent);
+
+McpServerCard.displayName = 'McpServerCard';

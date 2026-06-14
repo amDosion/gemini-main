@@ -5,18 +5,24 @@ import { apiClient } from '../services/apiClient';
 import { skipModeRestoreFlag } from '../contexts/SessionContext';
 import { upsertSessionInCaches } from '../services/sessionCache';
 import { normalizeChatSession } from '../services/sessionNormalizer';
+import { setModeMessages } from './modeMessageStore';
 import {
   capturePrivateCacheLifecycleSnapshot,
   isPrivateCacheLifecycleSnapshotCurrent,
 } from '../services/privateCacheInvalidation';
+import { isAppMode } from '../utils/appModes';
 
 interface UseSessionSyncProps {
   currentSessionId: string | null;
   sessions: ChatSession[];
   activeModelConfig?: ModelConfig;
-  setMessages: (messages: Message[]) => void;
   setAppMode: (mode: AppMode) => void;
 }
+
+const deriveMode = (storedMode: AppMode | undefined, msgs: Message[]): AppMode => {
+  if (isAppMode(storedMode)) return storedMode;
+  return [...msgs].reverse().map((m) => m.mode).find(isAppMode) ?? 'chat';
+};
 
 /**
  * 会话同步 Hook
@@ -28,7 +34,6 @@ export const useSessionSync = ({
   currentSessionId,
   sessions,
   activeModelConfig,
-  setMessages,
   setAppMode,
 }: UseSessionSyncProps) => {
   const prevSessionIdRef = useRef<string | null>(null);
@@ -81,12 +86,7 @@ export const useSessionSync = ({
         skipModeRestoreFlag.current = false;
         return;
       }
-      if (storedMode) {
-        setAppMode(storedMode);
-        return;
-      }
-      const lastMsg = [...msgs].reverse().find((m) => m.mode);
-      setAppMode((lastMsg?.mode || 'chat') as AppMode);
+      setAppMode(deriveMode(storedMode, msgs));
     };
 
     if (currentSessionId) {
@@ -100,7 +100,7 @@ export const useSessionSync = ({
             cancelInFlightFetch();
 
             // ✅ 会话已有消息（第一个会话或已缓存的），直接使用
-            setMessages(session.messages);
+            setModeMessages(deriveMode(session.mode, session.messages), session.messages);
 
             // 检查是否跳过 mode 恢复（gen 模式下的会话切换）
             restoreMode(session.mode, session.messages);
@@ -157,7 +157,7 @@ export const useSessionSync = ({
 
                   // ✅ 设置消息和模式
                   const fullMessages = fullSession.messages || [];
-                  setMessages(fullMessages);
+                  setModeMessages(deriveMode(fullSession.mode, fullMessages), fullMessages);
 
                   // 检查是否跳过 mode 恢复
                   restoreMode(fullSession.mode, fullMessages);
@@ -181,7 +181,7 @@ export const useSessionSync = ({
                     return;
                   }
 
-                  setMessages([]);
+                  setModeMessages(deriveMode(session.mode, session.messages), []);
                 })
                 .finally(() => {
                   loadingMessagesRef.current.delete(currentSessionId);
@@ -207,5 +207,5 @@ export const useSessionSync = ({
         }
       }
     }
-  }, [activeModelConfig, cancelInFlightFetch, currentSessionId, sessions, setMessages, setAppMode]);
+  }, [activeModelConfig, cancelInFlightFetch, currentSessionId, sessions, setAppMode]);
 };

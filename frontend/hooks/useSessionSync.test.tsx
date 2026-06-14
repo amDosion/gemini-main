@@ -7,6 +7,7 @@ import { skipModeRestoreFlag } from '../contexts/SessionContext';
 import { cacheManager } from '../services/CacheManager';
 import { readCachedSessionsForMode, writeCachedSessionsForMode } from '../services/sessionCache';
 import { setPrivateCacheUserScope } from '../services/privateCacheScope';
+import { getModeMessages, resetModeMessages } from './modeMessageStore';
 
 const { apiGetMock, llmStartNewChatMock } = vi.hoisted(() => ({
   apiGetMock: vi.fn(),
@@ -40,6 +41,7 @@ describe('useSessionSync stale request protection', () => {
     apiGetMock.mockReset();
     llmStartNewChatMock.mockReset();
     cacheManager.clearAll();
+    resetModeMessages();
     setPrivateCacheUserScope(null);
     skipModeRestoreFlag.current = false;
   });
@@ -53,7 +55,6 @@ describe('useSessionSync stale request protection', () => {
       throw new Error(`Unexpected URL: ${url}`);
     });
 
-    const setMessages = vi.fn();
     const setAppMode = vi.fn();
 
     const sessionBMessage: Message = {
@@ -86,7 +87,6 @@ describe('useSessionSync stale request protection', () => {
         useSessionSync({
           currentSessionId,
           sessions,
-          setMessages,
           setAppMode,
         }),
       {
@@ -104,11 +104,11 @@ describe('useSessionSync stale request protection', () => {
     rerender({ currentSessionId: 'session-b' });
 
     await waitFor(() => {
-      expect(setMessages).toHaveBeenCalledWith([sessionBMessage]);
+      expect(getModeMessages('chat')).toEqual([sessionBMessage]);
       expect(setAppMode).toHaveBeenCalledWith('chat');
     });
 
-    const messageCallCountAfterSwitch = setMessages.mock.calls.length;
+    const chatMessagesAfterSwitch = getModeMessages('chat');
     const appModeCallCountAfterSwitch = setAppMode.mock.calls.length;
 
     await act(async () => {
@@ -131,7 +131,8 @@ describe('useSessionSync stale request protection', () => {
       await Promise.resolve();
     });
 
-    expect(setMessages).toHaveBeenCalledTimes(messageCallCountAfterSwitch);
+    expect(getModeMessages('chat')).toBe(chatMessagesAfterSwitch);
+    expect(getModeMessages('image-gen')).toEqual([]);
     expect(setAppMode).toHaveBeenCalledTimes(appModeCallCountAfterSwitch);
     expect(setAppMode).not.toHaveBeenCalledWith('image-gen');
   });
@@ -145,7 +146,6 @@ describe('useSessionSync stale request protection', () => {
       throw new Error(`Unexpected URL: ${url}`);
     });
 
-    const setMessages = vi.fn();
     const setAppMode = vi.fn();
     const staleMessage: Message = {
       id: 'user-one-message',
@@ -169,7 +169,6 @@ describe('useSessionSync stale request protection', () => {
             mode: 'image-gen',
           },
         ],
-        setMessages,
         setAppMode,
       })
     );
@@ -195,7 +194,7 @@ describe('useSessionSync stale request protection', () => {
       await Promise.resolve();
     });
 
-    expect(setMessages).not.toHaveBeenCalled();
+    expect(getModeMessages('image-gen')).toEqual([]);
     expect(setAppMode).not.toHaveBeenCalledWith('image-gen');
     expect(readCachedSessionsForMode('image-gen')).toBeNull();
   });
@@ -209,7 +208,6 @@ describe('useSessionSync stale request protection', () => {
       messages: [],
     } as ChatSession);
 
-    const setMessages = vi.fn();
     const setAppMode = vi.fn();
 
     const sessions: ChatSession[] = [
@@ -225,7 +223,6 @@ describe('useSessionSync stale request protection', () => {
       useSessionSync({
         currentSessionId: 'session-x',
         sessions,
-        setMessages,
         setAppMode,
       })
     );
@@ -255,7 +252,6 @@ describe('useSessionSync stale request protection', () => {
       messages: [fullMessage],
     } as ChatSession);
 
-    const setMessages = vi.fn();
     const setAppMode = vi.fn();
 
     const { rerender } = renderHook(
@@ -263,7 +259,6 @@ describe('useSessionSync stale request protection', () => {
         useSessionSync({
           currentSessionId: 'image-gen-session',
           sessions,
-          setMessages,
           setAppMode,
         }),
       {
@@ -292,9 +287,42 @@ describe('useSessionSync stale request protection', () => {
       );
     });
     await waitFor(() => {
-      expect(setMessages).toHaveBeenCalledWith([fullMessage]);
+      expect(getModeMessages('image-gen')).toEqual([fullMessage]);
       expect(setAppMode).toHaveBeenCalledWith('image-gen');
     });
+  });
+
+  it('derives the target cell from message mode when session mode is missing', async () => {
+    const imageMessage: Message = {
+      id: 'image-message-without-session-mode',
+      role: Role.MODEL,
+      content: 'image message',
+      attachments: [],
+      timestamp: Date.now(),
+      mode: 'image-gen',
+    };
+    const setAppMode = vi.fn();
+
+    renderHook(() =>
+      useSessionSync({
+        currentSessionId: 'session-without-mode',
+        sessions: [
+          {
+            id: 'session-without-mode',
+            title: 'No stored mode',
+            messages: [imageMessage],
+            createdAt: 1,
+          },
+        ],
+        setAppMode,
+      })
+    );
+
+    await waitFor(() => {
+      expect(getModeMessages('image-gen')).toEqual([imageMessage]);
+    });
+    expect(getModeMessages('chat')).toEqual([]);
+    expect(setAppMode).toHaveBeenCalledWith('image-gen');
   });
 
   it('writes lazy-loaded full session messages back to the mode session cache', async () => {
@@ -324,7 +352,6 @@ describe('useSessionSync stale request protection', () => {
       },
     ]);
 
-    const setMessages = vi.fn();
     const setAppMode = vi.fn();
 
     renderHook(() =>
@@ -339,13 +366,12 @@ describe('useSessionSync stale request protection', () => {
             mode: 'image-gen',
           },
         ],
-        setMessages,
         setAppMode,
       })
     );
 
     await waitFor(() => {
-      expect(setMessages).toHaveBeenCalledWith([fullMessage]);
+      expect(getModeMessages('image-gen')).toEqual([fullMessage]);
     });
 
     expect(readCachedSessionsForMode('image-gen')?.[0]?.messages).toEqual([
@@ -379,7 +405,6 @@ describe('useSessionSync stale request protection', () => {
     };
     writeCachedSessionsForMode('chat', [chatSession]);
 
-    const setMessages = vi.fn();
     const setAppMode = vi.fn();
 
     renderHook(() =>
@@ -394,13 +419,12 @@ describe('useSessionSync stale request protection', () => {
             mode: 'image-gen',
           },
         ],
-        setMessages,
         setAppMode,
       })
     );
 
     await waitFor(() => {
-      expect(setMessages).toHaveBeenCalledWith([fullMessage]);
+      expect(getModeMessages('image-gen')).toEqual([fullMessage]);
     });
 
     expect(readCachedSessionsForMode('chat')).toEqual([chatSession]);
@@ -429,7 +453,6 @@ describe('useSessionSync stale request protection', () => {
       return secondSessionALoad.promise;
     });
 
-    const setMessages = vi.fn();
     const setAppMode = vi.fn();
 
     const sessionBMessage: Message = {
@@ -462,7 +485,6 @@ describe('useSessionSync stale request protection', () => {
         useSessionSync({
           currentSessionId,
           sessions,
-          setMessages,
           setAppMode,
         }),
       {
@@ -476,7 +498,7 @@ describe('useSessionSync stale request protection', () => {
 
     rerender({ currentSessionId: 'session-b' });
     await waitFor(() => {
-      expect(setMessages).toHaveBeenCalledWith([sessionBMessage]);
+      expect(getModeMessages('chat')).toEqual([sessionBMessage]);
     });
 
     // 切回 session-a 时，应立即重新发起一次加载请求，不能被上一轮 loading 标记卡住。
@@ -508,7 +530,7 @@ describe('useSessionSync stale request protection', () => {
     });
 
     await waitFor(() => {
-      expect(setMessages).toHaveBeenCalledWith(loadedMessages);
+      expect(getModeMessages('chat')).toEqual(loadedMessages);
     });
   });
 
@@ -521,7 +543,6 @@ describe('useSessionSync stale request protection', () => {
       throw new Error(`Unexpected URL: ${url}`);
     });
 
-    const setMessages = vi.fn();
     const setAppMode = vi.fn();
     const oldModel: ModelConfig = {
       id: 'model-old',
@@ -571,7 +592,6 @@ describe('useSessionSync stale request protection', () => {
           currentSessionId: 'session-a',
           sessions,
           activeModelConfig: model,
-          setMessages,
           setAppMode,
         }),
       {

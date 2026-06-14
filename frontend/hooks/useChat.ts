@@ -21,6 +21,12 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import { llmService } from '../services/llmService';
 import { storageUpload } from '../services/storage/storageUpload';
+import {
+  getModeMessages,
+  MessagesUpdater,
+  setModeMessages,
+  useModeMessages,
+} from './modeMessageStore';
 
 // 导入新的策略模式组件
 import { strategyRegistry, preprocessorRegistry } from './handlers/strategyConfig';
@@ -54,10 +60,15 @@ export const useChat = (
     msgs: Message[],
     options?: { strategy?: 'replace' | 'merge-by-id' }
   ) => void,
-  apiKey?: string,
-  activeStorageId?: string | null
+  apiKey: string | undefined,
+  activeStorageId: string | null | undefined,
+  appMode: AppMode
 ) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const messages = useModeMessages(appMode);
+  const setMessages = useCallback(
+    (updater: SetStateAction<Message[]>) => setModeMessages(appMode, updater as MessagesUpdater),
+    [appMode]
+  );
   const [loadingState, setLoadingState] = useState<LoadingState>('idle');
   const activeHandlerCancelRef = useRef<(() => void) | null>(null);
   const researchActionHandlersRef = useRef<Map<string, ResearchActionSubmitHandler>>(new Map());
@@ -160,7 +171,7 @@ export const useChat = (
 
     const setMessagesIfCurrentSession = (updater: SetStateAction<Message[]>) => {
       if (!shouldApplyUiUpdates()) return;
-      setMessages(updater);
+      setModeMessages(mode, updater as MessagesUpdater);
     };
 
     const setLoadingStateIfCurrentSession = (state: LoadingState) => {
@@ -170,7 +181,7 @@ export const useChat = (
 
     let userMessageId: string | null = null;
     let modelMessageId: string | null = null;
-    const baseMessages = messagesRef.current;
+    const baseMessages = getModeMessages(mode);
     let streamUpdateTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingModelMessageUpdater: ModelMessageUpdater | null = null;
 

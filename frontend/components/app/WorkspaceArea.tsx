@@ -64,7 +64,6 @@ export interface WorkspaceAreaProps {
   // --- Per-view messages ---
   chatViewMessages: Message[];
   multiAgentViewMessages: Message[];
-  messages: Message[];
 
   // --- Model menu / welcome ---
   isLoadingModels: boolean;
@@ -127,7 +126,6 @@ export const WorkspaceArea: React.FC<WorkspaceAreaProps> = (props) => {
     currentSessionId,
     chatViewMessages,
     multiAgentViewMessages,
-    messages,
     isLoadingModels,
     visibleModels,
     allVisibleModels,
@@ -256,7 +254,6 @@ export const WorkspaceArea: React.FC<WorkspaceAreaProps> = (props) => {
           <div style={{ display: isStudioAppMode(appMode) ? 'contents' : 'none' }}>
             <StudioView
               {...commonProps}
-              messages={messages}
               mode={activeStudioMode}
               modeReloadKeys={workspaceReloadKeys}
               visibleModels={visibleModels}
