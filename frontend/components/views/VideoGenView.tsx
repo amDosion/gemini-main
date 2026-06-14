@@ -18,6 +18,7 @@ import type { ActionMenuAnchor, HoverPromptPreview } from './video/types';
 import { VideoHistorySidebar } from './video/VideoHistorySidebar';
 import { VideoMainCanvas } from './video/VideoMainCanvas';
 import { downloadSourceUrlInBrowser } from '../../services/downloadService';
+import { filterModelImageBatches } from '../../utils/messageFilters';
 
 interface VideoGenViewProps {
   messages: Message[];
@@ -311,13 +312,7 @@ export const VideoGenView: React.FC<VideoGenViewProps> = ({
   }, [closeHoverPreviewBase]);
 
   const historyBatches = useMemo(() => {
-    return messages
-      .filter(
-        (message) =>
-          message.role === Role.MODEL &&
-          ((message.attachments && message.attachments.length > 0) || message.isError)
-      )
-      .reverse();
+    return filterModelImageBatches(messages);
   }, [messages]);
 
   const {

@@ -20,6 +20,7 @@ from ...core.jwt_utils import (
     generate_csrf_token,
     TokenPayload
 )
+from ...utils.log_sanitization import summarize_text_for_log
 from .system_config_service import get_system_config, get_client_ip
 
 logger = logging.getLogger(__name__)
@@ -396,7 +397,11 @@ class AuthService:
         # 检查登录尝试次数
         is_allowed, error_msg = self._check_login_attempts(data.email, ip_address or "unknown")
         if not is_allowed:
-            logger.warning(f"[AuthService] 登录尝试次数过多: email={data.email}, ip={ip_address}")
+            logger.warning(
+                "[AuthService] 登录尝试次数过多: %s, ip=%s",
+                summarize_text_for_log(data.email, label="email"),
+                ip_address,
+            )
             raise HTTPException(status_code=429, detail=error_msg)
         
         # 查找用户
@@ -435,7 +440,11 @@ class AuthService:
             logger.error(f"[AuthService] 登录提交事务失败: {commit_err}", exc_info=True)
             raise
 
-        logger.info(f"[AuthService] ✅ 用户登录成功: {user.email} (IP: {ip_address})")
+        logger.info(
+            "[AuthService] ✅ 用户登录成功: %s (IP: %s)",
+            summarize_text_for_log(user.email, label="email"),
+            ip_address,
+        )
 
         # ✅ A-4: 直接复用已查到的 user 实例构造 UserResponse，不再通过 token 反查
         # last_login_at 从本次 ip_history 即可推断（now()），避免再查 IPLoginHistory

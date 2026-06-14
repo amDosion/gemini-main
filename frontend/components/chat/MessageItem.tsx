@@ -24,6 +24,45 @@ interface MessageItemProps {
   onSubmitResearchAction?: (messageId: string, selectedInput: unknown) => Promise<void>;
 }
 
+const hasMutableMessageRenderSurface = (message: Message) =>
+  Boolean(
+    message.attachments?.length ||
+      message.toolCalls?.length ||
+      message.toolResults?.length ||
+      message.groundingMetadata ||
+      message.urlContextMetadata ||
+      message.browserOperationId ||
+      message.thoughts?.length ||
+      message.responseKind === 'deep-research' ||
+      message.researchStatus ||
+      message.researchRequiredAction
+  );
+
+const areMessageItemPropsEqual = (
+  prevProps: Readonly<MessageItemProps>,
+  nextProps: Readonly<MessageItemProps>
+) => {
+  if (prevProps.isStreaming || nextProps.isStreaming) {
+    return false;
+  }
+
+  if (
+    hasMutableMessageRenderSurface(prevProps.message) ||
+    hasMutableMessageRenderSurface(nextProps.message)
+  ) {
+    return false;
+  }
+
+  return (
+    prevProps.message.id === nextProps.message.id &&
+    prevProps.message.role === nextProps.message.role &&
+    prevProps.message.content === nextProps.message.content &&
+    prevProps.message.timestamp === nextProps.message.timestamp &&
+    prevProps.message.isError === nextProps.message.isError &&
+    prevProps.message.mode === nextProps.message.mode
+  );
+};
+
 const MessageItemComponent: React.FC<MessageItemProps> = ({
   message,
   onImageClick,
@@ -295,7 +334,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
   );
 };
 
-const MessageItem = MessageItemComponent;
+const MessageItem = React.memo(MessageItemComponent, areMessageItemPropsEqual);
 MessageItem.displayName = 'MessageItem';
 
 export default MessageItem;

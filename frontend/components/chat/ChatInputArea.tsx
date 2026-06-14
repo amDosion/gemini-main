@@ -47,7 +47,7 @@ interface ChatInputAreaProps {
   topK?: number;
 }
 
-const ChatInputArea: React.FC<ChatInputAreaProps> = ({
+const ChatInputAreaComponent: React.FC<ChatInputAreaProps> = ({
   onSend,
   isLoading,
   onStop,
@@ -476,5 +476,8 @@ const ChatInputArea: React.FC<ChatInputAreaProps> = ({
     </div>
   );
 };
+
+const ChatInputArea = React.memo(ChatInputAreaComponent);
+ChatInputArea.displayName = 'ChatInputArea';
 
 export default ChatInputArea;

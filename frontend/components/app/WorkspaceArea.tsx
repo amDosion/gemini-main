@@ -1,4 +1,4 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useCallback, useMemo } from 'react';
 
 import {
   AppMode,
@@ -148,13 +148,17 @@ export const WorkspaceArea: React.FC<WorkspaceAreaProps> = (props) => {
     setIsPersonaViewOpen,
   } = props;
 
-  const renderWorkspaceViewStack = () => {
-    const hasChatView = openWorkspaceModes.includes('chat');
-    const hasMultiAgentView = openWorkspaceModes.includes('multi-agent');
-    const hasStudioView = openWorkspaceModes.some(isStudioAppMode);
-    const activeStudioMode = isStudioAppMode(appMode) ? appMode : lastStudioMode;
+  const hasChatView = openWorkspaceModes.includes('chat');
+  const hasMultiAgentView = openWorkspaceModes.includes('multi-agent');
+  const hasStudioView = openWorkspaceModes.some(isStudioAppMode);
+  const activeStudioMode = isStudioAppMode(appMode) ? appMode : lastStudioMode;
 
-    const commonProps = {
+  const openProfileSettings = useCallback(() => {
+    handleOpenSettings('profiles');
+  }, [handleOpenSettings]);
+
+  const commonProps = useMemo(
+    () => ({
       setAppMode: handleWorkspaceModeSelect,
       onImageClick: handleImageClick, // ✅ 使用稳定的引用
       loadingState,
@@ -171,18 +175,50 @@ export const WorkspaceArea: React.FC<WorkspaceAreaProps> = (props) => {
       onSelectPersona: handlePersonaSelect,
       sessionId: currentSessionId, // ✅ 传递 sessionId 用于查询附件
       apiKey: config.apiKey, // ✅ 传递 apiKey 用于调用 API
-    };
+    }),
+    [
+      activeModelConfig,
+      activePersonaId,
+      config.apiKey,
+      config.providerId,
+      currentSessionId,
+      handleEditImage,
+      handleExpandImage,
+      handleImageClick,
+      handleModelSelect,
+      handlePersonaSelect,
+      handleWorkspaceModeSelect,
+      loadingState,
+      onSend,
+      personas,
+      stopGeneration,
+      submitResearchAction,
+    ]
+  );
 
-    // chat / multi-agent 共享的欢迎页 + 模型菜单 props（StudioView 不消费这些）
-    const chatLikeProps = {
+  // chat / multi-agent 共享的欢迎页 + 模型菜单 props（StudioView 不消费这些）
+  const chatLikeProps = useMemo(
+    () => ({
       isLoadingModels,
       visibleModels,
       allVisibleModels, // ✅ 传递完整模型列表
       apiKey: config.apiKey ?? '',
       protocol: config.protocol ?? null,
       onPromptSelect: handleWelcomePrompt,
-      onOpenSettings: () => handleOpenSettings('profiles'),
-    };
+      onOpenSettings: openProfileSettings,
+    }),
+    [
+      allVisibleModels,
+      config.apiKey,
+      config.protocol,
+      handleWelcomePrompt,
+      isLoadingModels,
+      openProfileSettings,
+      visibleModels,
+    ]
+  );
+
+  const renderWorkspaceViewStack = () => {
 
     return (
       <>

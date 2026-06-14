@@ -11,6 +11,7 @@ import { ThinkingBlock } from '../../message/ThinkingBlock';
 import { CachedImage } from '../../common/CachedImage';
 import { getPreferredImageAttachmentUrl } from '../../../utils/attachmentUrl';
 import { getImageHistoryAttachmentPreviewUrl } from '../../common/imageHistorySidebarHelpers';
+import { isPlaceholderMessage } from '../../../utils/messageFilters';
 
 export interface MaskEditSidebarProps {
   scrollRef: React.RefObject<HTMLDivElement | null>;
@@ -40,9 +41,7 @@ export const MaskEditSidebar: React.FC<MaskEditSidebarProps> = ({
   return (
     <div ref={scrollRef} className="flex-1 p-4 space-y-6 overflow-y-auto custom-scrollbar">
       {messages.map((msg) => {
-        const isPlaceholder =
-          !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
-        if (isPlaceholder) return null;
+        if (isPlaceholderMessage(msg)) return null;
 
         return (
           <div

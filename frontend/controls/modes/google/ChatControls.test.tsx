@@ -77,6 +77,24 @@ afterEach(() => {
 });
 
 describe('Google ChatControls — rendering', () => {
+  it('does not re-render when the parent re-renders with identical prop references', () => {
+    getConfigMock.mockReturnValue(new Promise(() => undefined));
+    const props = baseProps();
+    const onRender = vi.fn();
+    const view = (
+      <React.Profiler id="chat-controls" onRender={onRender}>
+        <ChatControls {...props} />
+      </React.Profiler>
+    );
+    const { rerender } = render(view);
+
+    expect(onRender).toHaveBeenCalledTimes(1);
+
+    rerender(view);
+
+    expect(onRender).toHaveBeenCalledTimes(1);
+  });
+
   it('renders the capability toolbar with search/url/thinking/code buttons enabled for a capable model', () => {
     renderControls();
 

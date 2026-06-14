@@ -5,7 +5,7 @@
  * - modeCatalog 只描述 provider/profile 模型集合下的模式可用模型情况
  * - runtime probe 由独立接口负责，导航不消费运行时执行状态
  */
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   MessageSquare,
   Wand2,
@@ -94,7 +94,7 @@ const GeminiBrandMark: React.FC = () => (
   </svg>
 );
 
-export const InlineModeNavigation: React.FC<InlineModeNavigationProps> = ({
+const InlineModeNavigationComponent: React.FC<InlineModeNavigationProps> = ({
   currentMode,
   setMode,
   modeCatalog = [],
@@ -107,37 +107,46 @@ export const InlineModeNavigation: React.FC<InlineModeNavigationProps> = ({
     return modeCatalog.filter((mode) => mode.visibleInNavigation !== false);
   }, [modeCatalog]);
 
-  const utilityActions: Array<{
-    id: string;
-    label: string;
-    title: string;
-    Icon: LucideIcon;
-    onClick: () => void;
-    active?: boolean;
-  }> = [
-    {
-      id: 'persona',
-      label: 'Persona',
-      title: 'AI Persona & Roles',
-      Icon: UserCircle2,
-      onClick: onOpenPersonaView,
-      active: isPersonaViewOpen,
-    },
-    {
-      id: 'cloud',
-      label: 'Cloud',
-      title: 'Cloud Drive',
-      Icon: Cloud,
-      onClick: onOpenCloudStorage,
-    },
-    {
-      id: 'settings',
-      label: 'Setting',
-      title: 'Setting',
-      Icon: Settings,
-      onClick: () => onOpenSettings('profiles'),
-    },
-  ];
+  const openProfileSettings = useCallback(() => {
+    onOpenSettings('profiles');
+  }, [onOpenSettings]);
+
+  const utilityActions = useMemo<
+    Array<{
+      id: string;
+      label: string;
+      title: string;
+      Icon: LucideIcon;
+      onClick: () => void;
+      active?: boolean;
+    }>
+  >(
+    () => [
+      {
+        id: 'persona',
+        label: 'Persona',
+        title: 'AI Persona & Roles',
+        Icon: UserCircle2,
+        onClick: onOpenPersonaView,
+        active: isPersonaViewOpen,
+      },
+      {
+        id: 'cloud',
+        label: 'Cloud',
+        title: 'Cloud Drive',
+        Icon: Cloud,
+        onClick: onOpenCloudStorage,
+      },
+      {
+        id: 'settings',
+        label: 'Setting',
+        title: 'Setting',
+        Icon: Settings,
+        onClick: openProfileSettings,
+      },
+    ],
+    [isPersonaViewOpen, onOpenCloudStorage, onOpenPersonaView, openProfileSettings]
+  );
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden border-r border-slate-800 bg-slate-950">
@@ -202,5 +211,8 @@ export const InlineModeNavigation: React.FC<InlineModeNavigationProps> = ({
     </div>
   );
 };
+
+export const InlineModeNavigation = React.memo(InlineModeNavigationComponent);
+InlineModeNavigation.displayName = 'InlineModeNavigation';
 
 export default InlineModeNavigation;

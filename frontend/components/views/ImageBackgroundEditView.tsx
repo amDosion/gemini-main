@@ -24,6 +24,7 @@ import { getImageHistoryAttachmentPreviewUrl } from '../common/imageHistorySideb
 import { getPreferredImageAttachmentUrl } from '../../utils/attachmentUrl';
 import { useStableAttachmentImageUrl } from '../../hooks/useStableAttachmentImageUrl';
 import { buildMessagesMediaSignature } from '../../utils/messageMediaSignature';
+import { isPlaceholderMessage } from '../../utils/messageFilters';
 
 interface ImageBackgroundEditViewProps {
   messages: Message[];
@@ -262,9 +263,7 @@ export const ImageBackgroundEditView: React.FC<ImageBackgroundEditViewProps> = (
     () => (
       <div ref={scrollRef} className="flex-1 p-4 space-y-6 overflow-y-auto custom-scrollbar">
         {messages.map((msg) => {
-          const isPlaceholder =
-            !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
-          if (isPlaceholder) return null;
+          if (isPlaceholderMessage(msg)) return null;
 
           return (
             <div

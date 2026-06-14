@@ -9,6 +9,7 @@ Redis 缓存服务
 """
 import json
 import logging
+import time
 from typing import Optional, Any, Callable, Awaitable
 import redis.asyncio as redis
 
@@ -23,6 +24,7 @@ _NULL_SENTINEL = "__cache_null__"
 
 # Sentinel object returned by _get_raw() when a key is absent from Redis.
 _CACHE_MISS = object()
+_REDIS_RETRY_COOLDOWN_SECONDS = 30.0
 
 
 class CacheService:
@@ -46,28 +48,60 @@ class CacheService:
         self._redis: Optional[redis.Redis] = redis_client
         self._redis_url = settings.redis_url
         self.default_ttl = 3600  # 默认 TTL：1 小时
+        self._redis_available = redis_client is not None
+        self._retry_after = 0.0
     
-    async def connect(self) -> None:
-        """连接到 Redis"""
-        if self._redis is None:
+    def _is_in_retry_cooldown(self) -> bool:
+        return self._retry_after > time.monotonic()
+
+    async def _drop_redis(self, error: Exception, action: str) -> None:
+        logger.warning("[CacheService] Redis unavailable during %s: %s", action, error)
+        client = self._redis
+        self._redis = None
+        self._redis_available = False
+        self._retry_after = time.monotonic() + _REDIS_RETRY_COOLDOWN_SECONDS
+        if client is not None:
             try:
-                self._redis = redis.from_url(
-                    self._redis_url,
-                    encoding="utf-8",
-                    decode_responses=False  # 我们需要手动处理 JSON
-                )
-                # 测试连接
-                await self._redis.ping()
-                logger.info("[CacheService] ✅ Redis 连接成功")
-            except Exception as e:
-                logger.error(f"[CacheService] ❌ Redis 连接失败: {e}")
-                raise
+                await client.close()
+            except Exception:
+                pass
+
+    async def _ensure_connected(self) -> bool:
+        if self._redis is not None:
+            return True
+        if self._is_in_retry_cooldown():
+            return False
+        return await self.connect()
+
+    async def connect(self) -> bool:
+        """连接到 Redis"""
+        if self._redis is not None:
+            return True
+        if self._is_in_retry_cooldown():
+            return False
+
+        try:
+            self._redis = redis.from_url(
+                self._redis_url,
+                encoding="utf-8",
+                decode_responses=False  # 我们需要手动处理 JSON
+            )
+            # 测试连接
+            await self._redis.ping()
+            self._redis_available = True
+            self._retry_after = 0.0
+            logger.info("[CacheService] ✅ Redis 连接成功")
+            return True
+        except Exception as e:
+            await self._drop_redis(e, "connect")
+            return False
     
     async def disconnect(self) -> None:
         """断开 Redis 连接"""
         if self._redis:
             await self._redis.close()
             self._redis = None
+            self._redis_available = False
             logger.info("[CacheService] Redis 连接已关闭")
     
     def _make_key(self, prefix: str, *args, **kwargs) -> str:
@@ -108,8 +142,8 @@ class CacheService:
         Returns:
             缓存的值（如果存在），否则返回 None
         """
-        if not self._redis:
-            await self.connect()
+        if not await self._ensure_connected():
+            return None
         
         try:
             data = await self._redis.get(key)
@@ -121,6 +155,7 @@ class CacheService:
         except json.JSONDecodeError as e:
             logger.warning(f"[CacheService] JSON 解析失败 (key={key}): {e}")
         except Exception as e:
+            await self._drop_redis(e, "get")
             logger.warning(f"[CacheService] 获取缓存失败 (key={key}): {e}")
         
         return None
@@ -132,8 +167,8 @@ class CacheService:
         from a key that does not exist in Redis (_CACHE_MISS).  Used internally
         by get_or_set() to avoid re-fetching when fetch_func returned None.
         """
-        if not self._redis:
-            await self.connect()
+        if not await self._ensure_connected():
+            return _CACHE_MISS
 
         try:
             data = await self._redis.get(key)
@@ -148,6 +183,7 @@ class CacheService:
             logger.warning(f"[CacheService] JSON 解析失败 (key={key}): {e}")
             return _CACHE_MISS
         except Exception as e:
+            await self._drop_redis(e, "_get_raw")
             logger.warning(f"[CacheService] _get_raw 失败 (key={key}): {e}")
             return _CACHE_MISS
     
@@ -168,8 +204,8 @@ class CacheService:
         Returns:
             是否设置成功
         """
-        if not self._redis:
-            await self.connect()
+        if not await self._ensure_connected():
+            return False
         
         try:
             ttl = ttl or self.default_ttl
@@ -180,6 +216,7 @@ class CacheService:
             logger.warning(f"[CacheService] JSON 序列化失败 (key={key}): {e}")
             return False
         except Exception as e:
+            await self._drop_redis(e, "set")
             logger.warning(f"[CacheService] 设置缓存失败 (key={key}): {e}")
             return False
     
@@ -193,8 +230,8 @@ class CacheService:
         Returns:
             是否删除成功
         """
-        if not self._redis:
-            await self.connect()
+        if not await self._ensure_connected():
+            return False
         
         try:
             # 检查是否是通配符模式
@@ -211,6 +248,7 @@ class CacheService:
                 result = await self._redis.delete(key)
                 return result > 0
         except Exception as e:
+            await self._drop_redis(e, "delete")
             logger.warning(f"[CacheService] 删除缓存失败 (key={key}): {e}")
             return False
     
@@ -257,8 +295,11 @@ class CacheService:
             if value is None:
                 # Cache the sentinel so repeated misses don't re-invoke fetch_func.
                 effective_ttl = ttl or self.default_ttl
-                if self._redis:
-                    await self._redis.setex(key, effective_ttl, _NULL_SENTINEL)
+                if await self._ensure_connected():
+                    try:
+                        await self._redis.setex(key, effective_ttl, _NULL_SENTINEL)
+                    except Exception as e:
+                        await self._drop_redis(e, "set null sentinel")
             else:
                 await self.set(key, value, ttl)
             return value
@@ -276,13 +317,14 @@ class CacheService:
         Returns:
             是否存在
         """
-        if not self._redis:
-            await self.connect()
+        if not await self._ensure_connected():
+            return False
         
         try:
             result = await self._redis.exists(key)
             return result > 0
         except Exception as e:
+            await self._drop_redis(e, "exists")
             logger.warning(f"[CacheService] 检查缓存存在性失败 (key={key}): {e}")
             return False
     
@@ -296,8 +338,8 @@ class CacheService:
         Returns:
             剩余 TTL（秒），如果键不存在则返回 None
         """
-        if not self._redis:
-            await self.connect()
+        if not await self._ensure_connected():
+            return None
         
         try:
             ttl = await self._redis.ttl(key)
@@ -308,6 +350,7 @@ class CacheService:
             else:
                 return ttl
         except Exception as e:
+            await self._drop_redis(e, "get_ttl")
             logger.warning(f"[CacheService] 获取 TTL 失败 (key={key}): {e}")
             return None
 

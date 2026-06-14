@@ -19,6 +19,7 @@ import { ExpandMainCanvas } from './expand/ExpandMainCanvas';
 import { getPreferredGoogleExpandModelId } from '../../utils/googleExpandModelSelection';
 import { getPreferredImageAttachmentUrl } from '../../utils/attachmentUrl';
 import { useStableAttachmentImageUrl } from '../../hooks/useStableAttachmentImageUrl';
+import { filterModelImageBatches } from '../../utils/messageFilters';
 
 const extractHistoryPrompts = (
   msg: Message
@@ -144,11 +145,7 @@ export const ImageExpandView: React.FC<ImageExpandViewProps> = ({
 
   // ✅ 新增：按消息分组的历史批次（只包含有附件的模型响应）
   const historyBatches = useMemo(() => {
-    return messages
-      .filter(
-        (m) => m.role === Role.MODEL && ((m.attachments && m.attachments.length > 0) || m.isError)
-      )
-      .reverse();
+    return filterModelImageBatches(messages);
   }, [messages]);
 
   const {

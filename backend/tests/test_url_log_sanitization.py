@@ -65,6 +65,50 @@ def test_summarize_query_counts_params_without_decoding_values():
     assert "accessToken=" not in summary
 
 
+@pytest.mark.asyncio
+async def test_auth_login_exception_log_summarizes_email(monkeypatch, caplog):
+    from fastapi import HTTPException
+    from app.routers.auth import auth as auth_router
+    from app.services.common.auth_service import LoginRequest
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    email = "private-user@example-mail.com"
+    secret_error = f"database detail with {email}"
+
+    def fail_login(*_args, **_kwargs):
+        raise RuntimeError(secret_error)
+
+    monkeypatch.setattr(auth_router.AuthService, "login", fail_login)
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/auth/login",
+            "headers": [(b"user-agent", b"pytest")],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+            "scheme": "http",
+        }
+    )
+
+    with caplog.at_level(logging.ERROR, logger=auth_router.logger.name):
+        with pytest.raises(HTTPException) as exc_info:
+            await auth_router.login(
+                LoginRequest(email=email, password="secret"),
+                request,
+                Response(),
+                db=object(),
+            )
+
+    assert exc_info.value.status_code == 500
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert email not in log_text
+    assert secret_error not in log_text
+    assert "<redacted email; length=" in log_text
+    assert "<redacted error; type=RuntimeError; length=" in log_text
+
+
 def test_task_decomposer_json_error_logs_response_summary(caplog):
     from app.services.gemini.agent.task_decomposer import SmartTaskDecomposer
 
@@ -391,7 +435,7 @@ async def test_startup_redis_pool_failure_logs_summary_without_traceback(
     )
 
     with caplog.at_level(logging.ERROR, logger=startup_tasks.logger.name):
-        await startup_tasks.initialize_redis_pool(
+        redis_available = await startup_tasks.initialize_redis_pool(
             {"error": "[ERR]", "success": "[OK]", "warning": "[WARN]", "info": "[INFO]"}
         )
 
@@ -409,6 +453,38 @@ async def test_startup_redis_pool_failure_logs_summary_without_traceback(
     assert "Traceback" not in captured.out
     assert "Traceback" not in captured.err
     assert all(record.exc_info is None for record in caplog.records)
+    assert redis_available is False
+
+
+@pytest.mark.asyncio
+async def test_startup_skips_embedded_worker_pool_when_redis_unavailable(
+    monkeypatch,
+    caplog,
+):
+    from app.core import config as config_module
+    from app.core import startup_tasks
+
+    class WorkerPoolThatMustNotStart:
+        async def start(self):
+            raise AssertionError("worker pool must not start without Redis")
+
+    monkeypatch.setattr(config_module.settings, "worker_mode", "embedded", raising=False)
+
+    with caplog.at_level(logging.WARNING, logger=startup_tasks.logger.name):
+        worker_mode = await startup_tasks.start_worker_pool(
+            WorkerPoolThatMustNotStart(),
+            True,
+            {"error": "[ERR]", "success": "[OK]", "warning": "[WARN]", "info": "[INFO]"},
+            redis_available=False,
+        )
+
+    assert worker_mode == "unavailable"
+    log_text = "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name == startup_tasks.logger.name
+    )
+    assert "Redis is unavailable; skipping embedded upload worker pool startup" in log_text
 
 
 @pytest.mark.asyncio
@@ -429,7 +505,7 @@ async def test_startup_worker_pool_failure_logs_summary_without_traceback(
     monkeypatch.setattr(config_module.settings, "worker_mode", "embedded", raising=False)
 
     with caplog.at_level(logging.ERROR, logger=startup_tasks.logger.name):
-        await startup_tasks.start_worker_pool(
+        worker_mode = await startup_tasks.start_worker_pool(
             FailingWorkerPool(),
             True,
             {"error": "[ERR]", "success": "[OK]", "warning": "[WARN]", "info": "[INFO]"},
@@ -449,6 +525,7 @@ async def test_startup_worker_pool_failure_logs_summary_without_traceback(
     assert "Traceback" not in captured.out
     assert "Traceback" not in captured.err
     assert all(record.exc_info is None for record in caplog.records)
+    assert worker_mode == "unavailable"
 
 
 @pytest.mark.asyncio
@@ -468,7 +545,7 @@ async def test_startup_worker_pool_fallback_failure_logs_summary(
     monkeypatch.setattr(config_module.settings, "worker_mode", "unexpected", raising=False)
 
     with caplog.at_level(logging.ERROR, logger=startup_tasks.logger.name):
-        await startup_tasks.start_worker_pool(
+        worker_mode = await startup_tasks.start_worker_pool(
             FailingWorkerPool(),
             True,
             {"error": "[ERR]", "success": "[OK]", "warning": "[WARN]", "info": "[INFO]"},
@@ -483,6 +560,7 @@ async def test_startup_worker_pool_fallback_failure_logs_summary(
     assert secret not in log_text
     assert "Traceback" not in log_text
     assert all(record.exc_info is None for record in caplog.records)
+    assert worker_mode == "unavailable"
 
 
 @pytest.mark.asyncio

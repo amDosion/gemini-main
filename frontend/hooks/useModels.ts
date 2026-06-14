@@ -97,7 +97,6 @@ export const useModels = (
   const [currentModelId, setCurrentModelId] = useState<string>('');
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
-  const [privateCacheResetNonce, setPrivateCacheResetNonce] = useState(0);
   const normalizedSavedModels = useMemo(
     () => normalizeModels(initialSavedModels),
     [initialSavedModels]
@@ -135,12 +134,14 @@ export const useModels = (
     setModeDefaultModelId(null);
     setCurrentModelId('');
     setIsLoadingModels(false);
-    setPrivateCacheResetNonce((value) => value + 1);
   }, []);
 
-  usePrivateCacheLifecycleRevision(resetModelStateForPrivateScopeChange, {
-    includeCacheReset: true,
-  });
+  const privateCacheLifecycleRevision = usePrivateCacheLifecycleRevision(
+    resetModelStateForPrivateScopeChange,
+    {
+      includeCacheReset: true,
+    }
+  );
 
   // 手动选择模型时打标，避免后续自动切换覆盖用户意图
   const setCurrentModelIdWithUserFlag = useCallback((id: string | ((prev: string) => string)) => {
@@ -300,7 +301,7 @@ export const useModels = (
     return () => {
       cancelled = true;
     };
-  }, [configReady, providerId, profileCacheKey, appMode, privateCacheResetNonce]);
+  }, [configReady, providerId, profileCacheKey, appMode, privateCacheLifecycleRevision]);
 
   // 当前模式模型（由后端按 mode 过滤返回）
   const visibleModels = modeModels;

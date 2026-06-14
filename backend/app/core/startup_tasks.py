@@ -452,7 +452,7 @@ async def ensure_performance_indexes(log_prefixes: Dict[str, str]):
         )
 
 
-async def initialize_redis_pool(log_prefixes: Dict[str, str]):
+async def initialize_redis_pool(log_prefixes: Dict[str, str]) -> bool:
     """
     初始化全局 Redis 连接池
 
@@ -465,6 +465,7 @@ async def initialize_redis_pool(log_prefixes: Dict[str, str]):
         global_redis_pool = GlobalRedisConnectionPool.get_instance()
         await global_redis_pool.initialize()
         logger.info(f"{log_prefixes['success']} Global Redis connection pool initialized")
+        return True
     except Exception as e:
         logger.error(
             "%s Failed to initialize global Redis connection pool: %s",
@@ -472,6 +473,7 @@ async def initialize_redis_pool(log_prefixes: Dict[str, str]):
             summarize_text_for_log(e, label="error"),
         )
         logger.error("WARNING: Application will continue but Redis operations may fail!")
+        return False
 
 
 async def cleanup_expired_tokens(log_prefixes: Dict[str, str]):
@@ -620,7 +622,8 @@ async def validate_provider_configs(log_prefixes: Dict[str, str]):
 async def start_worker_pool(
     worker_pool: Any,
     worker_pool_available: bool,
-    log_prefixes: Dict[str, str]
+    log_prefixes: Dict[str, str],
+    redis_available: bool = True,
 ) -> str:
     """
     启动 Worker 池
@@ -647,6 +650,12 @@ async def start_worker_pool(
 
     if worker_pool_available and worker_mode != "disabled":
         if worker_mode == "embedded":
+            if not redis_available:
+                logger.warning(
+                    "%s Redis is unavailable; skipping embedded upload worker pool startup",
+                    log_prefixes["warning"],
+                )
+                return "unavailable"
             # 模式：内嵌在主进程中（默认，推荐）
             logger.info(f"{log_prefixes['info']} Starting upload worker pool (embedded mode, on-demand)...")
             try:
@@ -661,18 +670,27 @@ async def start_worker_pool(
                     summarize_text_for_log(e, label="error"),
                 )
                 logger.error("WARNING: Application will continue but async uploads will NOT work!")
+                worker_mode = "unavailable"
         else:
             logger.warning(f"{log_prefixes['warning']} Unknown worker_mode: {worker_mode}, valid values: 'embedded', 'disabled'")
             logger.warning(f"{log_prefixes['warning']} Falling back to 'embedded' mode")
+            if not redis_available:
+                logger.warning(
+                    "%s Redis is unavailable; skipping fallback embedded upload worker pool startup",
+                    log_prefixes["warning"],
+                )
+                return "unavailable"
             try:
                 await worker_pool.start()
                 logger.info(f"{log_prefixes['success']} Upload worker pool started (fallback to embedded mode)")
+                worker_mode = "embedded"
             except Exception as e:
                 logger.error(
                     "%s Failed to start upload worker pool: %s",
                     log_prefixes["error"],
                     summarize_text_for_log(e, label="error"),
                 )
+                worker_mode = "unavailable"
     elif worker_mode == "disabled":
         logger.info(f"{log_prefixes['info']} Worker mode is 'disabled', skipping worker startup")
         logger.info(f"{log_prefixes['info']} Make sure an external worker service is running")
@@ -724,7 +742,7 @@ async def run_all_startup_tasks(
     await initialize_database_schema(log_prefixes)
 
     # 2. Group 1: 无依赖的初始化任务（并行）
-    await asyncio.gather(
+    _, _, redis_available = await asyncio.gather(
         initialize_encryption_keys(log_prefixes),
         initialize_system_config(log_prefixes),
         initialize_redis_pool(log_prefixes),
@@ -748,9 +766,15 @@ async def run_all_startup_tasks(
     )
 
     # 5. 启动 Worker 池（最后执行）
-    worker_mode = await start_worker_pool(worker_pool, worker_pool_available, log_prefixes)
+    worker_mode = await start_worker_pool(
+        worker_pool,
+        worker_pool_available,
+        log_prefixes,
+        redis_available=bool(redis_available),
+    )
 
     return {
         'worker_mode': worker_mode,
-        'current_pid': os.getpid()
+        'current_pid': os.getpid(),
+        'redis_available': bool(redis_available),
     }

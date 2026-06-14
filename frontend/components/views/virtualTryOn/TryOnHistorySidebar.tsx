@@ -3,6 +3,7 @@ import { Shirt, User, Layers, Bot, AlertCircle } from 'lucide-react';
 import { Message, Role } from '../../../types/types';
 import { CachedImage } from '../../common/CachedImage';
 import { getAttachmentStableKey, mapDisplayImageAttachments } from './tryOnAttachments';
+import { isPlaceholderMessage } from '../../../utils/messageFilters';
 
 const TRY_ON_HISTORY_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   hour: '2-digit',
@@ -48,9 +49,7 @@ export const TryOnHistorySidebar = React.memo(function TryOnHistorySidebar({
     <div ref={scrollRef} className="flex-1 p-4 space-y-6 overflow-y-auto custom-scrollbar">
       {messages.map((msg) => {
         // 过滤空占位消息
-        const isPlaceholder =
-          !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
-        if (isPlaceholder) return null;
+        if (isPlaceholderMessage(msg)) return null;
 
         const isSelected = msg.role === Role.MODEL && activeBatchId === msg.id;
 

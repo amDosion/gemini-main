@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, Key, Shield, RefreshCw, AlertTriangle, Loader2, X } from 'lucide-react';
 import { ConfigProfile, db } from '../../../services/db';
@@ -261,17 +261,40 @@ export const EditorTab: React.FC<EditorTabProps> = ({
     await onSave(profileToSave);
   };
 
-  const toggleEditorModelVisibility = (id: string) => {
-    if (!formData) return;
-    const currentHidden = new Set(formData.hiddenModels);
-    if (currentHidden.has(id)) currentHidden.delete(id);
-    else currentHidden.add(id);
+  const toggleEditorModelVisibility = useCallback((id: string) => {
+    setFormData((prev) => {
+      if (!prev) return null;
 
-    setFormData({
-      ...formData,
-      hiddenModels: Array.from(currentHidden),
+      const currentHidden = new Set(prev.hiddenModels);
+      if (currentHidden.has(id)) currentHidden.delete(id);
+      else currentHidden.add(id);
+
+      return {
+        ...prev,
+        hiddenModels: Array.from(currentHidden),
+      };
     });
-  };
+  }, [setFormData]);
+
+  const selectedEditorModelIds = useMemo(() => {
+    const hidden = formData?.hiddenModels ?? [];
+    return new Set(
+      verifiedModels.filter((model) => !hidden.includes(model.id)).map((model) => model.id)
+    );
+  }, [verifiedModels, formData?.hiddenModels]);
+
+  const selectAllEditorModels = useCallback(
+    () => setFormData((prev) => (prev ? { ...prev, hiddenModels: [] } : null)),
+    [setFormData]
+  );
+
+  const selectNoEditorModels = useCallback(
+    () =>
+      setFormData((prev) =>
+        prev ? { ...prev, hiddenModels: verifiedModels.map((model) => model.id) } : null
+      ),
+    [setFormData, verifiedModels]
+  );
 
   if (!formData) {
     return (
@@ -281,12 +304,6 @@ export const EditorTab: React.FC<EditorTabProps> = ({
       </div>
     );
   }
-
-  const selectedEditorModelIds = new Set(
-    verifiedModels
-      .filter((model) => !formData.hiddenModels.includes(model.id))
-      .map((model) => model.id)
-  );
 
   return (
     <>
@@ -494,14 +511,8 @@ export const EditorTab: React.FC<EditorTabProps> = ({
                   models={verifiedModels}
                   selectedModelIds={selectedEditorModelIds}
                   onToggleModel={toggleEditorModelVisibility}
-                  onSelectAll={() =>
-                    setFormData((prev) => (prev ? { ...prev, hiddenModels: [] } : null))
-                  }
-                  onSelectNone={() =>
-                    setFormData((prev) =>
-                      prev ? { ...prev, hiddenModels: verifiedModels.map((m) => m.id) } : null
-                    )
-                  }
+                  onSelectAll={selectAllEditorModels}
+                  onSelectNone={selectNoEditorModels}
                   helperText="Check models to include in the dropdown."
                   testIdPrefix="editor-model"
                 />

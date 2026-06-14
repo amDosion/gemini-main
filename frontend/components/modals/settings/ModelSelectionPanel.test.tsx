@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ModelSelectionPanel, getModelUsage } from './ModelSelectionPanel';
+import { ModelSelectionPanel, getModelUsage, type SelectableModel } from './ModelSelectionPanel';
 
 describe('ModelSelectionPanel', () => {
   afterEach(() => {
@@ -59,5 +59,76 @@ describe('ModelSelectionPanel', () => {
     expect(getModelUsage({ id: 'image-segmentation-001', name: 'segmentation' })).toBe('图像分割');
     expect(getModelUsage({ id: 'virtual-try-on-001', name: 'try-on' })).toBe('虚拟试衣');
     expect(getModelUsage({ id: 'gemini-2.5-flash-image', name: 'Gemini 2.5 Flash Image' })).toBe('图片生成 / 编辑');
+  });
+
+  it('does not rerender unchanged model rows when parent props are stable', () => {
+    const usageReads: Record<string, number> = {
+      'gemini-alpha': 0,
+      'gemini-beta': 0,
+      'gemini-gamma': 0,
+    };
+    const createMeasuredModel = (id: string): SelectableModel => {
+      const model: SelectableModel = {
+        id,
+        name: id,
+        capabilities: { vision: false, search: false, reasoning: false, coding: false },
+      };
+
+      Object.defineProperty(model, 'description', {
+        get: () => {
+          usageReads[id] += 1;
+          return 'general model';
+        },
+        enumerable: true,
+      });
+
+      return model;
+    };
+    const models = [
+      createMeasuredModel('gemini-alpha'),
+      createMeasuredModel('gemini-beta'),
+      createMeasuredModel('gemini-gamma'),
+    ];
+    const selectedModelIds = new Set(['gemini-alpha']);
+    const onToggleModel = vi.fn();
+    const onSelectAll = vi.fn();
+    const onSelectNone = vi.fn();
+    const renderPanel = (selectedIds: Set<string>) => (
+      <ModelSelectionPanel
+        models={models}
+        selectedModelIds={selectedIds}
+        onToggleModel={onToggleModel}
+        onSelectAll={onSelectAll}
+        onSelectNone={onSelectNone}
+        testIdPrefix="measured"
+      />
+    );
+
+    const { rerender } = render(renderPanel(selectedModelIds));
+
+    expect(usageReads).toEqual({
+      'gemini-alpha': 1,
+      'gemini-beta': 1,
+      'gemini-gamma': 1,
+    });
+
+    rerender(renderPanel(selectedModelIds));
+
+    expect(usageReads).toEqual({
+      'gemini-alpha': 1,
+      'gemini-beta': 1,
+      'gemini-gamma': 1,
+    });
+
+    rerender(renderPanel(new Set(['gemini-alpha', 'gemini-beta'])));
+
+    expect(screen.getByTestId('measured-card-gemini-beta').getAttribute('aria-pressed')).toBe(
+      'true'
+    );
+    expect(usageReads).toEqual({
+      'gemini-alpha': 1,
+      'gemini-beta': 2,
+      'gemini-gamma': 1,
+    });
   });
 });

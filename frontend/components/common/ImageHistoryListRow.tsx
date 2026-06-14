@@ -283,4 +283,5 @@ const ImageHistoryListRowComponent: React.FC<ImageHistoryListRowProps> = ({
   );
 };
 
-export const ImageHistoryListRow = ImageHistoryListRowComponent;
+export const ImageHistoryListRow = React.memo(ImageHistoryListRowComponent);
+ImageHistoryListRow.displayName = 'ImageHistoryListRow';

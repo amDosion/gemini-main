@@ -39,6 +39,7 @@ from ...services.common.system_config_service import (
 from ...services.agent.agent_seed_service import ensure_seed_agents, get_default_seed_agents
 from ...services.gemini.agent.workflow_template_service import WorkflowTemplateService
 from ...models.db_models import IPLoginHistory, RefreshToken, UserSettings
+from ...utils.log_sanitization import summarize_text_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -427,7 +428,11 @@ async def login(
         raise
     except Exception as e:
         # ✅ A-1/C-8: 不向客户端泄漏内部异常细节，服务端日志只保留摘要。
-        logger.error("[Auth] 登录失败 (email=%s): %s", data.email, _safe_auth_log_text(e))
+        logger.error(
+            "[Auth] 登录失败 (%s): %s",
+            summarize_text_for_log(data.email, label="email"),
+            _safe_auth_log_text(e),
+        )
         raise HTTPException(status_code=500, detail="Login failed")
 
 

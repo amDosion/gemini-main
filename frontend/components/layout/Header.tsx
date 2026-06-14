@@ -88,7 +88,7 @@ const formatUserFieldValue = (field: string, value: unknown) => {
   return String(value);
 };
 
-export const Header: React.FC<HeaderProps> = ({
+const HeaderComponent: React.FC<HeaderProps> = ({
   isSidebarOpen,
   setIsSidebarOpen,
   isLoadingModels,
@@ -135,7 +135,10 @@ export const Header: React.FC<HeaderProps> = ({
   const { showError, showSuccess } = useToastContext();
 
   // Get Current Profile
-  const activeProfile = profiles.find((p) => p.id === activeProfileId);
+  const activeProfile = useMemo(
+    () => profiles.find((p) => p.id === activeProfileId),
+    [profiles, activeProfileId]
+  );
 
   const userInfoEntries = useMemo(() => {
     if (!currentUser) return [] as Array<{ field: keyof AuthUser; label: string; value: string }>;
@@ -469,3 +472,6 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+
+export const Header = React.memo(HeaderComponent);
+Header.displayName = 'Header';

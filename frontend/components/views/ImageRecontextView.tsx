@@ -17,6 +17,7 @@ import { extractImageHistoryPrompts, useImageHistorySidebar } from '../common/Im
 import { getPreferredImageAttachmentUrl, isTemporaryAttachmentUrl } from '../../utils/attachmentUrl';
 import { useStableAttachmentImageUrl } from '../../hooks/useStableAttachmentImageUrl';
 import { buildMessagesMediaSignature } from '../../utils/messageMediaSignature';
+import { isPlaceholderMessage } from '../../utils/messageFilters';
 
 interface ImageRecontextViewProps {
   messages: Message[];
@@ -210,11 +211,7 @@ export const ImageRecontextView: React.FC<ImageRecontextViewProps> = ({
     );
 
     const historyMessages = useMemo(() => {
-      return messages.filter((msg) => {
-        const isPlaceholder =
-          !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
-        return !isPlaceholder;
-      });
+      return messages.filter((msg) => !isPlaceholderMessage(msg));
     }, [messages, messagesMediaSignature]);
 
     const canvasCarouselResetKey = useMemo(

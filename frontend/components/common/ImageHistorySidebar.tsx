@@ -83,6 +83,12 @@ export function useImageHistorySidebar({
   );
   const [isResizingPreview, setIsResizingPreview] = useState(false);
   const [copiedPreviewMessageId, setCopiedPreviewMessageId] = useState<string | null>(null);
+  const hoverPreviewRef = useRef<ImageHistoryHoverPreview | null>(null);
+  const hoverPreviewSizeRef = useRef<ImageHistoryHoverPreviewSize | null>(null);
+  const isResizingPreviewRef = useRef(false);
+  hoverPreviewRef.current = hoverPreview;
+  hoverPreviewSizeRef.current = hoverPreviewSize;
+  isResizingPreviewRef.current = isResizingPreview;
 
   const {
     showFavoritesOnly,
@@ -166,7 +172,7 @@ export function useImageHistorySidebar({
   }, [clearHidePreviewTimer, stopPreviewResize]);
 
   const scheduleHideHoverPreview = useCallback(() => {
-    if (isResizingPreview) return;
+    if (isResizingPreviewRef.current) return;
     clearHidePreviewTimer();
     hidePreviewTimerRef.current = window.setTimeout(() => {
       setHoverPreview(null);
@@ -175,7 +181,7 @@ export function useImageHistorySidebar({
       setCopiedPreviewMessageId(null);
       hidePreviewTimerRef.current = null;
     }, 180);
-  }, [clearHidePreviewTimer, isResizingPreview]);
+  }, [clearHidePreviewTimer]);
 
   const computeHoverPreviewPosition = useCallback(
     (
@@ -216,12 +222,14 @@ export function useImageHistorySidebar({
       const rect = event.currentTarget.getBoundingClientRect();
       const anchorX = rect.right;
       const anchorY = rect.top + rect.height / 2;
-      const shouldResetSize = hoverPreview?.messageId !== message.id;
+      const currentPreview = hoverPreviewRef.current;
+      const currentPreviewSize = hoverPreviewSizeRef.current;
+      const shouldResetSize = currentPreview?.messageId !== message.id;
       if (shouldResetSize) {
         setHoverPreviewSize(null);
       }
-      const estimatedPanelWidth = shouldResetSize ? 380 : (hoverPreviewSize?.width ?? 380);
-      const estimatedPanelHeight = shouldResetSize ? 280 : (hoverPreviewSize?.height ?? 280);
+      const estimatedPanelWidth = shouldResetSize ? 380 : (currentPreviewSize?.width ?? 380);
+      const estimatedPanelHeight = shouldResetSize ? 280 : (currentPreviewSize?.height ?? 280);
       setHoverPreview({
         messageId: message.id,
         role: message.role,
@@ -239,9 +247,6 @@ export function useImageHistorySidebar({
     [
       clearHidePreviewTimer,
       computeHoverPreviewPosition,
-      hoverPreview?.messageId,
-      hoverPreviewSize?.height,
-      hoverPreviewSize?.width,
       modelLabel,
     ]
   );
@@ -570,7 +575,7 @@ export function useImageHistorySidebar({
     [favoriteCount, filteredItems.length, items.length, setShowFavoritesOnly, showFavoritesOnly]
   );
 
-  const sidebarContent = useMemo(
+  const listContent = useMemo(
     () => (
       <VirtualizedHistoryList
         ref={virtualListRef}
@@ -610,93 +615,85 @@ export function useImageHistorySidebar({
           </div>
         )}
 
-        {openActionMenu && (
-          <HistoryActionMenuPortal
-            openActionMenu={openActionMenu}
-            actionMenuPosition={actionMenuPosition}
-            actionMenuPanelRef={actionMenuPanelRef}
-            closeHoverPreviewOnly={closeHoverPreviewOnly}
-            closeHoverPreview={closeHoverPreview}
-            closeActionMenu={() => {
-              setOpenActionMenu(null);
-              setActionMenuPosition(null);
-            }}
-            isFavorite={isFavorite}
-            isFavoritePending={isFavoritePending}
-            toggleFavorite={toggleFavorite}
-            deleteItem={deleteItem}
-            hoverPreviewMessageId={hoverPreview?.messageId ?? null}
-          />
-        )}
-
         {loadingContent}
-
-        {hoverPreview && (
-          <ImageHistoryHoverPreviewPanel
-            hoverPreview={hoverPreview}
-            hoverPreviewPosition={hoverPreviewPosition}
-            hoverPreviewSize={hoverPreviewSize}
-            hoverPreviewPanelRef={hoverPreviewPanelRef}
-            clearHidePreviewTimer={clearHidePreviewTimer}
-            scheduleHideHoverPreview={scheduleHideHoverPreview}
-            tone={tone}
-            secondaryPromptLabel={secondaryPromptLabel}
-            secondaryPromptMissingText={secondaryPromptMissingText}
-            secondaryPromptCopyTitle={secondaryPromptCopyTitle}
-            copiedPreviewMessageId={copiedPreviewMessageId}
-            handleCopyEnhancedPrompt={handleCopyEnhancedPrompt}
-            activeImageUrl={activeImageUrl}
-            items={items}
-            onSelectedMessageIdChange={onSelectedMessageIdChange}
-            getDisplayAttachments={getDisplayAttachments}
-            onSelectPreviewAttachment={onSelectPreviewAttachment}
-            onSelectItem={onSelectItem}
-            handlePreviewResizeMouseDown={handlePreviewResizeMouseDown}
-            isResizingPreview={isResizingPreview}
-          />
-        )}
       </VirtualizedHistoryList>
     ),
     [
       activeImageUrl,
-      actionMenuPosition,
-      clearHidePreviewTimer,
       closeHoverPreview,
       closeHoverPreviewOnly,
-      copiedPreviewMessageId,
-      deleteItem,
       emptyText,
       extractPrompts,
       filteredItems,
       getDisplayAttachments,
       getPreviewAttachments,
-      handleCopyEnhancedPrompt,
-      handlePreviewResizeMouseDown,
-      hoverPreview,
-      hoverPreviewPosition,
-      hoverPreviewSize,
-      isResizingPreview,
+      historyItemRefs,
       isFavorite,
-      isFavoritePending,
-      items,
       loadingContent,
       modelLabel,
       onMobileHistoryOpenChange,
       onSelectItem,
-      onSelectPreviewAttachment,
       onSelectedMessageIdChange,
       openActionMenu,
       scheduleHideHoverPreview,
       selectedMessageId,
+      setActionMenuPosition,
+      setOpenActionMenu,
       secondaryPromptBadgeText,
-      secondaryPromptCopyTitle,
-      secondaryPromptLabel,
-      secondaryPromptMissingText,
       showFavoritesOnly,
       showHoverPreview,
       tone,
-      toggleFavorite,
     ]
+  );
+
+  const sidebarContent = (
+    <>
+      {listContent}
+
+      {openActionMenu && (
+        <HistoryActionMenuPortal
+          openActionMenu={openActionMenu}
+          actionMenuPosition={actionMenuPosition}
+          actionMenuPanelRef={actionMenuPanelRef}
+          closeHoverPreviewOnly={closeHoverPreviewOnly}
+          closeHoverPreview={closeHoverPreview}
+          closeActionMenu={() => {
+            setOpenActionMenu(null);
+            setActionMenuPosition(null);
+          }}
+          isFavorite={isFavorite}
+          isFavoritePending={isFavoritePending}
+          toggleFavorite={toggleFavorite}
+          deleteItem={deleteItem}
+          hoverPreviewMessageId={hoverPreview?.messageId ?? null}
+        />
+      )}
+
+      {hoverPreview && (
+        <ImageHistoryHoverPreviewPanel
+          hoverPreview={hoverPreview}
+          hoverPreviewPosition={hoverPreviewPosition}
+          hoverPreviewSize={hoverPreviewSize}
+          hoverPreviewPanelRef={hoverPreviewPanelRef}
+          clearHidePreviewTimer={clearHidePreviewTimer}
+          scheduleHideHoverPreview={scheduleHideHoverPreview}
+          tone={tone}
+          secondaryPromptLabel={secondaryPromptLabel}
+          secondaryPromptMissingText={secondaryPromptMissingText}
+          secondaryPromptCopyTitle={secondaryPromptCopyTitle}
+          copiedPreviewMessageId={copiedPreviewMessageId}
+          handleCopyEnhancedPrompt={handleCopyEnhancedPrompt}
+          activeImageUrl={activeImageUrl}
+          items={items}
+          onSelectedMessageIdChange={onSelectedMessageIdChange}
+          getDisplayAttachments={getDisplayAttachments}
+          onSelectPreviewAttachment={onSelectPreviewAttachment}
+          onSelectItem={onSelectItem}
+          handlePreviewResizeMouseDown={handlePreviewResizeMouseDown}
+          isResizingPreview={isResizingPreview}
+        />
+      )}
+    </>
   );
 
   return { sidebarExtraHeader, sidebarContent };

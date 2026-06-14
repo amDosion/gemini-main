@@ -23,6 +23,7 @@ import {
   revokeAttachmentObjectUrls,
 } from '../../utils/attachmentUrl';
 import { useThinkingBlock } from '../../hooks/useThinkingBlock';
+import { filterModelImageBatches } from '../../utils/messageFilters';
 
 interface ImageGenViewProps {
   messages: Message[];
@@ -195,11 +196,7 @@ export const ImageGenView: React.FC<ImageGenViewProps> = ({
 
   // 1. Group History by Message (Batch)
   const historyBatches = useMemo(() => {
-    return messages
-      .filter(
-        (m) => m.role === Role.MODEL && ((m.attachments && m.attachments.length > 0) || m.isError)
-      )
-      .reverse();
+    return filterModelImageBatches(messages);
   }, [messages]);
 
   // 2. Determine Active Batch to Display

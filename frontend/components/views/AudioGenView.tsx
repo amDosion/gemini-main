@@ -19,6 +19,7 @@ import ChatEditInputArea from '../chat/ChatEditInputArea';
 import { RetainedAudio } from '../common/RetainedMedia';
 import { openSafeUrlInNewTab } from '../../utils/safeOpen';
 import { downloadSourceUrlInBrowser } from '../../services/downloadService';
+import { isPlaceholderMessage } from '../../utils/messageFilters';
 
 interface AudioGenViewProps {
   messages: Message[];
@@ -547,9 +548,7 @@ export const AudioGenView: React.FC<AudioGenViewProps> = ({
       <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar" ref={scrollRef}>
         {messages.map((msg) => {
           // Filter out empty placeholders to prevent "Double Bubble" issue
-          const isPlaceholder =
-            !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
-          if (isPlaceholder) return null;
+          if (isPlaceholderMessage(msg)) return null;
 
           return (
             <div

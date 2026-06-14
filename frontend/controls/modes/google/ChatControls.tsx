@@ -27,7 +27,7 @@ interface IconButtonProps {
   activeClass: string;
 }
 
-const IconButton: React.FC<IconButtonProps> = ({
+const IconButtonComponent: React.FC<IconButtonProps> = ({
   active,
   disabled = false,
   onClick,
@@ -52,6 +52,18 @@ const IconButton: React.FC<IconButtonProps> = ({
     </button>
   );
 };
+
+const IconButton = React.memo(IconButtonComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.active === nextProps.active &&
+    prevProps.disabled === nextProps.disabled &&
+    prevProps.onClick === nextProps.onClick &&
+    prevProps.title === nextProps.title &&
+    prevProps.activeClass === nextProps.activeClass
+  );
+});
+
+IconButton.displayName = 'IconButton';
 
 type JsonObject = Record<string, unknown>;
 type TransportType = 'stdio' | 'sse' | 'http' | 'streamable-http' | 'unknown';
@@ -174,7 +186,7 @@ const usePopoverMenu = <M extends HTMLElement, B extends HTMLElement>(
   }, [isOpen, updatePosition, menuRef, buttonRef, setOpen]);
 };
 
-export const ChatControls: React.FC<ChatControlsProps> = ({
+const ChatControlsComponent: React.FC<ChatControlsProps> = ({
   currentModel,
   personas = [],
   activePersonaId,
@@ -254,12 +266,12 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
     [activePersona?.icon]
   );
 
-  const cycleCacheMode = () => {
+  const cycleCacheMode = useCallback(() => {
     if (!setGoogleCacheMode) return;
     if (googleCacheMode === 'none') setGoogleCacheMode('exact');
     else if (googleCacheMode === 'exact') setGoogleCacheMode('semantic');
     else setGoogleCacheMode('none');
-  };
+  }, [googleCacheMode, setGoogleCacheMode]);
 
   const getCacheTitle = () => {
     if (googleCacheMode === 'exact') return '上下文缓存：精确匹配';
@@ -279,6 +291,31 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
     setEnableDeepResearch,
     setEnableEnhancedRetrieval,
   ]);
+
+  const toggleSearch = useCallback(() => {
+    if (canSearch) setEnableSearch(!enableSearch);
+  }, [canSearch, enableSearch, setEnableSearch]);
+
+  const toggleBrowser = useCallback(() => {
+    if (setEnableBrowser) setEnableBrowser(!enableBrowser);
+  }, [enableBrowser, setEnableBrowser]);
+
+  const toggleUrlContext = useCallback(() => {
+    if (canUrlContext) setEnableUrlContext(!enableUrlContext);
+  }, [canUrlContext, enableUrlContext, setEnableUrlContext]);
+
+  const toggleRag = useCallback(() => {
+    if (onOpenDocuments && !enableRAG) onOpenDocuments();
+    if (setEnableRAG) setEnableRAG(!enableRAG);
+  }, [enableRAG, onOpenDocuments, setEnableRAG]);
+
+  const toggleThinking = useCallback(() => {
+    if (canThink) setEnableThinking(!enableThinking);
+  }, [canThink, enableThinking, setEnableThinking]);
+
+  const toggleCodeExecution = useCallback(() => {
+    if (canCode) setEnableCodeExecution(!enableCodeExecution);
+  }, [canCode, enableCodeExecution, setEnableCodeExecution]);
 
   const toggleDeepResearch = useCallback(() => {
     const next = !enableDeepResearch;
@@ -344,6 +381,26 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
     const position = getMenuPosition(autoResearchButtonRef.current);
     setAutoResearchMenuPosition(position);
   }, [getMenuPosition]);
+
+  const toggleAutoResearchMenu = useCallback(() => {
+    setIsPersonaMenuOpen(false);
+    setIsMcpMenuOpen(false);
+    setIsAutoResearchMenuOpen((prev) => !prev);
+  }, []);
+
+  const togglePersonaMenu = useCallback(() => {
+    if (!canSelectPersona) return;
+    setIsMcpMenuOpen(false);
+    setIsAutoResearchMenuOpen(false);
+    setIsPersonaMenuOpen((prev) => !prev);
+  }, [canSelectPersona]);
+
+  const toggleMcpMenu = useCallback(() => {
+    if (!canSelectMcp) return;
+    setIsPersonaMenuOpen(false);
+    setIsAutoResearchMenuOpen(false);
+    setIsMcpMenuOpen((prev) => !prev);
+  }, [canSelectMcp]);
 
   const loadMcpServers = useCallback(async () => {
     try {
@@ -413,7 +470,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
           <IconButton
             active={enableSearch}
             disabled={!canSearch}
-            onClick={() => canSearch && setEnableSearch(!enableSearch)}
+            onClick={toggleSearch}
             icon={<Globe size={15} strokeWidth={2.4} />}
             activeClass="bg-blue-600"
             title="联网搜索"
@@ -422,7 +479,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
           {canBrowse && (
             <IconButton
               active={!!enableBrowser}
-              onClick={() => setEnableBrowser && setEnableBrowser(!enableBrowser)}
+              onClick={toggleBrowser}
               icon={<MonitorDot size={15} strokeWidth={2.4} />}
               activeClass="bg-blue-600"
               title="浏览器检索"
@@ -432,7 +489,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
           <IconButton
             active={enableUrlContext}
             disabled={!canUrlContext}
-            onClick={() => canUrlContext && setEnableUrlContext(!enableUrlContext)}
+            onClick={toggleUrlContext}
             icon={<Link2 size={15} strokeWidth={2.4} />}
             activeClass="bg-blue-600"
             title="URL 上下文读取"
@@ -463,11 +520,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
           {canResearch && (
             <button
               ref={autoResearchButtonRef}
-              onClick={() => {
-                setIsPersonaMenuOpen(false);
-                setIsMcpMenuOpen(false);
-                setIsAutoResearchMenuOpen((prev) => !prev);
-              }}
+              onClick={toggleAutoResearchMenu}
               title={
                 activeDeepResearchModel && enableAutoDeepResearch
                   ? `自动深挖已启用：${activeDeepResearchModel.name}`
@@ -486,10 +539,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
           {canRAG && (
             <IconButton
               active={!!enableRAG}
-              onClick={() => {
-                if (onOpenDocuments && !enableRAG) onOpenDocuments();
-                setEnableRAG && setEnableRAG(!enableRAG);
-              }}
+              onClick={toggleRag}
               icon={<Database size={15} strokeWidth={2.4} />}
               activeClass="bg-blue-600"
               title="知识库问答"
@@ -515,7 +565,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
           <IconButton
             active={enableThinking}
             disabled={!canThink}
-            onClick={() => canThink && setEnableThinking(!enableThinking)}
+            onClick={toggleThinking}
             icon={<Brain size={15} strokeWidth={2.4} />}
             activeClass="bg-blue-600"
             title="推理模式"
@@ -524,7 +574,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
           <IconButton
             active={enableCodeExecution}
             disabled={!canCode}
-            onClick={() => canCode && setEnableCodeExecution(!enableCodeExecution)}
+            onClick={toggleCodeExecution}
             icon={<Code2 size={15} strokeWidth={2.4} />}
             activeClass="bg-blue-600"
             title="代码执行"
@@ -532,12 +582,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
 
           <button
             ref={personaButtonRef}
-            onClick={() => {
-              if (!canSelectPersona) return;
-              setIsMcpMenuOpen(false);
-              setIsAutoResearchMenuOpen(false);
-              setIsPersonaMenuOpen((prev) => !prev);
-            }}
+            onClick={togglePersonaMenu}
             disabled={!canSelectPersona}
             title={activePersona?.name || 'AI 角色选择'}
             className={`relative grid place-items-center h-9 w-9 rounded-xl shrink-0 transition-colors ${
@@ -557,12 +602,7 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
 
           <button
             ref={mcpButtonRef}
-            onClick={() => {
-              if (!canSelectMcp) return;
-              setIsPersonaMenuOpen(false);
-              setIsAutoResearchMenuOpen(false);
-              setIsMcpMenuOpen((prev) => !prev);
-            }}
+            onClick={toggleMcpMenu}
             disabled={!canSelectMcp}
             title={activeMcpServer ? `MCP: ${activeMcpServer.label}` : 'MCP 工具选择'}
             className={`relative grid place-items-center h-9 w-9 rounded-xl shrink-0 transition-colors ${
@@ -767,5 +807,8 @@ export const ChatControls: React.FC<ChatControlsProps> = ({
     </>
   );
 };
+
+export const ChatControls = React.memo(ChatControlsComponent);
+ChatControls.displayName = 'ChatControls';
 
 export default ChatControls;

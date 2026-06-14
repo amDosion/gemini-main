@@ -120,7 +120,10 @@ const toSafeMarkdownHref = (url: string): string => {
   return '';
 };
 
-const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, showCursor = false }) => {
+const MarkdownRendererComponent: React.FC<MarkdownRendererProps> = ({
+  content,
+  showCursor = false,
+}) => {
   // 自定义组件映射，包含标准 HTML 元素和自定义标签（如 AI 模型的 <think>）
   const customComponents = useMemo<
     Components & {
@@ -199,5 +202,13 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, showCursor
     </div>
   );
 };
+
+const MarkdownRenderer = React.memo(
+  MarkdownRendererComponent,
+  (prevProps, nextProps) =>
+    prevProps.content === nextProps.content &&
+    (prevProps.showCursor ?? false) === (nextProps.showCursor ?? false)
+);
+MarkdownRenderer.displayName = 'MarkdownRenderer';
 
 export default MarkdownRenderer;

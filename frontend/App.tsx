@@ -121,11 +121,9 @@ const AppContent: React.FC = () => {
       authService.logout().catch(() => {
         // 忽略后端登出错误,本地清理已在 logout finally 中完成
       });
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
+      navigate('/login', { replace: true });
     });
-  }, []);
+  }, [navigate]);
 
   // ✅ C-2: 挂载时激活全局错误兜底，将未处理异常通过 Toast 展示给用户
   useEffect(() => {

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --no-deprecation ./node_modules/concurrently/dist/bin/concurrently.js \"npm run server\" \"vite\"",
-    "server": "cd backend && PYTHONUNBUFFERED=1 .venv/bin/python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 21574 --log-level info",
+    "server": "node scripts/backend-python.mjs --cwd backend -- -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 21574 --log-level info",
     "install:backend": "pip install -r backend/requirements.txt",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -13,14 +13,14 @@
     "test": "vitest run",
     "test:ci": "vitest run --coverage",
     "test:watch": "vitest",
-    "test:backend": "sh -c 'cd backend && for c in .venv-linux/bin/python .venv/bin/python; do [ -x \"$c\" ] && PY=\"$c\" && break; done; PY=\"${PY:-python3}\"; \"$PY\" -m pytest tests -q'",
-    "test:backend:cov": "sh -c 'cd backend && for c in .venv-linux/bin/python .venv/bin/python; do [ -x \"$c\" ] && PY=\"$c\" && break; done; PY=\"${PY:-python3}\"; \"$PY\" -m pytest tests --cov=app --cov-report=term-missing --cov-fail-under=${BACKEND_COV_MIN:-35}'",
+    "test:backend": "node scripts/backend-python.mjs --cwd backend -- -m pytest tests -q",
+    "test:backend:cov": "node scripts/backend-python.mjs --cwd backend --env-default BACKEND_COV_MIN=35 -- -m pytest tests --cov=app --cov-report=term-missing --cov-fail-under={env:BACKEND_COV_MIN}",
     "test:ui-result-panel": "vitest run frontend/components/multiagent/MultiAgentWorkflowEditorReactFlow.resultPanel.test.tsx --environment jsdom",
     "test:ui-mcp-settings": "vitest run frontend/components/modals/settings/McpTab.ui.test.tsx --environment jsdom",
     "e2e:agent": "node scripts/e2e/agent_workflow_e2e.mjs",
-    "e2e:video:real": "backend/.venv/bin/python scripts/e2e/google_video_ui_e2e.py",
-    "e2e:tongyi-video:ui": "backend/.venv/bin/python scripts/e2e/tongyi_video_ui_e2e.py",
-    "e2e:openai-image:ui": "backend/.venv/bin/python scripts/e2e/openai_image_ui_e2e.py"
+    "e2e:video:real": "node scripts/backend-python.mjs -- scripts/e2e/google_video_ui_e2e.py",
+    "e2e:tongyi-video:ui": "node scripts/backend-python.mjs -- scripts/e2e/tongyi_video_ui_e2e.py",
+    "e2e:openai-image:ui": "node scripts/backend-python.mjs -- scripts/e2e/openai_image_ui_e2e.py"
   },
   "dependencies": {
     "@dagrejs/dagre": "^1.1.8",

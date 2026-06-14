@@ -85,11 +85,46 @@ const mapInvokePayload = (raw: AnyObject): McpToolInvokeResult => {
 };
 
 class McpConfigService {
+  // Primary correctness comes from saveConfig invalidation; the TTL is a safety net
+  // for cross-tab or external config changes and matches CacheManager's default.
+  private static readonly CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
+
   private readonly baseUrl = '/api/mcp/config';
+  private getConfigInFlight: Promise<McpConfigPayload> | null = null;
+  private cachedConfig: McpConfigPayload | null = null;
+  private cachedAt = 0;
+  private cacheEpoch = 0;
 
   async getConfig(): Promise<McpConfigPayload> {
-    const raw = await apiClient.get<AnyObject>(this.baseUrl);
-    return mapConfigPayload(raw || {});
+    if (
+      this.cachedConfig &&
+      Date.now() - this.cachedAt < McpConfigService.CONFIG_CACHE_TTL_MS
+    ) {
+      return this.cachedConfig;
+    }
+
+    if (this.getConfigInFlight) {
+      return this.getConfigInFlight;
+    }
+
+    const epochAtStart = this.cacheEpoch;
+    const request = apiClient.get<AnyObject>(this.baseUrl).then((raw) => {
+      const mapped = mapConfigPayload(raw || {});
+      if (epochAtStart === this.cacheEpoch) {
+        this.cachedConfig = mapped;
+        this.cachedAt = Date.now();
+      }
+      return mapped;
+    });
+
+    const trackedRequest = request.finally(() => {
+      if (this.getConfigInFlight === trackedRequest) {
+        this.getConfigInFlight = null;
+      }
+    });
+    this.getConfigInFlight = trackedRequest;
+
+    return trackedRequest;
   }
 
   async saveConfig(configJson: string): Promise<McpConfigPayload> {
@@ -97,7 +132,11 @@ class McpConfigService {
       config_json: configJson,
       configJson,
     });
-    return mapConfigPayload(raw || {});
+    const mapped = mapConfigPayload(raw || {});
+    this.cacheEpoch += 1;
+    this.cachedConfig = mapped;
+    this.cachedAt = Date.now();
+    return mapped;
   }
 
   async getServerTools(serverKey: string): Promise<McpServerToolsPayload> {

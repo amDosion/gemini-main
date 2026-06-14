@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 const proxyDebugEnabled = process.env.VITE_PROXY_DEBUG === '1';
 const DEFAULT_ALLOWED_HOSTS = ['gemini.lspon.com', 'geminiai.lspon.com', 'gemini.dicry.cn'];
 const DEFAULT_DEV_CORS_ORIGINS = ['http://localhost:21573', 'http://127.0.0.1:21573'];
+const DEFAULT_DEV_PORT = 21573;
 
 export function shouldEmitBuildSourcemap(value = process.env.VITE_BUILD_SOURCEMAP): boolean {
   return value === '1';
@@ -33,6 +34,11 @@ export function resolveAllowedHosts(value = process.env.VITE_ALLOWED_HOSTS): str
 export function resolveDevCorsOrigins(value = process.env.VITE_DEV_CORS_ORIGINS): string[] {
   const origins = splitCsv(value).filter((origin) => origin !== '*' && isHttpOrigin(origin));
   return origins.length > 0 ? origins : DEFAULT_DEV_CORS_ORIGINS;
+}
+
+function resolvePositivePort(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 const CHUNK_GROUPS: Record<string, Set<string>> = {
@@ -117,11 +123,14 @@ export function resolveManualChunk(id: string): string | undefined {
 // Dev-only: inject the standalone React DevTools agent (`npx react-devtools`,
 // listens on ws://localhost:8097) at the top of <head> so it loads before React.
 // `apply: 'serve'` keeps it out of the production build entirely.
-function reactDevtoolsPlugin() {
+function reactDevtoolsPlugin(enabled = process.env.VITE_REACT_DEVTOOLS === '1') {
   return {
     name: 'react-devtools-standalone',
     apply: 'serve' as const,
     transformIndexHtml(html: string) {
+      if (!enabled) {
+        return html;
+      }
       return html.replace('<head>', '<head>\n    <script src="http://localhost:8097"></script>');
     },
   };
@@ -171,15 +180,12 @@ export default defineConfig({
       allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'Authorization', 'X-Request-ID'],
     },
     hmr: {
-      // 协议：默认 wss，保持反向代理(HTTPS 终结)部署兼容；本地纯 HTTP 直连开发用
-      // VITE_HMR_PROTOCOL=ws 覆盖（见 scripts/start_all.ps1）。否则浏览器会去连不存在的
-      // wss 端口导致 HMR 握手失败（页面功能不受影响，仅热更新失效）。
-      protocol: process.env.VITE_HMR_PROTOCOL ?? 'wss',
+      // 本地 http://localhost:21573 默认使用 ws。反向代理/HTTPS 终结部署可通过
+      // VITE_HMR_PROTOCOL=wss 与 VITE_HMR_CLIENT_PORT=18443 显式覆盖。
+      protocol: process.env.VITE_HMR_PROTOCOL ?? 'ws',
       // 不指定 host，让 HMR 自动适配当前访问地址（支持 localhost、127.0.0.1 和局域网 IP）
-      port: 21573,
-      // 反向代理外网端口；可通过 VITE_HMR_CLIENT_PORT 覆盖，默认 18443 保持现有部署兼容
-      // parseInt 在空串/非数字输入时返回 NaN，|| 0 fallback 到默认值，避免 Vite 接收 NaN
-      clientPort: parseInt(process.env.VITE_HMR_CLIENT_PORT ?? '', 10) || 18443,
+      port: DEFAULT_DEV_PORT,
+      clientPort: resolvePositivePort(process.env.VITE_HMR_CLIENT_PORT, DEFAULT_DEV_PORT),
       timeout: 30000, // 30 秒超时
       overlay: true, // 在浏览器中显示错误覆盖层
     },

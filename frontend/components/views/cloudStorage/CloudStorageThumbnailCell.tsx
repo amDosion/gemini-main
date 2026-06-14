@@ -25,7 +25,7 @@ interface CloudStorageThumbnailCellProps {
   previewRootMargin?: string;
 }
 
-export const CloudStorageThumbnailCell: React.FC<CloudStorageThumbnailCellProps> = ({
+const CloudStorageThumbnailCellComponent: React.FC<CloudStorageThumbnailCellProps> = ({
   item,
   failedPreviewUrlsRef,
   storageRevision,
@@ -229,3 +229,6 @@ export const CloudStorageThumbnailCell: React.FC<CloudStorageThumbnailCellProps>
     </div>
   );
 };
+
+export const CloudStorageThumbnailCell = React.memo(CloudStorageThumbnailCellComponent);
+CloudStorageThumbnailCell.displayName = 'CloudStorageThumbnailCell';

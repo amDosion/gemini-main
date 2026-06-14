@@ -19,6 +19,7 @@ import {
 import { useThinkingBlock } from '../../hooks/useThinkingBlock';
 import { useStableAttachmentImageUrl } from '../../hooks/useStableAttachmentImageUrl';
 import { buildMessagesMediaSignature } from '../../utils/messageMediaSignature';
+import { isPlaceholderMessage } from '../../utils/messageFilters';
 
 interface ImageEditViewProps {
   messages: Message[];
@@ -389,11 +390,7 @@ export const ImageEditView: React.FC<ImageEditViewProps> = ({
   });
 
   const historyMessages = useMemo(() => {
-    return messages.filter((msg) => {
-      const isPlaceholder =
-        !msg.content && (!msg.attachments || msg.attachments.length === 0) && !msg.isError;
-      return !isPlaceholder;
-    });
+    return messages.filter((msg) => !isPlaceholderMessage(msg));
     // 仅依赖 messages:memo 体未读取 messagesMediaSignature,带上它只会在签名变化时
     // 做无意义重算(过滤结果不变)。
   }, [messages]);

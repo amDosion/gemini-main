@@ -41,7 +41,7 @@ const ModelCapabilities: React.FC<{ model: ModelConfig }> = ({ model }) => (
   </span>
 );
 
-export const HeaderModelSelector: React.FC<HeaderModelSelectorProps> = ({
+const HeaderModelSelectorComponent: React.FC<HeaderModelSelectorProps> = ({
   isLoadingModels,
   isModelMenuOpen,
   setIsModelMenuOpen,
@@ -172,5 +172,8 @@ export const HeaderModelSelector: React.FC<HeaderModelSelectorProps> = ({
     </div>
   );
 };
+
+export const HeaderModelSelector = React.memo(HeaderModelSelectorComponent);
+HeaderModelSelector.displayName = 'HeaderModelSelector';
 
 export default HeaderModelSelector;

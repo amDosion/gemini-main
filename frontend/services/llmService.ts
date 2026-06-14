@@ -154,6 +154,7 @@ export class LLMService {
   private protocol: ApiProtocol | null = null; // ✅ 移除默认值，由后端配置决定
   private providerId: string = ''; // ✅ 移除默认值，由后端配置决定
   private modelCacheGeneration = 0;
+  private modelPayloadRequests = new Map<string, Promise<ModelsApiResponse>>();
 
   // Model cache migrated to unified CacheManager (domain: "models:" prefix)
 
@@ -256,6 +257,12 @@ export class LLMService {
       return cachedData.payload;
     }
 
+    const requestKey = `${scopedCacheKey}:use-cache=${useCache}`;
+    const inFlightRequest = this.modelPayloadRequests.get(requestKey);
+    if (inFlightRequest) {
+      return inFlightRequest;
+    }
+
     // ✅ 调用后端 API：/api/models/{provider}?mode={mode}
     // 后端会：
     // 1. 从 config_profiles / vertex_ai_config 读取 provider 模型集合
@@ -271,54 +278,73 @@ export class LLMService {
       params.append('mode', mode);
     }
 
-    const response = await fetchWithTimeout(
-      `/api/models/${requestProviderId}?${params.toString()}`,
-      {
-        method: 'GET',
-        cache: 'no-store',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        withAuth: true,
-        timeoutMs: 30000,
+    const request = (async () => {
+      const response = await fetchWithTimeout(
+        `/api/models/${requestProviderId}?${params.toString()}`,
+        {
+          method: 'GET',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          withAuth: true,
+          timeoutMs: 30000,
+        }
+      );
+
+      if (!response.ok) {
+        const parsedError = await parseHttpError(response, '');
+        const suffix = parsedError.message ? ` ${parsedError.message}` : '';
+        throw new Error(`Backend API error: ${response.status}${suffix}`);
+      }
+
+      const data = (await readJsonResponse<unknown>(response)) as Record<string, unknown>;
+      const payload: ModelsApiResponse = {
+        models: Array.isArray(data.models) ? (data.models as ModelConfig[]) : [],
+        defaultModelId: typeof data.defaultModelId === 'string' ? data.defaultModelId : null,
+        modeCatalog: Array.isArray(data.modeCatalog) ? (data.modeCatalog as ModeCatalogItem[]) : [],
+        filteredByMode: typeof data.filteredByMode === 'string' ? data.filteredByMode : null,
+        cached: Boolean(data.cached),
+        provider: typeof data.provider === 'string' ? data.provider : requestProviderId,
+      };
+
+      if (
+        this.providerId !== requestProviderId ||
+        !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
+      ) {
+        return emptyModelsPayload(requestProviderId, mode);
+      }
+
+      // 缓存所有请求结果（mode 和非 mode 各自独立缓存）。
+      // 如果请求期间只是模型缓存被清理，不丢弃已经返回的同 provider 新鲜 payload；
+      // 仅跳过写缓存，避免把清理前的请求重新灌回缓存。
+      if (generationAtStart === this.modelCacheGeneration) {
+        cacheManager.set(scopedCacheKey, {
+          payload,
+          timestamp: now,
+          providerId: requestProviderId,
+        });
+      }
+
+      return payload;
+    })();
+
+    const trackedRequest = request.then(
+      (payload) => {
+        if (this.modelPayloadRequests.get(requestKey) === trackedRequest) {
+          this.modelPayloadRequests.delete(requestKey);
+        }
+        return payload;
+      },
+      (error) => {
+        if (this.modelPayloadRequests.get(requestKey) === trackedRequest) {
+          this.modelPayloadRequests.delete(requestKey);
+        }
+        throw error;
       }
     );
-
-    if (!response.ok) {
-      const parsedError = await parseHttpError(response, '');
-      const suffix = parsedError.message ? ` ${parsedError.message}` : '';
-      throw new Error(`Backend API error: ${response.status}${suffix}`);
-    }
-
-    const data = (await readJsonResponse<unknown>(response)) as Record<string, unknown>;
-    const payload: ModelsApiResponse = {
-      models: Array.isArray(data.models) ? (data.models as ModelConfig[]) : [],
-      defaultModelId: typeof data.defaultModelId === 'string' ? data.defaultModelId : null,
-      modeCatalog: Array.isArray(data.modeCatalog) ? (data.modeCatalog as ModeCatalogItem[]) : [],
-      filteredByMode: typeof data.filteredByMode === 'string' ? data.filteredByMode : null,
-      cached: Boolean(data.cached),
-      provider: typeof data.provider === 'string' ? data.provider : requestProviderId,
-    };
-
-    if (
-      this.providerId !== requestProviderId ||
-      !isPrivateCacheLifecycleSnapshotCurrent(lifecycleSnapshot)
-    ) {
-      return emptyModelsPayload(requestProviderId, mode);
-    }
-
-    // 缓存所有请求结果（mode 和非 mode 各自独立缓存）。
-    // 如果请求期间只是模型缓存被清理，不丢弃已经返回的同 provider 新鲜 payload；
-    // 仅跳过写缓存，避免把清理前的请求重新灌回缓存。
-    if (generationAtStart === this.modelCacheGeneration) {
-      cacheManager.set(scopedCacheKey, {
-        payload,
-        timestamp: now,
-        providerId: requestProviderId,
-      });
-    }
-
-    return payload;
+    this.modelPayloadRequests.set(requestKey, trackedRequest);
+    return trackedRequest;
   }
 
   public async getAvailableModels(
@@ -331,6 +357,7 @@ export class LLMService {
 
   public clearModelCache() {
     this.modelCacheGeneration += 1;
+    this.modelPayloadRequests.clear();
     cacheManager.clearDomain('models:');
   }
 

@@ -39,6 +39,7 @@ import { useToastContext } from '../../contexts/ToastContext';
 import { processUserAttachments, fileToBase64 } from '../../hooks/handlers/attachmentUtils';
 import { useModeControlsSchema } from '../../hooks/useModeControlsSchema';
 import { downloadSourceUrlInBrowser } from '../../services/downloadService';
+import { filterModelImageBatches } from '../../utils/messageFilters';
 
 interface VirtualTryOnViewProps {
   messages: Message[];
@@ -118,11 +119,7 @@ export const VirtualTryOnView: React.FC<VirtualTryOnViewProps> = ({
 
   // ✅ 历史批次（MODEL 消息）
   const historyBatches = useMemo(() => {
-    return messages
-      .filter(
-        (m) => m.role === Role.MODEL && ((m.attachments && m.attachments.length > 0) || m.isError)
-      )
-      .reverse();
+    return filterModelImageBatches(messages);
   }, [messages]);
 
   // ✅ 当前激活的批次

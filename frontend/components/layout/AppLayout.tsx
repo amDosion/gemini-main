@@ -10,6 +10,8 @@ import InlineModeNavigation from './InlineModeNavigation';
 import { SessionProvider } from '../../contexts/SessionContext';
 
 const { Sider, Header: LayoutHeader, Content } = Layout;
+const SIDEBAR_CLOSED = false;
+const noopSetSidebarOpen = () => {};
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -101,8 +103,8 @@ export const AppLayout: React.FC<AppLayoutProps> = (props) => {
                 <Layout className="h-screen min-w-0 bg-slate-950">
                     <LayoutHeader className="!h-14 !p-0 !leading-normal !bg-transparent">
                         <AppHeader
-                            isSidebarOpen={false}
-                            setIsSidebarOpen={() => {}}
+                            isSidebarOpen={SIDEBAR_CLOSED}
+                            setIsSidebarOpen={noopSetSidebarOpen}
                             isLoadingModels={props.isLoadingModels}
                             isModelMenuOpen={props.isModelMenuOpen}
                             setIsModelMenuOpen={props.setIsModelMenuOpen}

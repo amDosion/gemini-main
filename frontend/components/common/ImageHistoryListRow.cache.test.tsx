@@ -178,11 +178,19 @@ describe('ImageHistoryListRow cache-safe thumbnails', () => {
 
     expect(cachedImageSpy).not.toHaveBeenCalled();
 
-    message.attachments![0].cloudUrl = '/api/storage/local-files/2026/05/31/mutated.png';
+    const updatedMessage: Message = {
+      ...message,
+      attachments: [
+        {
+          ...message.attachments![0],
+          cloudUrl: '/api/storage/local-files/2026/05/31/mutated.png',
+        },
+      ],
+    };
 
     rerender(
       <ImageHistoryListRow
-        message={message}
+        message={updatedMessage}
         tone={ACCENT_CLASSES.orange}
         modelLabel="AI"
         secondaryPromptBadgeText="含增强提示词"

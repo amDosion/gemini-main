@@ -38,7 +38,7 @@ export const getWorkspaceModeLabel = (
   return modeCatalog.find((item) => item.id === mode)?.label || FALLBACK_MODE_LABELS[mode] || mode;
 };
 
-export const WorkspaceTagViews: React.FC<WorkspaceTagViewsProps> = ({
+const WorkspaceTagViewsComponent: React.FC<WorkspaceTagViewsProps> = ({
   activeMode,
   openModes,
   modeCatalog = [],
@@ -284,6 +284,9 @@ export const WorkspaceTagViews: React.FC<WorkspaceTagViewsProps> = ({
     </div>
   );
 };
+
+export const WorkspaceTagViews = React.memo(WorkspaceTagViewsComponent);
+WorkspaceTagViews.displayName = 'WorkspaceTagViews';
 
 interface WorkspaceTagMenuButtonProps {
   label: string;
