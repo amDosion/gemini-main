@@ -12,10 +12,12 @@ Interactions Manager - 高层智能体交互管理服务
 """
 
 from typing import Dict, Any, Optional, List, Union, AsyncGenerator
+from contextlib import contextmanager
 import logging
 import asyncio
 import os
 import time
+import warnings
 from sqlalchemy.orm import Session
 
 from ..gemini.http_options import HttpOptions, HttpOptionsDict
@@ -85,6 +87,24 @@ def _get_interactions_stream_resume_backoff_sec() -> float:
         return value if value > 0 else 1.0
     except (TypeError, ValueError):
         return 1.0
+
+
+@contextmanager
+def _suppress_known_interactions_sdk_warnings():
+    # google-genai emits these for every streaming interactions call on the
+    # current SDK/Python combination; keep the waiver local to that SDK edge.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"^Interactions usage is experimental and may change in future versions\.$",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"^Granular retry options are not supported in `\.interactions` yet$",
+            category=UserWarning,
+        )
+        yield
 
 
 class InteractionsManager:
@@ -1096,37 +1116,38 @@ class InteractionsManager:
                             http_options=effective_http_options
                         )
 
-                        # 调用 SDK 的流式接口（同步）
-                        stream = client.interactions.get(
-                            id=interaction_id,
-                            stream=True,
-                            last_event_id=current_last_event_id,
-                            include_input=include_input,
-                        )
+                        with _suppress_known_interactions_sdk_warnings():
+                            # 调用 SDK 的流式接口（同步）
+                            stream = client.interactions.get(
+                                id=interaction_id,
+                                stream=True,
+                                last_event_id=current_last_event_id,
+                                include_input=include_input,
+                            )
 
-                        # 遍历流式事件（同步）
-                        for chunk in stream:
-                            event_data = build_interaction_stream_event(chunk)
-                            event_id = event_data.get("event_id")
-                            if isinstance(event_id, str) and event_id:
-                                current_last_event_id = event_id
+                            # 遍历流式事件（同步）
+                            for chunk in stream:
+                                event_data = build_interaction_stream_event(chunk)
+                                event_id = event_data.get("event_id")
+                                if isinstance(event_id, str) and event_id:
+                                    current_last_event_id = event_id
 
-                            queue.put(("data", event_data))
-                            event_type = event_data.get("event_type")
-                            if event_type in {"interaction.complete", "error"}:
-                                if event_type == "interaction.complete":
-                                    logger.info(
-                                        "Stream completed for interaction: %s",
-                                        summarize_text_for_log(interaction_id, label="interaction_id"),
-                                    )
-                                else:
-                                    logger.warning(
-                                        "Stream returned error event for interaction %s: %s",
-                                        summarize_text_for_log(interaction_id, label="interaction_id"),
-                                        summarize_text_for_log(event_data.get("error"), label="stream_event_error"),
-                                    )
-                                queue.put(("done", None))
-                                return
+                                queue.put(("data", event_data))
+                                event_type = event_data.get("event_type")
+                                if event_type in {"interaction.complete", "error"}:
+                                    if event_type == "interaction.complete":
+                                        logger.info(
+                                            "Stream completed for interaction: %s",
+                                            summarize_text_for_log(interaction_id, label="interaction_id"),
+                                        )
+                                    else:
+                                        logger.warning(
+                                            "Stream returned error event for interaction %s: %s",
+                                            summarize_text_for_log(interaction_id, label="interaction_id"),
+                                            summarize_text_for_log(event_data.get("error"), label="stream_event_error"),
+                                        )
+                                    queue.put(("done", None))
+                                    return
 
                         # SDK 流对象自然结束（无 complete），尝试基于 last_event_id 续流。
                         resume_attempt += 1

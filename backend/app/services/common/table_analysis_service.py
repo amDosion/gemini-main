@@ -222,7 +222,7 @@ def _build_datetime_summary(dataframe, numeric_columns: list[str]) -> dict[str, 
         if source_count < 2:
             continue
 
-        parsed = pd.to_datetime(series, errors="coerce")
+        parsed = pd.to_datetime(series, errors="coerce", format="mixed")
         parsed_non_null = parsed.dropna()
         parsed_count = int(parsed_non_null.count())
         if parsed_count < 2:

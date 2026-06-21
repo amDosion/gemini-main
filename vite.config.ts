@@ -5,6 +5,8 @@ const proxyDebugEnabled = process.env.VITE_PROXY_DEBUG === '1';
 const DEFAULT_ALLOWED_HOSTS = ['gemini.lspon.com', 'geminiai.lspon.com', 'gemini.dicry.cn'];
 const DEFAULT_DEV_CORS_ORIGINS = ['http://localhost:21573', 'http://127.0.0.1:21573'];
 const DEFAULT_DEV_PORT = 21573;
+const DEFAULT_VITEST_MAX_WORKERS = 4;
+const DEFAULT_VITEST_TEST_TIMEOUT_MS = 15_000;
 
 export function shouldEmitBuildSourcemap(value = process.env.VITE_BUILD_SOURCEMAP): boolean {
   return value === '1';
@@ -39,6 +41,16 @@ export function resolveDevCorsOrigins(value = process.env.VITE_DEV_CORS_ORIGINS)
 function resolvePositivePort(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function resolveVitestMaxWorkers(value = process.env.VITEST_MAX_WORKERS): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_VITEST_MAX_WORKERS;
+}
+
+function resolveVitestTestTimeout(value = process.env.VITEST_TEST_TIMEOUT): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_VITEST_TEST_TIMEOUT_MS;
 }
 
 const CHUNK_GROUPS: Record<string, Set<string>> = {
@@ -142,6 +154,8 @@ export default defineConfig({
   // T3: a coverage gate now exists and is enforced. Thresholds are a conservative
   // floor below the measured baseline — ratchet them upward as coverage improves.
   test: {
+    maxWorkers: resolveVitestMaxWorkers(),
+    testTimeout: resolveVitestTestTimeout(),
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'text', 'html'],

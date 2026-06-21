@@ -7,6 +7,7 @@ Tools Integration - 工具集成管理
 
 import logging
 import re
+import inspect
 from typing import Dict, Any, List, Optional
 import json
 import os
@@ -694,7 +695,7 @@ class ToolManager:
             
             # 执行工具（可能是同步或异步）
             import asyncio
-            if asyncio.iscoroutinefunction(tool_func):
+            if inspect.iscoroutinefunction(tool_func):
                 result = await tool_func(**args)
             else:
                 # 同步函数在异步上下文中执行

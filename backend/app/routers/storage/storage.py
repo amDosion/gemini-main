@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, JsonValue, RootModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from typing import Annotated, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import httpx
 import os
@@ -658,7 +658,7 @@ async def _fetch_url_metadata(
             "lastModified": headers.get("last-modified"),
             "etag": headers.get("etag"),
             "cacheControl": headers.get("cache-control"),
-            "fetchedAt": datetime.utcnow().isoformat() + "Z",
+            "fetchedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "source": "upstream",
             "error": None,
         }

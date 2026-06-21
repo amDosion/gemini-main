@@ -12,6 +12,7 @@ describe('reportInlineUploadError', () => {
   });
 
   it('dispatches a workflow:inline-upload-error CustomEvent with the resolved message', () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
     const received: string[] = [];
     const listener = (event: Event) => {
       const detail = (event as CustomEvent<InlineUploadErrorEventDetail>).detail;
@@ -23,9 +24,12 @@ describe('reportInlineUploadError', () => {
 
     window.removeEventListener(INLINE_UPLOAD_ERROR_EVENT, listener);
     expect(received).toEqual(['真实失败原因']);
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+    expect(alertSpy).toHaveBeenCalledWith('真实失败原因');
   });
 
   it('uses the fallback message when the error has no usable message', () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
     const received: string[] = [];
     const listener = (event: Event) => {
       received.push((event as CustomEvent<InlineUploadErrorEventDetail>).detail.message);
@@ -37,6 +41,8 @@ describe('reportInlineUploadError', () => {
 
     window.removeEventListener(INLINE_UPLOAD_ERROR_EVENT, listener);
     expect(received).toEqual(['回退消息', '空消息回退']);
+    expect(alertSpy).toHaveBeenCalledTimes(2);
+    expect(alertSpy.mock.calls).toEqual([['回退消息'], ['空消息回退']]);
   });
 
   it('does not fall back to window.alert when a listener consumes the event', () => {

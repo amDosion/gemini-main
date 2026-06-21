@@ -63,6 +63,21 @@ describe('mergePreviewImagesIntoResult', () => {
     );
   });
 
+  it('returns the original object when preview image urls are already merged', () => {
+    const payload = {
+      imageUrl: 'data:image/png;base64,preview-0',
+      imageUrls: ['data:image/png;base64,preview-0', 'data:image/png;base64,preview-1'],
+      text: 'already merged preview images',
+    };
+
+    expect(
+      mergePreviewImagesIntoResult(payload, [
+        'data:image/png;base64,preview-0',
+        'data:image/png;base64,preview-1',
+      ])
+    ).toBe(payload);
+  });
+
   it('deduplicates image urls for non-object payloads', () => {
     const merged = mergePreviewImagesIntoResult('plain text payload', [
       'https://cdn.example.com/non-object-a.png',
@@ -127,6 +142,21 @@ describe('mergePreviewImagesIntoResult', () => {
       'https://cdn.example.com/existing.mp3',
       'https://cdn.example.com/new.mp3',
     ]);
+  });
+
+  it('returns the original object when preview media urls are already merged', () => {
+    const payload = {
+      videoUrl: 'https://cdn.example.com/preview-0.mp4',
+      videoUrls: ['https://cdn.example.com/preview-0.mp4', 'https://cdn.example.com/preview-1.mp4'],
+      text: 'already merged preview video',
+    };
+
+    expect(
+      mergePreviewMediaIntoResult(payload, 'video', [
+        'https://cdn.example.com/preview-0.mp4',
+        'https://cdn.example.com/preview-1.mp4',
+      ])
+    ).toBe(payload);
   });
 
   it('merges video preview urls into non-object payloads', () => {

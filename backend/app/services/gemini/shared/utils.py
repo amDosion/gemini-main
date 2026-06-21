@@ -8,6 +8,7 @@ and retry mechanisms.
 
 import mimetypes
 import asyncio
+import inspect
 import random
 import time
 import re
@@ -297,7 +298,7 @@ async def retry_with_backoff(
     
     for attempt in range(max_attempts):
         try:
-            if asyncio.iscoroutinefunction(func):
+            if inspect.iscoroutinefunction(func):
                 return await func(*args, **kwargs)
             else:
                 return func(*args, **kwargs)

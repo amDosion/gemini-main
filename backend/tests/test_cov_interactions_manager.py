@@ -42,6 +42,7 @@ is active, so every coroutine boundary is awaited.
 from __future__ import annotations
 
 import logging
+import warnings
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
@@ -983,6 +984,39 @@ async def test_stream_existing_interaction_completes(patch_pool):
     assert events[-1]["event_type"] == "interaction.complete"
     # get() was called with stream=True
     assert resource.get_calls[-1]["kwargs"]["stream"] is True
+
+
+async def test_stream_existing_interaction_suppresses_known_sdk_warnings(patch_pool, recwarn):
+    chunk_complete = SimpleNamespace(event_type="interaction.complete", event_id="ec1",
+                                     interaction=SimpleNamespace(id="x", status="completed"))
+
+    class _NoisySdkResource(_FakeInteractionsResource):
+        def get(self, *args, **kwargs):
+            self.get_calls.append({"args": args, "kwargs": kwargs})
+            warnings.warn(
+                "Interactions usage is experimental and may change in future versions.",
+                UserWarning,
+                stacklevel=2,
+            )
+            warnings.warn(
+                "Granular retry options are not supported in `.interactions` yet",
+                UserWarning,
+                stacklevel=2,
+            )
+            return iter([chunk_complete])
+
+    resource = _NoisySdkResource()
+    client = _FakeClient(interactions=resource)
+    patch_pool(client)
+    mgr = InteractionsManager(default_vertexai=False)
+
+    events = [e async for e in mgr.stream_existing_interaction(
+        api_key="k", interaction_id="x", vertexai=False)]
+
+    assert events[-1]["event_type"] == "interaction.complete"
+    leaked = [str(warning.message) for warning in recwarn]
+    assert "Interactions usage is experimental and may change in future versions." not in leaked
+    assert "Granular retry options are not supported in `.interactions` yet" not in leaked
 
 
 async def test_stream_existing_interaction_error_event_terminates(patch_pool):

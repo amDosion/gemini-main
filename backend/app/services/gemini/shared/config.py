@@ -7,7 +7,7 @@ other service-wide settings.
 """
 
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from dataclasses import dataclass
 import os
 import logging
@@ -115,9 +115,7 @@ class GeminiConfig(BaseModel):
         'audio/wav', 'audio/mp3', 'video/mp4'
     ])
     
-    class Config:
-        env_prefix = 'GEMINI_'
-        case_sensitive = False
+    model_config = ConfigDict(env_prefix='GEMINI_', case_sensitive=False)
 
 
 def load_config_from_env() -> GeminiConfig:

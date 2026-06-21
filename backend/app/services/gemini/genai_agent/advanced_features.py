@@ -10,6 +10,7 @@ Advanced Features - 基于 _interactions 模块的高级功能
 """
 
 import logging
+import inspect
 from typing import Dict, Any, Optional, List, AsyncGenerator
 from dataclasses import dataclass, field
 from enum import Enum
@@ -402,7 +403,7 @@ class AdvancedResearchAgent:
                 
                 # 执行工具（可能是同步或异步）
                 import asyncio
-                if asyncio.iscoroutinefunction(tool_func):
+                if inspect.iscoroutinefunction(tool_func):
                     result = await tool_func(**args)
                 else:
                     result = await asyncio.to_thread(tool_func, **args)

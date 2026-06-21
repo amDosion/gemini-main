@@ -628,6 +628,16 @@ const mergeUniqueNormalizedUrls = (base: string[], extra: string[], limit: numbe
   return merged.slice(0, limit);
 };
 
+const normalizeStringList = (items: unknown): string[] =>
+  Array.isArray(items)
+    ? items
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    : [];
+
+const areStringListsEqual = (left: string[], right: string[]): boolean =>
+  left.length === right.length && left.every((item, index) => item === right[index]);
+
 export const mergePreviewImagesIntoResult = (payload: unknown, previewImages: string[]) => {
   const normalizedPreviewImages = Array.isArray(previewImages)
     ? previewImages
@@ -650,21 +660,23 @@ export const mergePreviewImagesIntoResult = (payload: unknown, previewImages: st
   const firstPreviewImage = normalizedPreviewImages[0];
 
   if (isPlainObject(payload)) {
-    const currentImageUrls = Array.isArray(payload.imageUrls)
-      ? payload.imageUrls
-          .map((item: Record<string, unknown>) => String(item || '').trim())
-          .filter(Boolean)
-      : [];
+    const currentImageUrls = normalizeStringList(payload.imageUrls);
     const mergedObjectImageUrls = mergeUniqueNormalizedUrls(
       currentImageUrls,
       mergedImageUrls,
       PREVIEW_IMAGE_MAX_ENTRIES
     );
     const payloadImageUrl = typeof payload.imageUrl === 'string' ? payload.imageUrl.trim() : '';
+    const nextImageUrl = payloadImageUrl || firstRenderableImage || firstPreviewImage;
+    const nextImageUrls =
+      mergedObjectImageUrls.length > 0 ? mergedObjectImageUrls : mergedImageUrls;
+    if (payloadImageUrl === nextImageUrl && areStringListsEqual(currentImageUrls, nextImageUrls)) {
+      return payload;
+    }
     return {
       ...payload,
-      imageUrl: payloadImageUrl || firstRenderableImage || firstPreviewImage,
-      imageUrls: mergedObjectImageUrls.length > 0 ? mergedObjectImageUrls : mergedImageUrls,
+      imageUrl: nextImageUrl,
+      imageUrls: nextImageUrls,
     };
   }
 
@@ -707,21 +719,23 @@ export const mergePreviewMediaIntoResult = (
     mergedMediaUrls.find((item) => isRenderableUrl(item)) || normalizedPreviewUrls[0] || '';
 
   if (isPlainObject(payload)) {
-    const currentMediaUrls = Array.isArray(payload[urlsKey])
-      ? payload[urlsKey]
-          .map((item: Record<string, unknown>) => String(item || '').trim())
-          .filter(Boolean)
-      : [];
+    const currentMediaUrls = normalizeStringList(payload[urlsKey]);
     const mergedObjectMediaUrls = mergeUniqueNormalizedUrls(
       currentMediaUrls,
       mergedMediaUrls,
       PREVIEW_IMAGE_MAX_ENTRIES
     );
     const payloadMediaUrl = typeof payload[urlKey] === 'string' ? payload[urlKey].trim() : '';
+    const nextMediaUrl = payloadMediaUrl || firstRenderableMediaUrl;
+    const nextMediaUrls =
+      mergedObjectMediaUrls.length > 0 ? mergedObjectMediaUrls : mergedMediaUrls;
+    if (payloadMediaUrl === nextMediaUrl && areStringListsEqual(currentMediaUrls, nextMediaUrls)) {
+      return payload;
+    }
     return {
       ...payload,
-      [urlKey]: payloadMediaUrl || firstRenderableMediaUrl,
-      [urlsKey]: mergedObjectMediaUrls.length > 0 ? mergedObjectMediaUrls : mergedMediaUrls,
+      [urlKey]: nextMediaUrl,
+      [urlsKey]: nextMediaUrls,
     };
   }
 

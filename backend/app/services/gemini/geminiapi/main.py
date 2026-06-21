@@ -29,6 +29,7 @@ import json
 import math
 import os
 import re
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 
@@ -973,10 +974,20 @@ def _resolve_cors_allow_origins(raw_origins: Optional[str] = None) -> List[str]:
 # =========================
 # App Setup
 # =========================
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await startup()
+    try:
+        yield
+    finally:
+        await shutdown()
+
+
 app = FastAPI(
     title="Layered Design API",
     description="分层图像设计 API，支持 Vertex AI (Gemini/Imagen)、Qwen-Layered 分层、SVG 矢量化",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 _cors_origins = _resolve_cors_allow_origins()
@@ -989,7 +1000,6 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
 async def startup() -> None:
     project = os.getenv("GOOGLE_CLOUD_PROJECT")
     location = os.getenv("GOOGLE_CLOUD_LOCATION")
@@ -1006,7 +1016,6 @@ async def startup() -> None:
     app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(60.0))
 
 
-@app.on_event("shutdown")
 async def shutdown() -> None:
     # 关闭 httpx 客户端
     http_client = getattr(app.state, "http_client", None)

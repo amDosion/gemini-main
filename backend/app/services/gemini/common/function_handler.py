@@ -7,7 +7,6 @@ Gemini Function Calling Handler
 
 import inspect
 import json
-import asyncio
 from typing import Optional, List, Dict, Any, Callable, Union
 from enum import Enum
 
@@ -233,7 +232,7 @@ class FunctionHandler:
             func = self.registered_functions[function_name]
             
             # 检查函数是否为异步函数
-            if asyncio.iscoroutinefunction(func):
+            if inspect.iscoroutinefunction(func):
                 result = await func(**function_args)
             else:
                 result = func(**function_args)

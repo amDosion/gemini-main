@@ -206,7 +206,7 @@ vi.mock('../../hooks/useCachedImageSrc', () => ({
     source: { url?: string; file?: File } | null | undefined,
     options: { fallbackSrc?: string | null } = {}
   ) => ({
-    src: options.fallbackSrc || source?.url || (source?.file ? `cached-file:${source.file.name}` : null),
+    src: source?.file ? `cached-file:${source.file.name}` : options.fallbackSrc || source?.url || null,
     status: 'raw-fallback',
     error: null,
     refresh: vi.fn(),
@@ -502,7 +502,7 @@ describe('ImageGenView output MIME request params', () => {
     expect(screen.getByText('file-only generated result')).toBeInTheDocument();
     expect(screen.getByAltText('History preview')).toHaveAttribute(
       'src',
-      'local-blob:result-file-only'
+      'cached-file:generated-file-only.png'
     );
     expect(screen.getByAltText('生成图片 1')).toHaveAttribute(
       'src',
