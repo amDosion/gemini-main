@@ -48,7 +48,7 @@ from ._prompt_enhance import (  # noqa: F401
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_IMAGE_REQUEST_TIMEOUT_SECONDS = 240.0
-DEFAULT_IMAGE_REQUEST_MAX_RETRIES = 0
+DEFAULT_IMAGE_REQUEST_MAX_RETRIES = 2
 
 logger = logging.getLogger(__name__)
 

@@ -466,7 +466,9 @@ async def test_openai_image_generator_uses_image_specific_request_options() -> N
         image_aspect_ratio="1:1",
     )
 
-    assert fake_client.option_calls[0] == {"timeout": 240.0, "max_retries": 0}
+    # max_retries 必须非零:图像请求需保留 SDK 自动退避重试以吸收上游(sub2api/codex-pro)
+    # 瞬态 5xx/空响应。默认值由 DEFAULT_IMAGE_REQUEST_MAX_RETRIES 决定(2)。
+    assert fake_client.option_calls[0] == {"timeout": 240.0, "max_retries": 2}
 
 
 @pytest.mark.asyncio
