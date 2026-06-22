@@ -138,15 +138,16 @@ def test_every_whitelisted_path_is_public(boundary_enabled, public_path):
     assert enforce_global_auth_boundary(conn) is None
 
 
-@pytest.mark.parametrize("public_path", sorted(PUBLIC_AUTH_WHITELIST))
+@pytest.mark.parametrize(
+    "public_path",
+    sorted(path for path in PUBLIC_AUTH_WHITELIST if path != "/"),
+)
 def test_whitelisted_path_with_trailing_slash_is_public(boundary_enabled, public_path):
     """Trailing-slash variants of whitelisted paths normalize to public.
 
-    Root ("/") is skipped because it has no meaningful trailing-slash variant
-    distinct from itself.
+    Root ("/") has no distinct trailing-slash variant, so it is covered by the
+    root normalization tests instead of becoming a skipped parameter case.
     """
-    if public_path == "/":
-        pytest.skip("root has no distinct trailing-slash variant")
     conn = make_connection(path=public_path + "/")
     assert enforce_global_auth_boundary(conn) is None
 
