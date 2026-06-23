@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 from fastapi.encoders import jsonable_encoder
+
+logger = logging.getLogger(__name__)
 
 
 def serialize_usage(usage: Any) -> Dict[str, Any]:
@@ -137,6 +140,7 @@ def _extract_event_id(chunk: Any) -> Optional[str]:
         try:
             payload = method()
         except Exception:
+            logger.debug("[InteractionsEvent] Event id serializer failed", exc_info=True)
             continue
         if not isinstance(payload, dict):
             continue

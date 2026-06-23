@@ -9,7 +9,7 @@
  * 化到单独文件，便于未来一次性切换。
  */
 
-import type { Node, Edge } from 'reactflow';
+import type { Node, Edge } from '@xyflow/react';
 import { mergeRuntimeHints } from '../views/multiagent/runtimeHints';
 import { CustomNodeData } from './CustomNode';
 import {

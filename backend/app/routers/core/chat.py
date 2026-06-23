@@ -27,6 +27,7 @@ from ...services.mcp.types import (
     MCPServerType,
     MCPServerConfig,
     MCPStdioPolicyError,
+    validate_mcp_remote_url_policy,
     validate_mcp_stdio_command_policy,
 )
 from ...services.mcp.mcp_manager import get_mcp_manager
@@ -414,13 +415,18 @@ async def resolve_mcp_session_id(
         allowed_commands=settings.mcp_stdio_allowed_commands,
         context=f"chat:{mcp_server_key}",
     )
+    validate_mcp_remote_url_policy(
+        mcp_config,
+        allowed_hosts=settings.mcp_http_allowed_hosts,
+        context=f"chat:{mcp_server_key}",
+    )
     fingerprint = hashlib.sha256(
         json.dumps(selected_server, sort_keys=True, ensure_ascii=False).encode("utf-8")
     ).hexdigest()[:12]
     session_id = f"chat:{user_id}:{mcp_server_key}:{fingerprint}"
 
     manager = get_mcp_manager()
-    await manager.create_session(session_id, mcp_config)
+    await manager.create_session(session_id, mcp_config, owner_id=user_id)
     return session_id
 
 
@@ -516,7 +522,10 @@ async def chat_with_provider(
                 )
                 try:
                     mcp_manager = get_mcp_manager()
-                    gemini_tools = await mcp_manager.get_gemini_tools(mcp_session_id)
+                    gemini_tools = await mcp_manager.get_gemini_tools(
+                        mcp_session_id,
+                        owner_id=user_id,
+                    )
                     seen_names = set()
                     for tool_group in gemini_tools:
                         if not isinstance(tool_group, dict):

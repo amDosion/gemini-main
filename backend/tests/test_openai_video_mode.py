@@ -11,6 +11,7 @@ from app.services.common.video_mode_contract import (
 )
 from app.services.openai import video_generator as openai_video_generator
 from app.services.openai.video_generator import VideoGenerator
+from app.utils.media_limits import MediaTooLargeError
 
 
 def test_openai_static_sora_models_are_available_for_video_mode() -> None:
@@ -97,6 +98,18 @@ def test_openai_video_request_rejects_submode_missing_media() -> None:
                 "resolution": "2K",
             },
         )
+
+
+def test_openai_video_data_url_loader_uses_shared_media_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    generator = VideoGenerator(api_key="sk-test", base_url="https://api.openai.test/v1")
+
+    def _too_large(_data_url: str):
+        raise MediaTooLargeError("media exceeds test limit")
+
+    monkeypatch.setattr(openai_video_generator, "decode_base64_data_url_limited", _too_large)
+
+    with pytest.raises(MediaTooLargeError):
+        generator._parse_data_url("data:video/mp4;base64,AAAA")
 
 
 class _FakeVideo:

@@ -1551,19 +1551,19 @@ async def handle_mode(
         # ✅ 记录 token 来源（用于诊断 user_id 不一致问题）
         auth_header = request.headers.get("Authorization")
         cookie_token = request.cookies.get("access_token")
-        token_source = "未知"
+        auth_source_label = "未知"
         if auth_header:
-            token_source = "Authorization header"
+            auth_source_label = "Authorization header"
         elif cookie_token:
-            token_source = "Cookie (access_token)"
+            auth_source_label = "Cookie (access_token)"
         else:
-            token_source = "无 token"
+            auth_source_label = "无 token"
         
         logger.info(f"[Modes] 📥 请求信息:")
         logger.debug(f"[Modes]     - provider: {provider}")
         logger.debug(f"[Modes]     - mode: {mode}")
         logger.debug(f"[Modes]     - user_id: {user_id}")  # ✅ 不截断 ID，显示完整 ID
-        logger.debug(f"[Modes]     - token来源: {token_source}")
+        logger.debug(f"[Modes]     - token来源: {auth_source_label}")
         logger.debug(f"[Modes]     - 有Authorization header: {'是' if auth_header else '否'}")
         logger.debug(f"[Modes]     - 有Cookie token: {'是' if cookie_token else '否'}")
         logger.debug(f"[Modes]     - model_id: {request_body.model_id}")

@@ -9,11 +9,14 @@ import binascii
 import csv
 import io
 import json
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import unquote_to_bytes
 from ....utils.attachment_handler import is_base64_url
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_DATA_URL_MAX_BYTES = 20 * 1024 * 1024
@@ -351,7 +354,7 @@ def build_text_preview(engine: Any, text: str, mime_type: str, max_chars: int = 
             pretty = json.dumps(parsed, ensure_ascii=False, indent=2)
             return engine._truncate_text(pretty, max_chars=max_chars)
         except Exception:
-            pass
+            logger.debug("[WorkflowTextUtils] JSON preview formatting failed; using raw preview", exc_info=True)
 
     if "csv" in lowered or "tsv" in lowered:
         stream = io.StringIO(content)

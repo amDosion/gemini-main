@@ -158,6 +158,7 @@ class TongyiService(BaseProviderService):
             self._chat_provider = QwenNativeProvider(
                 api_key=self.api_key,
                 api_url=self.api_url,
+                user_id=self.user_id,
                 connection_mode=target_mode,
                 client_selector=self.client_selector,
             )
@@ -521,7 +522,10 @@ class TongyiService(BaseProviderService):
         """
         if self._image_edit_service is None:
             from .image_edit import ImageEditService, ImageEditOptions
-            self._image_edit_service = ImageEditService(api_key=self.api_key)
+            self._image_edit_service = ImageEditService(
+                api_key=self.api_key,
+                user_id=self.user_id,
+            )
         
         # 获取原始图片 URL
         raw_image = reference_images.get("raw")
@@ -710,7 +714,10 @@ class TongyiService(BaseProviderService):
         """
         if self._video_generation_service is None:
             from .video_generation import TongyiVideoGenerationService
-            self._video_generation_service = TongyiVideoGenerationService(api_key=self.api_key)
+            self._video_generation_service = TongyiVideoGenerationService(
+                api_key=self.api_key,
+                user_id=self.user_id,
+            )
         return await self._video_generation_service.generate_video(prompt, model, **kwargs)
     
     async def generate_speech(
@@ -757,7 +764,10 @@ class TongyiService(BaseProviderService):
         _ = prompt
         if self._virtual_tryon_service is None:
             from .virtual_tryon import TongyiVirtualTryOnService
-            self._virtual_tryon_service = TongyiVirtualTryOnService(api_key=self.api_key)
+            self._virtual_tryon_service = TongyiVirtualTryOnService(
+                api_key=self.api_key,
+                user_id=self.user_id,
+            )
 
         result = await self._virtual_tryon_service.virtual_tryon(
             reference_images,

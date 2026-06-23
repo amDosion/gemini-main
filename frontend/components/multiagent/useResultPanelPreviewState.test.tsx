@@ -2,7 +2,7 @@
 import React from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Node } from 'reactflow';
+import type { Node } from '@xyflow/react';
 import type { ExecutionStatus, WorkflowNodeData } from './types';
 import { extractAudioUrls, extractImageUrls, extractVideoUrls } from './workflowResultUtils';
 import { useResultPanelPreviewState } from './useResultPanelPreviewState';

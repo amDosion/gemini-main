@@ -31,7 +31,6 @@ from contextlib import asynccontextmanager
 from .client import (
     MCPClient,
     MCPServerConfig,
-    MCPServerType,
     MCPTool,
     MCPToolResult
 )
@@ -72,6 +71,7 @@ class MCPSessionPool:
     ) -> None:
         self._sessions: Dict[str, MCPClient] = {}
         self._configs: Dict[str, MCPServerConfig] = {}
+        self._owners: Dict[str, str] = {}
         # Monotonic timestamp of last access per session (seconds).
         self._last_used: Dict[str, float] = {}
         self._lock = asyncio.Lock()
@@ -109,20 +109,28 @@ class MCPSessionPool:
             )
             await self._remove_locked(lru)
 
+    def _schedule_close(self, session_id: str, client: MCPClient, reason: str) -> None:
+        async def _close() -> None:
+            try:
+                await client.close()
+            except Exception:
+                logger.warning(
+                    "[MCPSessionPool] Error closing session %s during %s",
+                    session_id,
+                    reason,
+                    exc_info=True,
+                )
+
+        asyncio.create_task(_close())
+
     async def _remove_locked(self, session_id: str) -> None:
         """Remove a session; lock must already be held by the caller."""
         if session_id in self._sessions:
             client = self._sessions.pop(session_id)
             self._configs.pop(session_id, None)
+            self._owners.pop(session_id, None)
             self._last_used.pop(session_id, None)
-            try:
-                await client.close()
-            except Exception:
-                logger.warning(
-                    "[MCPSessionPool] Error closing session %s during removal",
-                    session_id,
-                    exc_info=True,
-                )
+            self._schedule_close(session_id, client, "removal")
             logger.info("[MCPSessionPool] Removed session: %s", session_id)
 
     # ------------------------------------------------------------------
@@ -132,7 +140,8 @@ class MCPSessionPool:
     async def get_or_create(
         self,
         session_id: str,
-        config: MCPServerConfig
+        config: MCPServerConfig,
+        owner_id: Optional[str] = None,
     ) -> MCPClient:
         """
         获取或创建会话
@@ -148,6 +157,9 @@ class MCPSessionPool:
             # Reuse an existing connected session.
             if session_id in self._sessions:
                 client = self._sessions[session_id]
+                owner = self._owners.get(session_id)
+                if owner_id and owner and owner != owner_id:
+                    raise PermissionError("MCP session belongs to a different user")
                 if client.is_connected:
                     logger.debug("Reusing existing session: %s", session_id)
                     self._touch(session_id)
@@ -166,10 +178,36 @@ class MCPSessionPool:
             # Create a new session.
             logger.info("Creating new MCP session: %s", session_id)
             client = MCPClient(config)
-            await client.connect()
+
+        try:
+            await asyncio.wait_for(
+                client.connect(),
+                timeout=max(float(config.timeout or 30.0), 1.0),
+            )
+        except Exception:
+            await client.close()
+            raise
+
+        async with self._lock:
+            if session_id in self._sessions:
+                existing = self._sessions[session_id]
+                owner = self._owners.get(session_id)
+                if owner_id and owner and owner != owner_id:
+                    self._schedule_close(session_id, client, "duplicate owner mismatch")
+                    raise PermissionError("MCP session belongs to a different user")
+                if existing.is_connected:
+                    self._schedule_close(session_id, client, "duplicate connection")
+                    self._touch(session_id)
+                    return existing
+                await self._remove_locked(session_id)
+
+            if len(self._sessions) >= self._max_sessions:
+                await self._evict_one_for_capacity()
 
             self._sessions[session_id] = client
             self._configs[session_id] = config
+            if owner_id:
+                self._owners[session_id] = owner_id
             self._touch(session_id)
 
             return client
@@ -217,7 +255,11 @@ class MCPSessionPool:
                 await self._remove_locked(session_id)
         logger.info("[MCPSessionPool] All MCP sessions closed")
 
-    def get_session(self, session_id: str) -> Optional[MCPClient]:
+    def get_session(
+        self,
+        session_id: str,
+        owner_id: Optional[str] = None,
+    ) -> Optional[MCPClient]:
         """获取会话（不创建），并更新最近访问时间。
 
         Invariant: must be called only from the asyncio event-loop thread (like
@@ -226,6 +268,9 @@ class MCPSessionPool:
         be a genuine data race if invoked from a worker thread.
         """
         client = self._sessions.get(session_id)
+        owner = self._owners.get(session_id)
+        if client is not None and owner_id and owner and owner != owner_id:
+            return None
         if client is not None:
             # Update last-used without acquiring the async lock; monotonic write
             # races are benign here (worst case: slightly stale eviction order).
@@ -273,7 +318,8 @@ class MCPManager:
     async def create_session(
         self,
         session_id: str,
-        config: MCPServerConfig
+        config: MCPServerConfig,
+        owner_id: Optional[str] = None,
     ) -> MCPClient:
         """
         创建 MCP 会话
@@ -294,9 +340,17 @@ class MCPManager:
             ... )
             >>> client = await manager.create_session("my-session", config)
         """
-        return await self._session_pool.get_or_create(session_id, config)
+        return await self._session_pool.get_or_create(
+            session_id,
+            config,
+            owner_id=owner_id,
+        )
 
-    async def get_session(self, session_id: str) -> Optional[MCPClient]:
+    async def get_session(
+        self,
+        session_id: str,
+        owner_id: Optional[str] = None,
+    ) -> Optional[MCPClient]:
         """
         获取会话
 
@@ -306,7 +360,7 @@ class MCPManager:
         Returns:
             MCP 客户端，如果不存在则返回 None
         """
-        return self._session_pool.get_session(session_id)
+        return self._session_pool.get_session(session_id, owner_id=owner_id)
 
     async def close_session(self, session_id: str) -> None:
         """
@@ -317,20 +371,25 @@ class MCPManager:
         """
         await self._session_pool.remove(session_id)
 
-    def _require_client(self, session_id: str) -> MCPClient:
+    def _require_client(
+        self,
+        session_id: str,
+        owner_id: Optional[str] = None,
+    ) -> MCPClient:
         """Return the pooled client for ``session_id`` or raise ``ValueError``.
 
         Shared lookup for the tool-access methods so the not-found error
         semantics stay identical across them.
         """
-        client = self._session_pool.get_session(session_id)
+        client = self._session_pool.get_session(session_id, owner_id=owner_id)
         if not client:
             raise ValueError(f"Session not found: {session_id}")
         return client
 
     async def list_tools(
         self,
-        session_id: str
+        session_id: str,
+        owner_id: Optional[str] = None,
     ) -> List[MCPTool]:
         """
         获取工具列表
@@ -344,14 +403,15 @@ class MCPManager:
         Raises:
             ValueError: 会话不存在
         """
-        client = self._require_client(session_id)
+        client = self._require_client(session_id, owner_id=owner_id)
         return await client.list_tools()
 
     async def call_tool(
         self,
         session_id: str,
         tool_name: str,
-        arguments: Dict[str, Any]
+        arguments: Dict[str, Any],
+        owner_id: Optional[str] = None,
     ) -> MCPToolResult:
         """
         调用工具
@@ -367,12 +427,13 @@ class MCPManager:
         Raises:
             ValueError: 会话不存在
         """
-        client = self._require_client(session_id)
+        client = self._require_client(session_id, owner_id=owner_id)
         return await client.call_tool(tool_name, arguments)
 
     async def get_gemini_tools(
         self,
-        session_id: str
+        session_id: str,
+        owner_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         获取 Gemini 格式的工具列表
@@ -386,11 +447,12 @@ class MCPManager:
         Raises:
             ValueError: 会话不存在
         """
-        return await self.get_tools_by_format(session_id, "gemini")
+        return await self.get_tools_by_format(session_id, "gemini", owner_id=owner_id)
 
     async def get_openai_tools(
         self,
-        session_id: str
+        session_id: str,
+        owner_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         获取 OpenAI 格式的工具列表
@@ -404,12 +466,13 @@ class MCPManager:
         Raises:
             ValueError: 会话不存在
         """
-        return await self.get_tools_by_format(session_id, "openai")
+        return await self.get_tools_by_format(session_id, "openai", owner_id=owner_id)
 
     async def get_tools_by_format(
         self,
         session_id: str,
-        format_type: str
+        format_type: str,
+        owner_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         获取指定格式的工具列表
@@ -428,7 +491,7 @@ class MCPManager:
         Raises:
             ValueError: 会话不存在或格式不支持
         """
-        client = self._require_client(session_id)
+        client = self._require_client(session_id, owner_id=owner_id)
         adapter = UniversalToolAdapter(client)
         await adapter.load_tools()
         return adapter.to_format(format_type)

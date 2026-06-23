@@ -21,11 +21,11 @@
  * call and dependency mirrors the original component logic.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Connection, Edge, Node, ReactFlowInstance } from 'reactflow';
-import { addEdge } from 'reactflow';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { Connection, Edge, IsValidConnection, Node, ReactFlowInstance } from '@xyflow/react';
+import { addEdge } from '@xyflow/react';
 
-import type { AgentDef, WorkflowNodeData } from '../types';
+import type { AgentDef, WorkflowEdge, WorkflowNode, WorkflowNodeData } from '../types';
 import type { ActiveTemplateMeta } from '../workflowTemplateLoader';
 import { nodeTypeConfigs, NodeType } from '../nodeTypeConfigs';
 import { autoLayoutWorkflow } from '../workflowUtils';
@@ -66,7 +66,7 @@ export interface UseWorkflowCanvasActionsArgs {
   selectedEdgeId: string | null;
   registryAgents: AgentDef[];
   refreshAgents: () => Promise<AgentDef[]>;
-  reactFlowInstance: ReactFlowInstance | null;
+  reactFlowInstance: ReactFlowInstance<WorkflowNode, WorkflowEdge> | null;
   editorRootRef: React.RefObject<HTMLDivElement | null>;
   takeSnapshot: (nodes: Node<WorkflowNodeData>[], edges: Edge[]) => void;
   undo: (
@@ -109,7 +109,7 @@ export interface UseWorkflowCanvasActionsResult {
   handleRedo: () => void;
   handleToggleMainWorkspaceFullscreen: () => Promise<void>;
   isMainWorkspaceFullscreen: boolean;
-  isValidConnection: (connection: Connection) => boolean;
+  isValidConnection: IsValidConnection<WorkflowEdge>;
   onConnect: (params: Connection) => void;
   onNodeClick: (event: React.MouseEvent, node: Node) => void;
   onEdgeClick: (event: React.MouseEvent, edge: Edge) => void;
@@ -171,7 +171,7 @@ export const useWorkflowCanvasActions = ({
   // Flow to reinstall its internal event handlers each render.
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
-  useEffect(() => {
+  useLayoutEffect(() => {
     nodesRef.current = nodes;
     edgesRef.current = edges;
   }, [nodes, edges]);
@@ -259,7 +259,7 @@ export const useWorkflowCanvasActions = ({
     };
   }, [editorRootRef]);
 
-  const isValidConnection = useCallback((connection: Connection) => {
+  const isValidConnection: IsValidConnection<WorkflowEdge> = useCallback((connection) => {
     const { source, target } = connection;
     if (!source || !target || source === target) return false;
     const currentNodes = nodesRef.current;

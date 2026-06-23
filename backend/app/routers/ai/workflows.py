@@ -1866,7 +1866,7 @@ def _find_execution_by_idempotency_key(
             return direct_match
     except Exception:
         # 兼容旧 schema：字段尚未迁移完成时回退到历史扫描逻辑。
-        pass
+        logger.debug("[Workflow] Direct result URL lookup failed; falling back to legacy scan", exc_info=True)
 
     # 兼容旧路径：从 workflow_json.meta 中扫描幂等键。
     recent_executions = db.query(WorkflowExecution).filter(

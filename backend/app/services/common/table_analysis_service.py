@@ -7,9 +7,12 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import math
 from datetime import datetime, timezone
 from typing import Any, Literal
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_TABLE_FORMATS = {"csv", "xlsx"}
 
@@ -107,7 +110,7 @@ def _to_json_value(value: Any) -> Any:
         try:
             value = value.item()
         except Exception:
-            pass
+            logger.debug("[TableAnalysis] Failed to convert scalar item value", exc_info=True)
 
     if isinstance(value, float):
         if math.isnan(value) or math.isinf(value):
@@ -127,7 +130,7 @@ def _to_json_value(value: Any) -> Any:
         try:
             return value.isoformat()
         except Exception:
-            pass
+            logger.debug("[TableAnalysis] Failed to convert value via isoformat", exc_info=True)
 
     return str(value)
 

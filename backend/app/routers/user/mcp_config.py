@@ -23,6 +23,8 @@ from ...services.mcp.types import (
     MCPServerType,
     MCPServerConfig,
     MCPStdioPolicyError,
+    MCPUrlPolicyError,
+    validate_mcp_remote_url_policy,
     validate_mcp_stdio_command_policy,
 )
 from ...services.mcp.mcp_manager import get_mcp_manager
@@ -225,8 +227,13 @@ def _build_and_validate_mcp_server_config(
             allowed_commands=settings.mcp_stdio_allowed_commands,
             context=f"{context}:{server_key}",
         )
+        validate_mcp_remote_url_policy(
+            config,
+            allowed_hosts=settings.mcp_http_allowed_hosts,
+            context=f"{context}:{server_key}",
+        )
         return config
-    except (ValueError, MCPStdioPolicyError) as exc:
+    except (ValueError, MCPStdioPolicyError, MCPUrlPolicyError) as exc:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid MCP server config '{server_key}': {exc}",
@@ -402,8 +409,8 @@ async def get_mcp_server_tools(
             )
         session_id = _session_id_for_server(user_id, server_key, server_config)
         manager = get_mcp_manager()
-        await manager.create_session(session_id, mcp_config)
-        tools = await manager.list_tools(session_id)
+        await manager.create_session(session_id, mcp_config, owner_id=user_id)
+        tools = await manager.list_tools(session_id, owner_id=user_id)
     except HTTPException:
         raise
     except (ValueError, MCPStdioPolicyError) as exc:
@@ -464,11 +471,11 @@ async def invoke_mcp_server_tool(
             )
         session_id = _session_id_for_server(user_id, server_key, server_config)
         manager = get_mcp_manager()
-        await manager.create_session(session_id, mcp_config)
+        await manager.create_session(session_id, mcp_config, owner_id=user_id)
         arguments = payload.arguments if isinstance(payload.arguments, dict) else {}
 
         start = time.perf_counter()
-        result = await manager.call_tool(session_id, tool_name, arguments)
+        result = await manager.call_tool(session_id, tool_name, arguments, owner_id=user_id)
         latency_ms = round((time.perf_counter() - start) * 1000, 2)
     except HTTPException:
         raise

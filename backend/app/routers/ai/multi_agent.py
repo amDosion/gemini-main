@@ -18,6 +18,7 @@ import uuid
 import os
 import json
 import base64
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -417,7 +418,7 @@ def _parse_legacy_expiry_timestamp_ms(raw_value: Any) -> int:
     try:
         return _parse_ticket_timestamp_ms(text)
     except Exception:
-        pass
+        logger.debug("[Multi-Agent API] Nonce expiry is not a numeric timestamp", exc_info=True)
 
     iso_text = text
     if iso_text.endswith("Z"):
@@ -446,7 +447,7 @@ def _coerce_approval_ticket_legacy_object(raw_value: Any) -> Optional[Dict[str, 
             if isinstance(parsed, dict):
                 return parsed
         except Exception:
-            pass
+            logger.debug("[Multi-Agent API] Confirmation ticket is not JSON", exc_info=True)
     return {"ticket": text}
 
 
@@ -839,6 +840,10 @@ def _resolve_excel_allowed_roots() -> List[Path]:
             try:
                 parsed_roots.append(_resolve_excel_local_path(text))
             except Exception:
+                logger.debug(
+                    "[Multi-Agent API] Ignoring invalid Excel allow-root value",
+                    exc_info=True,
+                )
                 continue
     if parsed_roots:
         return parsed_roots
@@ -846,8 +851,7 @@ def _resolve_excel_allowed_roots() -> List[Path]:
     defaults = [
         _EXCEL_PROJECT_BASE,
         (_EXCEL_PROJECT_BASE / "tmp").resolve(),
-        Path("/tmp"),
-        Path("/private/tmp"),
+        Path(tempfile.gettempdir()).resolve(),
     ]
     unique_defaults: List[Path] = []
     seen: set[str] = set()
@@ -2143,6 +2147,12 @@ async def register_agent(
     Returns:
         注册的智能体信息
     """
+    if request_body.mcp_session_id:
+        raise HTTPException(
+            status_code=400,
+            detail="mcp_session_id is no longer accepted; use a user-owned MCP server key",
+        )
+
     try:
         
         registry = AgentRegistryService(db=db)

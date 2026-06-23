@@ -26,12 +26,15 @@ import asyncio
 import base64
 import io
 import json
+import logging
 import math
 import os
 import re
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
+
+logger = logging.getLogger(__name__)
 
 import httpx
 import numpy as np
@@ -1036,7 +1039,7 @@ async def shutdown() -> None:
                         await result
                     break
                 except Exception:
-                    pass
+                    logger.debug("[LayeredDesignAPI] Failed to close async client via %s", method_name, exc_info=True)
 
     if client:
         for method_name in ("close",):
@@ -1046,7 +1049,7 @@ async def shutdown() -> None:
                     method()
                     break
                 except Exception:
-                    pass
+                    logger.debug("[LayeredDesignAPI] Failed to close sync client via %s", method_name, exc_info=True)
 
 
 @app.get("/health")
@@ -1876,8 +1879,8 @@ async def render_compose_base64(doc_json: str = Form(...)) -> JSONResponse:
 
 # =========================
 # Local run:
-#   uvicorn main:app --reload --host 0.0.0.0 --port 8000
+#   uvicorn main:app --reload --host 127.0.0.1 --port 8000
 # =========================
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=8000)

@@ -882,7 +882,7 @@ def extract_json_object_from_text(engine: Any, text: str) -> Dict[str, Any]:
         if isinstance(parsed, dict):
             return parsed
     except Exception:
-        pass
+        logger.debug("[WorkflowImagePipeline] Text was not a direct JSON object", exc_info=True)
 
     start = raw.find("{")
     end = raw.rfind("}")

@@ -83,12 +83,18 @@ class BaseMemoryService:
             try:
                 return value.model_dump()
             except Exception:
-                pass
+                logger.debug(
+                    "[VertexAiMemoryBankService] model_dump serialization failed; trying next serializer",
+                    exc_info=True,
+                )
         if hasattr(value, "dict"):
             try:
                 return value.dict()
             except Exception:
-                pass
+                logger.debug(
+                    "[VertexAiMemoryBankService] dict serialization failed; falling back to string",
+                    exc_info=True,
+                )
         return str(value)
 
     def _load_session_messages(self, user_id: str, session_id: str) -> List[Dict[str, Any]]:

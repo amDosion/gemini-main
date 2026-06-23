@@ -1,17 +1,18 @@
 import React from 'react';
-import ReactFlow, {
+import {
   Background,
   Connection,
   Controls,
-  Edge,
-  EdgeChange,
+  IsValidConnection,
   MiniMap,
   Node,
-  NodeChange,
-  ReactFlowInstance,
-} from 'reactflow';
+  OnEdgesChange,
+  OnInit,
+  OnNodesChange,
+  ReactFlow,
+} from '@xyflow/react';
 import { nodeTypeConfigs, NodeType } from './nodeTypeConfigs';
-import type { WorkflowNodeData } from './types';
+import type { WorkflowEdge, WorkflowNode, WorkflowNodeData } from './types';
 import { ComponentLibrary } from './ComponentLibrary';
 import { PropertiesPanel } from './PropertiesPanel';
 import { FLOW_NODE_TYPES, type WorkflowNodeFieldFocusRequest } from './workflowEditorUtils';
@@ -33,19 +34,19 @@ const resolveMiniMapNodeColor = (node: Node): string => {
 
 interface WorkflowEditorCanvasPaneProps {
   reactFlowWrapperRef: React.RefObject<HTMLDivElement | null>;
-  nodes: Node<WorkflowNodeData>[];
-  edges: Edge[];
-  onNodesChange: (changes: NodeChange[]) => void;
-  onEdgesChange: (changes: EdgeChange[]) => void;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  onNodesChange: OnNodesChange<WorkflowNode>;
+  onEdgesChange: OnEdgesChange<WorkflowEdge>;
   onConnect: (params: Connection) => void;
-  onNodeClick: (_event: React.MouseEvent, node: Node) => void;
-  onEdgeClick: (_event: React.MouseEvent, edge: Edge) => void;
+  onNodeClick: (_event: React.MouseEvent, node: WorkflowNode) => void;
+  onEdgeClick: (_event: React.MouseEvent, edge: WorkflowEdge) => void;
   onPaneClick: () => void;
-  onInit: (instance: ReactFlowInstance) => void;
+  onInit: OnInit<WorkflowNode, WorkflowEdge>;
   onDrop: (event: React.DragEvent) => void;
   onDragOver: (event: React.DragEvent) => void;
-  isValidConnection: (connection: Connection) => boolean;
-  selectedNode: Node<WorkflowNodeData> | null;
+  isValidConnection: IsValidConnection<WorkflowEdge>;
+  selectedNode: WorkflowNode | null;
   onCloseSelectedNode: () => void;
   onUpdateNode: (nodeId: string, updates: Partial<WorkflowNodeData>) => void;
   onDeleteNode: (nodeId: string) => void;
@@ -74,21 +75,6 @@ export const WorkflowEditorCanvasPane: React.FC<WorkflowEditorCanvasPaneProps> =
   focusRequest,
   onConsumeFocusRequest,
 }) => {
-  // 不要用 useMemo 包装——这些已经是 module-level 常量，直接传引用最稳定。
-  //
-  // 然而 ReactFlow 11.11.4 的 useNodeOrEdgeTypes 内部有个反向 bug:
-  //   if (shallow(typesKeysRef.current, typeKeys)) { onError?.('002', ...) }
-  // 这意味着 keys 集合**相等**时才报警（应该是 !shallow 表示 keys 变化时报警）。
-  // 在 React 19 dev StrictMode 双 mount 下，第二次 mount 见到同样的 keys
-  // → shallow=true → 触发 002 警告。这是上游 bug，不是我们的问题。
-  //
-  // 修法：通过 onError 拦截 002 错误码，让 ReactFlow 沉默这条误报，
-  // 其他错误（001 / 003+）按默认行为打印。
-  const handleReactFlowError = React.useCallback((id: string, message: string) => {
-    if (id === '002') return; // 上游 bug 误报，已确认我们传的是 module-level 常量
-    console.warn(`[React Flow ${id}] ${message}`);
-  }, []);
-
   return (
     <div className="flex flex-1 overflow-hidden relative">
       <ComponentLibrary />
@@ -108,7 +94,6 @@ export const WorkflowEditorCanvasPane: React.FC<WorkflowEditorCanvasPaneProps> =
           onDragOver={onDragOver}
           nodeTypes={FLOW_NODE_TYPES}
           edgeTypes={FLOW_EDGE_TYPES}
-          onError={handleReactFlowError}
           isValidConnection={isValidConnection}
           fitView
           deleteKeyCode={null}

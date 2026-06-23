@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { Node } from 'reactflow';
+import { Node } from '@xyflow/react';
 import { CustomNodeData } from './CustomNode';
 import { LogEntry, LogLevel } from './ExecutionLogPanel';
 

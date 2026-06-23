@@ -69,6 +69,8 @@ class GrokService(BaseProviderService):
         super().__init__(api_key, api_url, **kwargs)
 
         self.base_url = _resolve_grok_base_url(api_url)
+        self.user_id = kwargs.get("user_id")
+        self.db = kwargs.get("db")
         self.timeout = kwargs.get("timeout", 120.0)
         self.max_retries = kwargs.get("max_retries", 3)
 
@@ -120,6 +122,7 @@ class GrokService(BaseProviderService):
             self._image_editor = ImageEditor(
                 self.api_key,
                 self.base_url,
+                user_id=self.user_id,
                 timeout=self.timeout,
             )
         return self._image_editor
@@ -132,6 +135,8 @@ class GrokService(BaseProviderService):
             self._video_generator = VideoGenerator(
                 self.api_key,
                 self.base_url,
+                user_id=self.user_id,
+                db=self.db,
                 timeout=max(self.timeout, 600.0),  # Video gen needs longer timeout
             )
         return self._video_generator

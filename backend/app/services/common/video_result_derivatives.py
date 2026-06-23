@@ -20,7 +20,7 @@ from ..gemini.base.video_common import (
     to_data_url,
 )
 from ..gemini.base.video_frame_bridge import extract_last_frame_image
-from ..storage.local_provider import resolve_local_public_file_path
+from ..storage.local_provider import resolve_local_public_file_path_for_user
 from .attachment_service import AttachmentService, safe_persist_ai_result
 
 logger = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ async def load_video_result_bytes(
         return loaded
 
     if normalized_source.startswith("/api/storage/local-files/"):
-        file_path = resolve_local_public_file_path(normalized_source)
+        file_path = resolve_local_public_file_path_for_user(normalized_source, user_id)
         if file_path is None or not file_path.exists() or not file_path.is_file():
             raise ValueError("Local generated video file is no longer available.")
         mime_type = mimetypes.guess_type(str(file_path))[0] or fallback_mime_type

@@ -101,7 +101,15 @@ def test_create_client_rejects_schemeless_private_endpoint(monkeypatch):
 
 def test_create_client_passes_for_public_endpoint(monkeypatch):
     """A public endpoint must not raise; boto3.client must be invoked."""
+    import app.core.config as config_mod
+
     boto3_calls = _stub_boto3(monkeypatch)
+    monkeypatch.setattr(
+        config_mod.settings,
+        "storage_s3_compatible_allowed_endpoint_hosts_raw",
+        "s3.example.com",
+        raising=False,
+    )
     # Patch validate_storage_egress_url so no real DNS lookup occurs.
     # raising=False: attribute may not yet exist before the fix is applied.
     monkeypatch.setattr(
@@ -116,6 +124,46 @@ def test_create_client_passes_for_public_endpoint(monkeypatch):
 
     assert boto3_calls, "boto3.client must be called for a valid public endpoint"
     assert client is not None
+
+
+def test_custom_endpoint_forces_path_style_addressing(monkeypatch):
+    """Custom endpoints must not let boto3 connect to bucket.endpoint hosts."""
+    import app.core.config as config_mod
+
+    boto3_calls = _stub_boto3(monkeypatch)
+    monkeypatch.setattr(
+        config_mod.settings,
+        "storage_s3_compatible_allowed_endpoint_hosts_raw",
+        "s3.example.com",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        s3_provider_mod,
+        "validate_storage_egress_url",
+        lambda url, **kwargs: url,
+        raising=False,
+    )
+
+    provider = S3Provider({
+        **_BASE_CONFIG,
+        "endpoint": "https://s3.example.com",
+        "force_path_style": False,
+    })
+    provider._create_client()
+
+    config = boto3_calls[0]["config"]
+    assert config.s3["addressing_style"] == "path"
+
+
+def test_create_client_rejects_public_endpoint_without_operator_allowlist(monkeypatch):
+    boto3_calls = _stub_boto3(monkeypatch)
+
+    provider = S3Provider({**_BASE_CONFIG, "endpoint": "https://s3.example.com"})
+
+    with pytest.raises(ValueError, match="allowlisted"):
+        provider._create_client()
+
+    assert boto3_calls == []
 
 
 # ---------------------------------------------------------------------------

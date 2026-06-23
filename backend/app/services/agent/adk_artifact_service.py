@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import copy
+import logging
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from .workflow_runtime_store import WorkflowRuntimeStore
+
+logger = logging.getLogger(__name__)
 
 
 def _now_ms() -> int:
@@ -544,6 +547,7 @@ class ADKArtifactService:
                 try:
                     version = _coerce_version(raw_version)
                 except Exception:
+                    logger.debug("[ADKArtifactService] Ignoring invalid artifact version", exc_info=True)
                     continue
                 token = _artifact_ref_token(
                     artifact_key=normalized_artifact_key,

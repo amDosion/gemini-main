@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import type { Node } from 'reactflow';
+import type { Node } from '@xyflow/react';
 import {
   fetchWorkflowPreviewImagesWithMeta,
   fetchWorkflowPreviewMediaWithMeta,

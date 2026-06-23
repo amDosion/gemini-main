@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional, List
 import io
 import base64
 import os
+import tempfile
 from pathlib import Path
 
 from app.utils.log_sanitization import summarize_text_for_log
@@ -76,12 +77,13 @@ def _resolve_allowed_table_roots() -> List[Path]:
             try:
                 roots.append(Path(text).expanduser().resolve())
             except Exception:
+                logger.debug("[ExcelTools] Ignoring invalid allowed root value", exc_info=True)
                 continue
     if roots:
         return roots
 
     cwd = Path.cwd().resolve()
-    default_roots = [cwd, (cwd / "tmp").resolve(), Path("/tmp"), Path("/private/tmp")]
+    default_roots = [cwd, (cwd / "tmp").resolve(), Path(tempfile.gettempdir()).resolve()]
     unique_roots: List[Path] = []
     seen: set[str] = set()
     for root in default_roots:

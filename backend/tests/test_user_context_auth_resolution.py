@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from jose import JWTError
-
 from app.core import user_context
-from app.core.jwt_utils import TokenPayload
+from app.core.jwt_utils import JWTError, TokenPayload
 
 
 def make_request(

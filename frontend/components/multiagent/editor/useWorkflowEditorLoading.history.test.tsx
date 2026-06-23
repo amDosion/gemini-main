@@ -2,8 +2,8 @@
 import React from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { Edge, Node, ReactFlowInstance } from 'reactflow';
-import type { ExecutionStatus, WorkflowNodeData } from '../types';
+import type { Edge, Node, ReactFlowInstance } from '@xyflow/react';
+import type { ExecutionStatus, WorkflowEdge, WorkflowNode, WorkflowNodeData } from '../types';
 import { useWorkflowEditorLoading } from './useWorkflowEditorLoading';
 
 const noopStateSetter = vi.fn();
@@ -71,7 +71,7 @@ describe('useWorkflowEditorLoading history hydration', () => {
         nodes: [],
         setNodes,
         setEdges,
-        reactFlowInstance: null as ReactFlowInstance | null,
+        reactFlowInstance: null as ReactFlowInstance<WorkflowNode, WorkflowEdge> | null,
         pendingFitTokenRef: React.createRef() as React.MutableRefObject<string | null>,
         importedExecutionLogCountRef: React.createRef() as React.MutableRefObject<number>,
         lastResultSignatureRef: React.createRef() as React.MutableRefObject<string | null>,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
+from contextlib import asynccontextmanager, contextmanager
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -110,6 +111,12 @@ def _prevalidate_url(url: str) -> tuple[str, Optional[str], int]:
 
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     return raw_url, host, port
+
+
+def prevalidate_http_url_without_dns(url: str) -> str:
+    """Run scheme, host, and IP-literal SSRF checks without DNS resolution."""
+    raw_url, _, _ = _prevalidate_url(url)
+    return raw_url
 
 
 def _check_resolved_addr_infos(addr_infos) -> None:
@@ -306,6 +313,7 @@ async def get_with_redirect_guard(
     client: httpx.AsyncClient,
     url: str,
     *,
+    headers: Optional[dict] = None,
     max_redirects: int = 5,
 ) -> tuple[httpx.Response, str]:
     """
@@ -321,7 +329,10 @@ async def get_with_redirect_guard(
     redirect_count = 0
 
     while True:
-        response = await client.get(current_url, follow_redirects=False)
+        request_kwargs = {"follow_redirects": False}
+        if headers is not None:
+            request_kwargs["headers"] = headers
+        response = await client.get(current_url, **request_kwargs)
         if response.status_code not in _REDIRECT_STATUS_CODES:
             return response, current_url
 
@@ -332,6 +343,46 @@ async def get_with_redirect_guard(
             current_url,
             response.headers.get("location", ""),
         )
+        current_url = next_url
+        redirect_count += 1
+
+
+@asynccontextmanager
+async def stream_with_redirect_guard(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    headers: Optional[dict] = None,
+    max_redirects: int = 5,
+):
+    """Open an async streaming GET with per-hop validation and DNS pinning."""
+    _ensure_client_pinned(client)
+    current_url = await validate_outbound_http_url_async(url)
+    redirect_count = 0
+
+    while True:
+        request_kwargs = {"follow_redirects": False}
+        if headers is not None:
+            request_kwargs["headers"] = headers
+        stream_cm = client.stream("GET", current_url, **request_kwargs)
+        response = await stream_cm.__aenter__()
+        if response.status_code not in _REDIRECT_STATUS_CODES:
+            try:
+                yield response, current_url
+            finally:
+                await stream_cm.__aexit__(None, None, None)
+            return
+
+        try:
+            if redirect_count >= max_redirects:
+                raise UnsafeURLError(f"重定向次数超过限制 ({max_redirects})")
+            next_url = await resolve_safe_redirect_url_async(
+                current_url,
+                response.headers.get("location", ""),
+            )
+        finally:
+            await stream_cm.__aexit__(None, None, None)
+
         current_url = next_url
         redirect_count += 1
 
@@ -367,6 +418,40 @@ def sync_get_with_redirect_guard(
                 raise UnsafeURLError(f"重定向次数超过限制 ({max_redirects})")
             current_url = resolve_safe_redirect_url(current_url, location or "")
             redirect_count += 1
+
+
+@contextmanager
+def sync_stream_with_redirect_guard(
+    url: str,
+    *,
+    headers: Optional[dict] = None,
+    timeout: float = 30.0,
+    max_redirects: int = 5,
+):
+    """Synchronous streaming GET with the same redirect and pinning policy."""
+    current_url = validate_outbound_http_url(url)
+    redirect_count = 0
+
+    with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+        _ensure_sync_client_pinned(client)
+        while True:
+            stream_cm = client.stream("GET", current_url, headers=headers)
+            response = stream_cm.__enter__()
+            if response.status_code not in _REDIRECT_STATUS_CODES:
+                try:
+                    yield response, current_url
+                finally:
+                    stream_cm.__exit__(None, None, None)
+                return
+
+            try:
+                if redirect_count >= max_redirects:
+                    raise UnsafeURLError(f"重定向次数超过限制 ({max_redirects})")
+                location = response.headers.get("Location") or response.headers.get("location")
+                current_url = resolve_safe_redirect_url(current_url, location or "")
+                redirect_count += 1
+            finally:
+                stream_cm.__exit__(None, None, None)
 
 
 class _PinningAsyncBackend(httpcore.AsyncNetworkBackend):

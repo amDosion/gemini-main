@@ -98,6 +98,7 @@ class QwenNativeProvider(_QwenMultimodalMixin, _QwenErrorHandlingMixin, BaseProv
         self.api_key = api_key
         self.api_url = api_url
         self.organization_id = organization_id
+        self.user_id = kwargs.get("user_id")
         self.connection_mode = kwargs.get("connection_mode", "official")
         self.max_concurrent = kwargs.get("max_concurrent", 20)
 

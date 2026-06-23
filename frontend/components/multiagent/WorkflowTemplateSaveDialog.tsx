@@ -9,7 +9,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Save, Loader2, Plus } from 'lucide-react';
-import type { Edge, Node } from 'reactflow';
+import type { Edge, Node } from '@xyflow/react';
 import type { CustomNodeData } from './CustomNode';
 import type { WorkflowTemplate } from './WorkflowTemplateSelector';
 import { WorkflowTemplateCategoryCreateDialog } from './WorkflowTemplateCategoryCreateDialog';

@@ -10,8 +10,8 @@
  */
 
 import { useCallback, useState } from 'react';
-import type { ReactFlowInstance } from 'reactflow';
-import { getNodesBounds } from 'reactflow';
+import type { ReactFlowInstance } from '@xyflow/react';
+import { getNodesBounds } from '@xyflow/react';
 import { toPng, toSvg } from 'html-to-image';
 
 import {
@@ -27,6 +27,7 @@ import {
   waitForClonedImages,
 } from '../workflowExport';
 import { triggerBrowserDownload } from '../../../services/downloadService';
+import type { WorkflowEdge, WorkflowNode } from '../types';
 
 import type { LogLevel } from '../ExecutionLogPanel';
 
@@ -39,7 +40,7 @@ type AddLog = (
 ) => void;
 
 export interface UseWorkflowImageExportArgs {
-  reactFlowInstance: ReactFlowInstance | null;
+  reactFlowInstance: ReactFlowInstance<WorkflowNode, WorkflowEdge> | null;
   reactFlowWrapperRef: React.RefObject<HTMLDivElement | null>;
   addLog: AddLog;
   setExecuteErrorBanner: (value: string | null) => void;

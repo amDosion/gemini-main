@@ -28,7 +28,7 @@ from ....utils.log_sanitization import (
     summarize_url_for_log,
 )
 from ....utils.url_security import UnsafeURLError, get_with_redirect_guard
-from ...storage.local_provider import resolve_local_public_file_path
+from ...storage.local_provider import resolve_local_public_file_path_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +318,7 @@ class ExpandService:
         else:
             # 本地文件路径：CANON-017/021 — 仅允许 allow-root 内的 local-files 引用，
             # 不得对任意用户/模型可控路径执行 open()（任意文件读取 LFI）。
-            local_path = resolve_local_public_file_path(image_path)
+            local_path = resolve_local_public_file_path_for_user(image_path, self._user_id)
             if local_path is None or not local_path.exists() or not local_path.is_file():
                 raise ValueError(
                     f"Image file not found or not permitted: {summarize_url_for_log(image_path)}"

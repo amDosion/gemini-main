@@ -26,7 +26,13 @@ async def test_extension_chain_generates_base_then_continuations_from_last_frame
             "filename": f"segment-{index}.mp4",
         }
 
-    async def fake_load_video_bytes(source, *, fallback_mime_type="video/mp4", load_source_video=None):
+    async def fake_load_video_bytes(
+        source,
+        *,
+        fallback_mime_type="video/mp4",
+        load_source_video=None,
+        user_id=None,
+    ):
         return b"video-bytes", fallback_mime_type
 
     async def fake_concat(segments, *, continuation_trim_seconds):
@@ -86,7 +92,13 @@ async def test_extension_chain_extends_existing_source_video_without_regeneratin
             "duration_seconds": 8,
         }
 
-    async def fake_load_video_bytes(source, *, fallback_mime_type="video/mp4", load_source_video=None):
+    async def fake_load_video_bytes(
+        source,
+        *,
+        fallback_mime_type="video/mp4",
+        load_source_video=None,
+        user_id=None,
+    ):
         if isinstance(source, dict) and source.get("url") == "https://example.test/source.mp4":
             return b"source", "video/mp4"
         return b"continuation", fallback_mime_type
@@ -137,7 +149,13 @@ async def test_extension_chain_generates_base_when_source_video_belongs_to_activ
             "duration_seconds": 8,
         }
 
-    async def fake_load_video_bytes(source, *, fallback_mime_type="video/mp4", load_source_video=None):
+    async def fake_load_video_bytes(
+        source,
+        *,
+        fallback_mime_type="video/mp4",
+        load_source_video=None,
+        user_id=None,
+    ):
         return f"video-{len(calls)}".encode(), fallback_mime_type
 
     async def fake_concat(segments, *, continuation_trim_seconds):
@@ -202,3 +220,32 @@ async def test_load_video_bytes_rejects_percent_encoded_absolute_path():
     # incidentally downstream.
     with pytest.raises(ValueError):
         await video_extension_chain.load_video_bytes_from_source({"url": "%2Fetc%2Fpasswd"})
+
+
+@pytest.mark.asyncio
+async def test_load_video_bytes_resolves_local_files_with_user_scope(monkeypatch, tmp_path):
+    local_file = tmp_path / "clip.mp4"
+    local_file.write_bytes(b"scoped-video")
+    local_url = "/api/storage/local-files/user-a/clip.mp4"
+    calls = []
+
+    def fake_resolve_local_public_file_path_for_user(value, user_id=None, config=None):
+        calls.append((value, user_id))
+        if value == local_url and user_id == "user-a":
+            return local_file
+        return None
+
+    monkeypatch.setattr(
+        video_extension_chain,
+        "resolve_local_public_file_path_for_user",
+        fake_resolve_local_public_file_path_for_user,
+    )
+
+    video_bytes, mime_type = await video_extension_chain.load_video_bytes_from_source(
+        {"url": local_url},
+        user_id="user-a",
+    )
+
+    assert video_bytes == b"scoped-video"
+    assert mime_type == "video/mp4"
+    assert calls == [(local_url, "user-a")]

@@ -19,7 +19,9 @@ import functools
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from jose import JWTError, jwt
+import jwt
+from jwt import ExpiredSignatureError
+from jwt import PyJWTError as JWTError
 from pydantic import BaseModel
 from cryptography.fernet import Fernet
 import logging
@@ -340,11 +342,14 @@ class JWTUtils:
         解码并验证 JWT 令牌
         
         Raises:
-            JWTError: 令牌无效或已过期
+            JWTError: 令牌无效
+            ExpiredSignatureError: 令牌已过期
         """
         try:
             payload = jwt.decode(token, _get_cached_jwt_secret(), algorithms=[JWT_ALGORITHM])
             return TokenPayload(**payload)
+        except ExpiredSignatureError:
+            raise
         except JWTError as e:
             raise JWTError(f"Invalid token: {str(e)}")
 

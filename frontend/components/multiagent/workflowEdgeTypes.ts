@@ -1,4 +1,4 @@
-import type { EdgeTypes } from 'reactflow';
+import type { EdgeTypes } from '@xyflow/react';
 import { ButtonEdge } from './ButtonEdge';
 
 export const DEFAULT_WORKFLOW_EDGE_TYPE = 'buttonedge';

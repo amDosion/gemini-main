@@ -562,7 +562,7 @@ async def cleanup_system(
                     shutil.rmtree(d, ignore_errors=True)
                     pycache_count += 1
                 except Exception:
-                    pass
+                    logger.debug("[Cleanup] Failed to remove __pycache__ entry: %s", d, exc_info=True)
         results["pycache_dirs"] = pycache_count
     except Exception as exc:
         logger.warning("[Cleanup] Failed to clean __pycache__: %s", exc)
@@ -583,7 +583,7 @@ async def cleanup_system(
                             upload_temp_count += 1
                             freed_bytes += file_size
                     except Exception:
-                        pass
+                        logger.debug("[Cleanup] Failed to remove upload temp file: %s", f, exc_info=True)
         results["temp_upload_files"] = upload_temp_count
     except Exception as exc:
         logger.warning("[Cleanup] Failed to clean upload temp files: %s", exc)
@@ -606,7 +606,7 @@ async def cleanup_system(
                         shutil.rmtree(item, ignore_errors=True)
                         storage_count += 1
                 except Exception:
-                    pass
+                    logger.debug("[Cleanup] Failed to remove storage download entry: %s", item, exc_info=True)
         results["storage_downloads"] = storage_count
     except Exception as exc:
         logger.warning("[Cleanup] Failed to clean storage downloads: %s", exc)
@@ -629,7 +629,7 @@ async def cleanup_system(
                         shutil.rmtree(item, ignore_errors=True)
                         test_count += 1
                 except Exception:
-                    pass
+                    logger.debug("[Cleanup] Failed to remove test temp entry: %s", item, exc_info=True)
         results["test_temp_files"] = test_count
     except Exception as exc:
         logger.warning("[Cleanup] Failed to clean test temp files: %s", exc)
@@ -702,7 +702,7 @@ async def cleanup_system(
             try:
                 await redis_queue._redis.execute_command("MEMORY", "PURGE")
             except Exception:
-                pass
+                logger.debug("[Cleanup] Redis MEMORY PURGE failed", exc_info=True)
             results["redis_stale_keys"] = stale_count
         else:
             results["redis_stale_keys"] = 0

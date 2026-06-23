@@ -277,7 +277,7 @@ async def test_tongyi_image_edit_accepts_local_canvas_url_and_returns_enhanced_p
     local_url = "/api/storage/local-files/2026/05/27/source.png"
     upload_calls = []
 
-    def fake_resolve_local_public_file_path(file_url: str):
+    def fake_resolve_local_public_file_path_for_user(file_url: str, user_id=None, config=None):
         assert file_url == local_url
         return local_image
 
@@ -294,8 +294,8 @@ async def test_tongyi_image_edit_accepts_local_canvas_url_and_returns_enhanced_p
 
     monkeypatch.setattr(
         image_edit_module,
-        "resolve_local_public_file_path",
-        fake_resolve_local_public_file_path,
+        "resolve_local_public_file_path_for_user",
+        fake_resolve_local_public_file_path_for_user,
     )
     monkeypatch.setattr(
         image_edit_module,

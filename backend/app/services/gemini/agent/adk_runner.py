@@ -343,12 +343,12 @@ class ADKRunner:
             try:
                 return value.model_dump()
             except Exception:
-                pass
+                logger.debug("[ADKRunner] model_dump serialization failed; trying next serializer", exc_info=True)
         if hasattr(value, "dict"):
             try:
                 return value.dict()
             except Exception:
-                pass
+                logger.debug("[ADKRunner] dict serialization failed; trying raw __dict__", exc_info=True)
         raw_dict = getattr(value, "__dict__", None)
         if isinstance(raw_dict, dict):
             return {key: item for key, item in raw_dict.items() if not str(key).startswith("_")}

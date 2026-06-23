@@ -7,7 +7,7 @@
  * 类型先前为模块内未导出，现 export 给同模块 + 测试访问。
  */
 
-import { Node, Edge } from 'reactflow';
+import { Node, Edge } from '@xyflow/react';
 import { CustomNodeData } from './CustomNode';
 
 export interface WorkflowTemplateResultSummary {

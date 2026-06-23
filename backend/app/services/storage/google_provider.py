@@ -16,6 +16,8 @@ from .base import BaseStorageProvider, UploadResult
 
 logger = logging.getLogger(__name__)
 
+GOOGLE_OAUTH2_ENDPOINT = "https://oauth2.googleapis.com/token"
+
 
 class GoogleProvider(BaseStorageProvider):
     """Google Drive 存储提供商"""
@@ -31,7 +33,7 @@ class GoogleProvider(BaseStorageProvider):
         return Credentials(
             token=None,
             refresh_token=refresh_token,
-            token_uri="https://oauth2.googleapis.com/token",
+            token_uri=GOOGLE_OAUTH2_ENDPOINT,
             client_id=client_id,
             client_secret=client_secret
         )

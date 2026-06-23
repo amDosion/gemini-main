@@ -15,7 +15,7 @@
  */
 
 import { useEffect } from 'react';
-import type { Edge, Node, ReactFlowInstance } from 'reactflow';
+import type { Edge, Node, ReactFlowInstance } from '@xyflow/react';
 
 import type { ExecutionStatus, WorkflowEdge, WorkflowNode, WorkflowNodeData } from '../types';
 import { ActiveTemplateMeta } from '../workflowTemplateLoader';
@@ -128,7 +128,7 @@ export interface UseWorkflowEditorLoadingArgs {
   nodes: Node<WorkflowNodeData>[];
   setNodes: SetNodes;
   setEdges: SetEdges;
-  reactFlowInstance: ReactFlowInstance | null;
+  reactFlowInstance: ReactFlowInstance<WorkflowNode, WorkflowEdge> | null;
   pendingFitTokenRef: React.MutableRefObject<string | null>;
   importedExecutionLogCountRef: React.MutableRefObject<number>;
   lastResultSignatureRef: React.MutableRefObject<string | null>;

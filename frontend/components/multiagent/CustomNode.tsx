@@ -3,7 +3,7 @@
  */
 
 import React, { memo, useMemo } from 'react';
-import { Handle, Position, NodeProps, NodeResizeControl } from 'reactflow';
+import { Handle, Node, NodeProps, NodeResizeControl, Position } from '@xyflow/react';
 import {
   Clock,
   Loader2,
@@ -34,9 +34,9 @@ import {
 import { resolveNodeIconAppearance } from './workflowNodeAppearance';
 import { CachedImage } from '../common/CachedImage';
 import { RetainedAudio, RetainedVideo } from '../common/RetainedMedia';
-import '@reactflow/node-resizer/dist/style.css';
 
 export type CustomNodeData = WorkflowNodeData;
+type CustomNodeType = Node<CustomNodeData>;
 
 const statusConfig: Record<
   NodeStatus,
@@ -145,7 +145,7 @@ const dispatchScopedWorkflowEvent = <TDetail extends Record<string, unknown>>(
   return true;
 };
 
-const CustomNodeComponent: React.FC<NodeProps<CustomNodeData>> = (props) => {
+const CustomNodeComponent: React.FC<NodeProps<CustomNodeType>> = (props) => {
   const { id, data, selected } = props;
   const config =
     nodeTypeConfigs[data.type as keyof typeof nodeTypeConfigs] || nodeTypeConfigs.agent;

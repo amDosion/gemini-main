@@ -25,6 +25,7 @@ from ...core.encryption import (
 )
 from ...core.user_scoped_query import UserScopedQuery
 from .storage_service import StorageService
+from .local_provider import scope_local_storage_config_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,16 @@ class StorageManager:
             )
 
         return config
+
+    def _decrypted_provider_config(self, config: StorageConfig) -> tuple[str, Dict[str, Any]]:
+        provider = str(config.provider)
+        decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
+        if provider == "local":
+            decrypted_config = scope_local_storage_config_for_user(
+                decrypted_config,
+                self.user_id,
+            )
+        return provider, decrypted_config
     
     def get_all_configs(self, include_disabled: bool = True) -> List[Dict[str, Any]]:
         """
@@ -350,6 +361,11 @@ class StorageManager:
             
             # Decrypt config if it's encrypted
             decrypted_config = decrypt_config(config)
+            if provider == "local":
+                decrypted_config = scope_local_storage_config_for_user(
+                    decrypted_config,
+                    self.user_id,
+                )
             
             # Log masked config
             masked_config = mask_sensitive_fields(decrypted_config)
@@ -442,9 +458,7 @@ class StorageManager:
         try:
             config = self._resolve_storage_config(storage_id)
             
-            # Decrypt configuration
-            decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
-            provider = str(config.provider)
+            provider, decrypted_config = self._decrypted_provider_config(config)
             
             # Upload file
             logger.info(
@@ -484,8 +498,7 @@ class StorageManager:
         """
         try:
             config = self._resolve_storage_config(storage_id)
-            decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
-            provider = str(config.provider)
+            provider, decrypted_config = self._decrypted_provider_config(config)
 
             browse_result = await StorageService.browse_files(
                 provider=provider,
@@ -521,8 +534,7 @@ class StorageManager:
         """
         try:
             config = self._resolve_storage_config(storage_id)
-            decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
-            provider = str(config.provider)
+            provider, decrypted_config = self._decrypted_provider_config(config)
 
             count_result = await StorageService.count_files(
                 provider=provider,
@@ -558,8 +570,7 @@ class StorageManager:
         """
         try:
             config = self._resolve_storage_config(storage_id)
-            decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
-            provider = str(config.provider)
+            provider, decrypted_config = self._decrypted_provider_config(config)
             result = await StorageService.delete_item(
                 provider=provider,
                 config=decrypted_config,
@@ -595,8 +606,7 @@ class StorageManager:
         """
         try:
             config = self._resolve_storage_config(storage_id)
-            decrypted_config = decrypt_config(dict(config.config))  # type: ignore[arg-type]
-            provider = str(config.provider)
+            provider, decrypted_config = self._decrypted_provider_config(config)
             result = await StorageService.rename_item(
                 provider=provider,
                 config=decrypted_config,

@@ -380,7 +380,7 @@ class ErrorRecoveryStrategy:
         Returns:
             Delay in seconds
         """
-        import random
+        import secrets
         
         # Exponential backoff
         delay = config.initial_delay * (config.exponential_base ** attempt)
@@ -390,7 +390,7 @@ class ErrorRecoveryStrategy:
         
         # Add jitter if enabled
         if config.jitter:
-            delay *= (0.5 + random.random())  # Random factor between 0.5 and 1.5
+            delay *= 0.5 + secrets.SystemRandom().random()  # Random factor between 0.5 and 1.5
         
         return delay
     

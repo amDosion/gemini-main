@@ -5,7 +5,6 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from typing import Any, Optional, Callable
 import asyncio
 import uuid
-import json
 import logging
 
 import httpx
@@ -18,7 +17,7 @@ from ...utils.log_sanitization import (
     summarize_text_for_log,
     summarize_url_for_log,
 )
-from ...utils.url_security import validate_outbound_http_url
+from ...utils.url_security import UnsafeURLError, get_with_redirect_guard, validate_outbound_http_url
 from ...utils.sse import encode_sse_data
 
 router = APIRouter(prefix="/api", tags=["browse"])
@@ -267,6 +266,8 @@ def take_screenshot_selenium(url: str) -> Optional[str]:
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
 
+            validate_outbound_http_url(getattr(driver, "current_url", url) or url)
+
             # Take screenshot
             screenshot_png = driver.get_screenshot_as_png()
 
@@ -405,7 +406,10 @@ async def browse_webpage(
     operation_id = request.operation_id or str(uuid.uuid4())
 
     # Validate URL to prevent SSRF
-    validate_outbound_http_url(url)
+    try:
+        url = validate_outbound_http_url(url)
+    except UnsafeURLError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     log_url = summarize_url_for_log(url)
 
     if _logger and _LOG_PREFIXES:
@@ -462,15 +466,14 @@ async def browse_webpage(
                         progress=50
                     )
                 
-                from bs4 import BeautifulSoup
-
                 client = await _get_async_http_client()
-                response = await client.get(
+                response, _final_title_url = await get_with_redirect_guard(
+                    client,
                     url,
-                    timeout=10.0,
                     headers={
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                     },
+                    max_redirects=5,
                 )
                 title = extract_title_from_html(response.text)
 
@@ -542,14 +545,17 @@ async def browse_webpage(
                 progress=40
             )
 
-        from bs4 import BeautifulSoup
-
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
 
         client = await _get_async_http_client()
-        response = await client.get(url, timeout=10.0, headers=headers)
+        response, _final_url = await get_with_redirect_guard(
+            client,
+            url,
+            headers=headers,
+            max_redirects=5,
+        )
         response.raise_for_status()
 
         # Extract title
@@ -593,6 +599,10 @@ async def browse_webpage(
         )
 
     except Exception as e:
+        if isinstance(e, UnsafeURLError):
+            if _progress_tracker:
+                await _progress_tracker.send_error(operation_id, f"URL rejected by outbound policy")
+            raise HTTPException(status_code=400, detail=str(e))
         if isinstance(e, httpx.TimeoutException):
             if _logger and _LOG_PREFIXES:
                 _logger.error(f"{_LOG_PREFIXES['error']} Timeout while accessing {log_url}")

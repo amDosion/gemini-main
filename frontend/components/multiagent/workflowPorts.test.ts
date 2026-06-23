@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Edge, Node } from 'reactflow';
+import type { Edge, Node } from '@xyflow/react';
 import type { WorkflowNodeData } from './types';
 import {
   buildHandlesForSide,

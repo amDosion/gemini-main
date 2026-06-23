@@ -12,7 +12,7 @@ from urllib.parse import unquote
 import httpx
 
 from ...utils.log_sanitization import summarize_url_for_log
-from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path
+from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path_for_user
 from .base import DASHSCOPE_BASE_URL
 from .file_upload import upload_bytes_to_dashscope_async, upload_to_dashscope_async
 
@@ -34,11 +34,13 @@ class TongyiVirtualTryOnService:
         self,
         api_key: str,
         *,
+        user_id: Optional[str] = None,
         timeout: float = 120.0,
         poll_interval: float = 5.0,
         poll_timeout: float = 600.0,
     ) -> None:
         self.api_key = api_key
+        self.user_id = user_id
         self.timeout = timeout
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
@@ -115,7 +117,10 @@ class TongyiVirtualTryOnService:
         if url.startswith(("http://", "https://", "oss://")):
             return url
         if url.startswith(f"{DEFAULT_LOCAL_URL_PREFIX}/"):
-            local_path = resolve_local_public_file_path(url) or resolve_local_public_file_path(unquote(url))
+            local_path = (
+                resolve_local_public_file_path_for_user(url, self.user_id)
+                or resolve_local_public_file_path_for_user(unquote(url), self.user_id)
+            )
             if not local_path or not local_path.exists() or not local_path.is_file():
                 raise RuntimeError(
                     "Tongyi virtual try-on local image file not found: "

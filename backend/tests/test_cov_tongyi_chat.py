@@ -523,7 +523,7 @@ def test_local_path_to_data_url_reads_allow_rooted(provider, tmp_path, monkeypat
     # so the resolver call site (and patch target) now lives there.
     from app.services.tongyi import chat_multimodal
 
-    monkeypatch.setattr(chat_multimodal, "resolve_local_public_file_path", lambda value: img)
+    monkeypatch.setattr(chat_multimodal, "resolve_local_public_file_path_for_user", lambda value, user_id=None, config=None: img)
     data_url = provider._local_path_to_data_url("/api/storage/local-files/x.png")
     assert data_url.startswith("data:image/png;base64,")
     assert base64.b64decode(data_url.split(",", 1)[1]) == b"\x89PNG\r\n\x1a\nDATA"

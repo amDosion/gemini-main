@@ -5,7 +5,7 @@
  * （主组件瘦身 — 单文件 <800 行目标）。
  */
 
-import { Node, Edge } from 'reactflow';
+import { Node, Edge } from '@xyflow/react';
 import { CustomNodeData } from './CustomNode';
 
 /** 将工作流（节点 + 边 + metadata）序列化为格式化 JSON 字符串。剥离运行时执行状态。 */

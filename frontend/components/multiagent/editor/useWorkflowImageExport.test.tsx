@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactFlowInstance } from 'reactflow';
+import type { ReactFlowInstance } from '@xyflow/react';
+import type { WorkflowEdge, WorkflowNode } from '../types';
 import { useWorkflowImageExport } from './useWorkflowImageExport';
 
 const { getNodesBoundsMock, toPngMock, toSvgMock, triggerBrowserDownloadMock } = vi.hoisted(
@@ -13,7 +14,7 @@ const { getNodesBoundsMock, toPngMock, toSvgMock, triggerBrowserDownloadMock } =
   })
 );
 
-vi.mock('reactflow', () => ({
+vi.mock('@xyflow/react', () => ({
   getNodesBounds: getNodesBoundsMock,
 }));
 
@@ -49,8 +50,19 @@ describe('useWorkflowImageExport', () => {
     document.body.appendChild(wrapper);
 
     const reactFlowInstance = {
-      getNodes: () => [{ id: 'node-1', position: { x: 0, y: 0 }, data: {} }],
-    } as unknown as ReactFlowInstance;
+      getNodes: () => [
+        {
+          id: 'node-1',
+          position: { x: 0, y: 0 },
+          data: {
+            label: 'Node 1',
+            description: '',
+            icon: 'N',
+            iconColor: '#14b8a6',
+          },
+        },
+      ],
+    } as unknown as ReactFlowInstance<WorkflowNode, WorkflowEdge>;
     const addLog = vi.fn();
 
     const { result } = renderHook(() =>

@@ -9,7 +9,7 @@ and retry mechanisms.
 import mimetypes
 import asyncio
 import inspect
-import random
+import secrets
 import time
 import re
 import base64
@@ -318,7 +318,7 @@ async def retry_with_backoff(
             
             # Add jitter
             if jitter:
-                delay *= (0.5 + random.random() * 0.5)
+                delay *= 0.5 + secrets.SystemRandom().random() * 0.5
             
             logger.debug(f"Attempt {attempt + 1} failed, retrying in {delay:.2f}s: {e}")
             await asyncio.sleep(delay)

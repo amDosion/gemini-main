@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useState } from 'react';
-import type { Edge, Node } from 'reactflow';
+import type { Edge, Node } from '@xyflow/react';
 
 import type { WorkflowEdge, WorkflowFinalResult, WorkflowNode, WorkflowNodeData } from '../types';
 import type { ActiveTemplateMeta } from '../workflowTemplateLoader';

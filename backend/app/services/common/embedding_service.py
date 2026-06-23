@@ -164,7 +164,7 @@ def chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 100) -> Li
 
 def generate_document_id(filename: str, content: str) -> str:
     """Generate a unique ID for a document"""
-    content_hash = hashlib.md5(content.encode()).hexdigest()[:8]
+    content_hash = hashlib.sha256(content.encode()).hexdigest()[:8]
     return f"{filename}_{content_hash}"
 
 

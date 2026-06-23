@@ -24,6 +24,7 @@ import os
 import sys
 import time
 import platform
+import tempfile
 
 # 获取 logger（不在模块级别配置 basicConfig，避免与全局配置冲突）
 # 当作为独立进程运行时，在 main() 中配置日志
@@ -32,13 +33,14 @@ logger = logging.getLogger(__name__)
 # Unix Socket 路径（Windows 使用命名管道路径）
 if platform.system() == 'Windows':
     # Windows 使用临时目录
-    _temp_dir = Path(os.environ.get('TEMP', os.environ.get('TMP', '/tmp')))
+    _temp_dir = Path(tempfile.gettempdir())
     CLIENT_SOCKET_PATH = _temp_dir / "gemini_key_service_client.sock"
     ADMIN_SOCKET_PATH = _temp_dir / "gemini_key_service_admin.sock"
 else:
-    # Unix/Linux 使用 /tmp
-    CLIENT_SOCKET_PATH = Path("/tmp/gemini_key_service_client.sock")
-    ADMIN_SOCKET_PATH = Path("/tmp/gemini_key_service_admin.sock")
+    # Unix/Linux 使用运行时临时目录；部署可通过 GEMINI_KEY_SERVICE_SOCKET_DIR 收紧到私有目录。
+    _socket_dir = Path(os.environ.get("GEMINI_KEY_SERVICE_SOCKET_DIR") or tempfile.gettempdir())
+    CLIENT_SOCKET_PATH = _socket_dir / "gemini_key_service_client.sock"
+    ADMIN_SOCKET_PATH = _socket_dir / "gemini_key_service_admin.sock"
 
 # Key Service 进程内存存储（模块级变量）
 _encryption_key: Optional[str] = None
@@ -347,7 +349,7 @@ class KeyServiceServer:
             try:
                 conn.send(json.dumps({'error': '内部错误'}).encode())
             except Exception:
-                pass
+                logger.debug("[KeyService] Failed to send generic client error response", exc_info=True)
         finally:
             conn.close()
     
@@ -382,7 +384,7 @@ class KeyServiceServer:
             try:
                 conn.send(json.dumps({'error': '内部错误'}).encode())
             except Exception:
-                pass
+                logger.debug("[KeyService] Failed to send generic admin error response", exc_info=True)
         finally:
             conn.close()
 

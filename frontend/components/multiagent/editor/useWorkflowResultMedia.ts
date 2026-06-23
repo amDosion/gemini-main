@@ -19,7 +19,7 @@
  */
 
 import { useCallback, useMemo } from 'react';
-import type { Node } from 'reactflow';
+import type { Node } from '@xyflow/react';
 
 import type { WorkflowNode, WorkflowNodeData } from '../types';
 import { isNonResultWorkflowOutputNode } from '../workflowExport';

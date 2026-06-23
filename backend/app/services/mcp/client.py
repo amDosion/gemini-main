@@ -4,13 +4,13 @@ MCP 客户端实现
 """
 
 from typing import Dict, Any, Optional, List
+import asyncio
 import logging
 import time
 
 from ...core.config import settings
 from ...utils.error_handler import _mask_keys_in_text
 from ...utils.log_sanitization import summarize_text_for_log
-from ...utils.url_security import UnsafeURLError, validate_outbound_http_url_async
 from .types import (
     MCPServerConfig,
     MCPServerType,
@@ -18,6 +18,7 @@ from .types import (
     MCPToolResult,
     MCPStdioPolicyError,
     MCPUrlPolicyError,
+    validate_mcp_remote_url_policy,
     validate_mcp_stdio_command_policy,
 )
 
@@ -223,13 +224,14 @@ class MCPClient:
             MCPServerType.SSE,
         ):
             try:
-                # Event-loop-safe variant: bounds DNS resolution so a hostile/slow
-                # resolver on a user-supplied MCP URL cannot stall the event loop.
-                await validate_outbound_http_url_async(self.config.url or "")
-            except UnsafeURLError as exc:
-                raise MCPUrlPolicyError(
-                    f"MCP server URL rejected by outbound policy: {exc}"
-                ) from exc
+                await asyncio.to_thread(
+                    validate_mcp_remote_url_policy,
+                    self.config,
+                    allowed_hosts=settings.mcp_http_allowed_hosts,
+                    context="mcp-client-connect",
+                )
+            except MCPUrlPolicyError:
+                raise
 
         try:
             logger.info("Connecting to MCP server...")

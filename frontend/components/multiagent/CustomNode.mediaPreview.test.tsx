@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
-vi.mock('reactflow', () => ({
+vi.mock('@xyflow/react', () => ({
   Handle: () => <div data-testid="handle" />,
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   NodeResizeControl: () => null,
@@ -29,10 +29,13 @@ describe('CustomNode media preview', () => {
         id="node-media"
         type="custom"
         selected={false}
-        xPos={0}
-        yPos={0}
+        positionAbsoluteX={0}
+        positionAbsoluteY={0}
         zIndex={1}
         isConnectable
+        draggable={false}
+        selectable
+        deletable
         dragging={false}
         data={{
           type: 'agent',
@@ -69,10 +72,13 @@ describe('CustomNode media preview', () => {
           id="node-image"
           type="custom"
           selected={false}
-          xPos={0}
-          yPos={0}
+          positionAbsoluteX={0}
+          positionAbsoluteY={0}
           zIndex={1}
           isConnectable
+          draggable={false}
+          selectable
+          deletable
           dragging={false}
           data={{
             type: 'end',
@@ -117,10 +123,13 @@ describe('CustomNode media preview', () => {
         id="node-cache"
         type="custom"
         selected={false}
-        xPos={0}
-        yPos={0}
+        positionAbsoluteX={0}
+        positionAbsoluteY={0}
         zIndex={1}
         isConnectable
+        draggable={false}
+        selectable
+        deletable
         dragging={false}
         data={{
           type: 'agent',

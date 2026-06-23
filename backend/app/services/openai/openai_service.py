@@ -132,6 +132,7 @@ class OpenAIService(BaseProviderService):
             self._image_editor = ImageEditor(
                 self.api_key,
                 self.api_url,
+                user_id=self.user_id,
                 client=self.client,
                 timeout=self.timeout,
                 max_retries=self.max_retries,

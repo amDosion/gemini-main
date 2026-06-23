@@ -17,7 +17,7 @@
  * - useWorkflowEditorLoading.ts    → executionStatus + loadedWorkflow sync
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Node,
   Edge,
@@ -25,8 +25,8 @@ import {
   useEdgesState,
   ReactFlowInstance,
   ReactFlowProvider,
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 
 import { ExecutionLogPanel } from './ExecutionLogPanel';
 import { WorkflowTemplateSelector, type WorkflowTemplate } from './WorkflowTemplateSelector';
@@ -102,9 +102,10 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
   const pendingFitTokenRef = useRef<string | null>(null);
   const importedExecutionLogCountRef = useRef(0);
   const lastResultSignatureRef = useRef<string | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowNodeData>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowNode>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<WorkflowEdge>([]);
+  const [reactFlowInstance, setReactFlowInstance] =
+    useState<ReactFlowInstance<WorkflowNode, WorkflowEdge> | null>(null);
 
   // Ref-shadow of nodes/edges so callbacks can read latest values without
   // listing nodes/edges in their useCallback deps (prevents callback churn
@@ -112,7 +113,7 @@ const MultiAgentWorkflowEditorReactFlowInner: React.FC<MultiAgentWorkflowEditorR
   // every node edit).
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
-  useEffect(() => {
+  useLayoutEffect(() => {
     nodesRef.current = nodes;
     edgesRef.current = edges;
   }, [nodes, edges]);

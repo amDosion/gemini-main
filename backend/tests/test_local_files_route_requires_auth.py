@@ -9,7 +9,8 @@ This round adds authentication (require_current_user) to the route. Same-origin
 <img> requests still authenticate via the httpOnly access_token cookie, so media
 display is unaffected; unauthenticated callers are rejected.
 
-(Per-object ownership remains a follow-up: the default layout is not user-scoped.)
+The route also rejects paths whose first segment is not the authenticated
+user's normalized owner id, so sibling-user media is not resolved.
 """
 
 from fastapi import FastAPI
@@ -27,3 +28,16 @@ def _client() -> TestClient:
 def test_local_files_route_requires_authentication():
     resp = _client().get("/api/storage/local-files/2026/05/31/some.png")
     assert resp.status_code == 401
+
+
+def test_local_files_route_rejects_other_user_prefix(monkeypatch):
+    client = _client()
+    client.app.dependency_overrides[storage_mod.require_current_user] = lambda: "user-b"
+
+    def _must_not_resolve(*args, **kwargs):
+        raise AssertionError("other-user local URL must be rejected before path resolution")
+
+    monkeypatch.setattr(storage_mod, "resolve_local_public_file_path", _must_not_resolve)
+
+    resp = client.get("/api/storage/local-files/user-a/2026/05/31/some.png")
+    assert resp.status_code == 404

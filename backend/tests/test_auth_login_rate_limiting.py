@@ -21,6 +21,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
 from app.models.db_models import IPBlocklist, LoginAttempt, SystemConfig, User
+from app.services.common import auth_service as auth_service_mod
 from app.services.common.auth_service import AuthService, LoginRequest
 
 
@@ -94,6 +95,23 @@ def _add_failed_attempts(
 # ---------------------------------------------------------------------------
 
 class TestEmailLevelLockout:
+    def test_process_login_attempt_locks_are_bounded_for_high_cardinality_inputs(self):
+        """Process-level lock allocation must not grow with attacker emails/IPs."""
+        assert len(auth_service_mod._LOGIN_ATTEMPT_LOCK_STRIPES) == (
+            auth_service_mod._LOGIN_ATTEMPT_LOCK_STRIPE_COUNT
+        )
+
+        for index in range(auth_service_mod._LOGIN_ATTEMPT_LOCK_STRIPE_COUNT * 3):
+            with auth_service_mod._process_login_attempt_locks(
+                f"attacker-{index}@example.com",
+                f"203.0.113.{index % 255}",
+            ):
+                pass
+
+        assert len(auth_service_mod._LOGIN_ATTEMPT_LOCK_STRIPES) == (
+            auth_service_mod._LOGIN_ATTEMPT_LOCK_STRIPE_COUNT
+        )
+
     def test_blocked_after_max_email_attempts(self, db_session):
         """_check_login_attempts returns (False, msg) once the email failure
         count reaches max_login_attempts within the lockout window."""
@@ -115,6 +133,29 @@ class TestEmailLevelLockout:
         svc = AuthService(db_session)
         allowed, _ = svc._check_login_attempts("victim@example.com", "1.2.3.4")
         assert allowed is True
+
+    def test_failed_attempt_reservation_rechecks_threshold_before_insert(self, db_session):
+        _seed_system_config(db_session, max_login_attempts=2, max_ip_attempts=100)
+        _add_failed_attempts(
+            db_session, email="victim@example.com", ip_address="1.2.3.4", count=1
+        )
+        svc = AuthService(db_session)
+
+        svc._record_failed_login_attempt_or_raise("victim@example.com", "1.2.3.4")
+
+        assert db_session.query(LoginAttempt).filter(
+            LoginAttempt.email == "victim@example.com",
+            LoginAttempt.success == False,
+        ).count() == 2
+
+        with pytest.raises(HTTPException) as exc_info:
+            svc._record_failed_login_attempt_or_raise("victim@example.com", "1.2.3.4")
+
+        assert exc_info.value.status_code == 429
+        assert db_session.query(LoginAttempt).filter(
+            LoginAttempt.email == "victim@example.com",
+            LoginAttempt.success == False,
+        ).count() == 2
 
 
 # ---------------------------------------------------------------------------

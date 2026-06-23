@@ -251,7 +251,8 @@ class ConversationalImageEditService:
     def _build_enhance_image_part(
         self,
         reference_images: Optional[List[Dict[str, Any]]],
-        genai_types: Any
+        genai_types: Any,
+        user_id: Optional[str] = None,
     ) -> Optional[Any]:
         """
         为提示词增强构建参考图 Part（仅取第一张）。
@@ -277,8 +278,8 @@ class ConversationalImageEditService:
 
         # 本地存储 URL：读取文件转为 bytes
         if raw_url.startswith('/api/storage/local-files/'):
-            from ...storage.local_provider import resolve_local_public_file_path
-            local_file_path = resolve_local_public_file_path(raw_url)
+            from ...storage.local_provider import resolve_local_public_file_path_for_user
+            local_file_path = resolve_local_public_file_path_for_user(raw_url, user_id)
             if local_file_path and local_file_path.exists():
                 with open(local_file_path, 'rb') as lf:
                     image_bytes = lf.read()
@@ -316,6 +317,7 @@ class ConversationalImageEditService:
         model_hint: Optional[str] = None,
         reference_images: Optional[List[Dict[str, Any]]] = None,
         thinking_level: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         两段式提示词增强：先用文本模型改写，再用于图片编辑。
@@ -356,7 +358,7 @@ class ConversationalImageEditService:
         try:
             if genai_types:
                 request_parts: List[Any] = []
-                image_part = self._build_enhance_image_part(reference_images, genai_types)
+                image_part = self._build_enhance_image_part(reference_images, genai_types, user_id=user_id)
                 if image_part is not None:
                     request_parts.append(image_part)
                 request_parts.append(
@@ -862,7 +864,10 @@ class ConversationalImageEditService:
                         try:
                             cfg = json.loads(chat_session.config_json)
                         except Exception:
-                            pass
+                            logger.debug(
+                                "[ConversationalImageEdit] Failed to parse chat session config JSON",
+                                exc_info=True,
+                            )
                     enable_thinking = self._resolve_enable_thinking(cfg)
                     thinking_cfg = self._build_thinking_config(chat_session.model_name, cfg)
                     # ✅ 禁用安全策略，避免 IMAGE_RECITATION 错误
@@ -892,7 +897,10 @@ class ConversationalImageEditService:
                         try:
                             cfg = json.loads(chat_session.config_json)
                         except Exception:
-                            pass
+                            logger.debug(
+                                "[ConversationalImageEdit] Failed to parse chat session config JSON",
+                                exc_info=True,
+                            )
                     enable_thinking = self._resolve_enable_thinking(cfg)
                     thinking_config = self._build_thinking_config_dict(chat_session.model_name, cfg)
                     if thinking_config:
@@ -953,6 +961,7 @@ class ConversationalImageEditService:
                 model_hint=enhance_model or model_name,
                 reference_images=reference_images,
                 thinking_level=enhance_thinking_level,
+                user_id=user_id,
             )
             if enhanced_prompt_text:
                 prompt = enhanced_prompt_text
@@ -1017,9 +1026,9 @@ class ConversationalImageEditService:
                                 })
                     elif url.startswith('/api/storage/local-files/'):
                         # 本地存储 URL：直接从本地文件系统读取
-                        from ...storage.local_provider import resolve_local_public_file_path
+                        from ...storage.local_provider import resolve_local_public_file_path_for_user
                         safe_url = summarize_url_for_log(url)
-                        local_file_path = resolve_local_public_file_path(url)
+                        local_file_path = resolve_local_public_file_path_for_user(url, user_id)
                         if local_file_path and local_file_path.exists():
                             with open(local_file_path, 'rb') as lf:
                                 image_bytes = lf.read()
@@ -1550,7 +1559,11 @@ class ConversationalImageEditService:
         """
         return self.chat_session_manager.delete_chat_session(chat_id)
     
-    def _convert_reference_images(self, reference_images: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _convert_reference_images(
+        self,
+        reference_images: Dict[str, Any],
+        user_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """
         将 reference_images 字典格式转换为列表格式
 
@@ -1578,9 +1591,9 @@ class ConversationalImageEditService:
                         # allow-rooted local storage. A raw absolute / file:// path
                         # (resolve_local_public_file_path returns None for those) is
                         # denied rather than read off disk.
-                        from ...storage.local_provider import resolve_local_public_file_path
+                        from ...storage.local_provider import resolve_local_public_file_path_for_user
 
-                        candidate = resolve_local_public_file_path(path_text)
+                        candidate = resolve_local_public_file_path_for_user(path_text, user_id)
                         if candidate is None or not candidate.exists() or not candidate.is_file():
                             return None
                         guessed_mime = str(mimetypes.guess_type(str(candidate))[0] or "").lower()
@@ -1650,9 +1663,9 @@ class ConversationalImageEditService:
                         elif url.startswith('/') or url.startswith('file://') or Path(url).expanduser().exists():
                             # CANON-027/028: resolve only within the allow-rooted local
                             # storage; a raw absolute / file:// path is denied (not read).
-                            from ...storage.local_provider import resolve_local_public_file_path
+                            from ...storage.local_provider import resolve_local_public_file_path_for_user
 
-                            candidate = resolve_local_public_file_path(url)
+                            candidate = resolve_local_public_file_path_for_user(url, user_id)
                             if candidate is not None and candidate.exists() and candidate.is_file():
                                 guessed_mime = str(mimetypes.guess_type(str(candidate))[0] or "").lower()
                                 if not guessed_mime or guessed_mime.startswith("image/"):
@@ -1779,7 +1792,7 @@ class ConversationalImageEditService:
             logger.info(f"[ConversationalImageEdit] Created new chat session: {chat_id}")
         
         # 转换 reference_images 格式
-        reference_images_list = self._convert_reference_images(reference_images)
+        reference_images_list = self._convert_reference_images(reference_images, user_id=user_id)
         
         # 提取图片相关配置（用于单轮覆盖，例如改变分辨率）
         edit_config = {}

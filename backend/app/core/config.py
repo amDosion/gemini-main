@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Optional, Union
 from urllib.parse import urlparse
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -70,7 +69,7 @@ class Settings(BaseSettings):
     """应用配置类"""
 
     # 服务器配置
-    host: str = os.getenv("HOST", "0.0.0.0")
+    host: str = os.getenv("HOST", "127.0.0.1")
     port: int = int(os.getenv("PORT", "21574"))
 
     # 数据库配置（必须设置，仅支持 PostgreSQL）
@@ -137,6 +136,13 @@ class Settings(BaseSettings):
     storage_preview_allowed_private_hosts_raw: str = os.getenv(
         "STORAGE_PREVIEW_ALLOWED_PRIVATE_HOSTS", ""
     )
+    # SDK-owned transports (boto3 S3-compatible endpoints and MCP HTTP/SSE)
+    # cannot use the repo's pinned httpx network backend. Require explicit
+    # deploy-time host allowlists before those SDKs are allowed to connect.
+    storage_s3_compatible_allowed_endpoint_hosts_raw: str = os.getenv(
+        "STORAGE_S3_COMPATIBLE_ALLOWED_ENDPOINT_HOSTS", ""
+    )
+    mcp_http_allowed_hosts_raw: str = os.getenv("MCP_HTTP_ALLOWED_HOSTS", "")
     # 注意：jwt_secret_key 不再从环境变量读取，由 jwt_utils.py 管理
     # 保留此字段仅用于向后兼容，实际使用 jwt_utils.py 中的 JWT_SECRET_KEY
     jwt_access_token_expire_minutes: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
@@ -167,6 +173,23 @@ class Settings(BaseSettings):
             seen.add(command)
             commands.append(command)
         return commands
+
+    @staticmethod
+    def _parse_host_list(raw: str) -> set[str]:
+        hosts: set[str] = set()
+        for item in str(raw or "").split(","):
+            host = item.strip().strip(".").lower()
+            if host:
+                hosts.add(host)
+        return hosts
+
+    @property
+    def storage_s3_compatible_allowed_endpoint_hosts(self) -> set[str]:
+        return self._parse_host_list(self.storage_s3_compatible_allowed_endpoint_hosts_raw)
+
+    @property
+    def mcp_http_allowed_hosts(self) -> set[str]:
+        return self._parse_host_list(self.mcp_http_allowed_hosts_raw)
 
     @property
     def adk_runtime_strategy(self) -> str:

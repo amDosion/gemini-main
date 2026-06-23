@@ -31,9 +31,10 @@ from sqlalchemy.ext.asyncio import (
 # 复用已有 .env 加载与 DATABASE_URL 校验（同步模块已完成校验）
 from .database import Base, DATABASE_URL  # noqa: F401  (Base re-export 供 async 路径使用)
 
-# database.py raises ValueError when DATABASE_URL is falsy; this assertion narrows
-# the type from Optional[str] to str so type checkers accept _to_async_url(DATABASE_URL).
-assert DATABASE_URL is not None, "DATABASE_URL must be set (validated in database.py)"
+# database.py raises ValueError when DATABASE_URL is falsy; keep the runtime
+# guard here too so optimized Python builds do not remove the check.
+if DATABASE_URL is None:
+    raise RuntimeError("DATABASE_URL must be set (validated in database.py)")
 
 
 def _to_async_url(url: str) -> str:

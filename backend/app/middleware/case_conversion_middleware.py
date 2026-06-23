@@ -154,6 +154,7 @@ class CaseConversionMiddleware:
             try:
                 match, _ = route.matches(scope)
             except Exception:
+                logger.debug("[CaseConversion] Route match probe failed", exc_info=True)
                 continue
             if match is Match.FULL:
                 opts = CaseConversionOptions.from_endpoint(route.endpoint)

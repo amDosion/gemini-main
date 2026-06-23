@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -71,14 +72,14 @@ class FakeMcpManager:
     def __init__(self):
         self.created_sessions = []
 
-    async def create_session(self, session_id, config):
+    async def create_session(self, session_id, config, **kwargs):
         self.created_sessions.append((session_id, config.url))
 
-    async def list_tools(self, session_id):
+    async def list_tools(self, session_id, **kwargs):
         assert session_id.startswith("chat:user-1:remote:")
         return [FakeTool()]
 
-    async def call_tool(self, session_id, tool_name, arguments):
+    async def call_tool(self, session_id, tool_name, arguments, **kwargs):
         assert session_id.startswith("chat:user-1:remote:")
         assert tool_name == "lookup"
         assert arguments == {"q": "abc"}
@@ -94,12 +95,12 @@ class FailingCommitDb(FakeDb):
 
 
 class FailingToolsMcpManager(FakeMcpManager):
-    async def list_tools(self, session_id):
+    async def list_tools(self, session_id, **kwargs):
         raise RuntimeError("tool list echoed secret-token")
 
 
 class FailingInvokeMcpManager(FakeMcpManager):
-    async def call_tool(self, session_id, tool_name, arguments):
+    async def call_tool(self, session_id, tool_name, arguments, **kwargs):
         raise RuntimeError("tool invoke echoed secret-token")
 
 
@@ -116,6 +117,12 @@ def _client(db, monkeypatch, manager=None):
     app.include_router(mcp_config.router)
     app.dependency_overrides[mcp_config.require_current_user] = lambda: "user-1"
     app.dependency_overrides[mcp_config.get_db] = lambda: db
+    monkeypatch.setattr(
+        mcp_config.settings,
+        "mcp_http_allowed_hosts_raw",
+        "mcp.example.test",
+        raising=False,
+    )
     if manager is not None:
         monkeypatch.setattr(mcp_config, "get_mcp_manager", lambda: manager)
     return TestClient(app)
@@ -128,6 +135,20 @@ def _http_config_json() -> str:
                 "remote": {
                     "type": "http",
                     "url": "https://mcp.example.test/rpc",
+                }
+            }
+        }
+    )
+
+
+def _stdio_config_json() -> str:
+    return json.dumps(
+        {
+            "mcpServers": {
+                "local": {
+                    "type": "stdio",
+                    "command": sys.executable,
+                    "args": [],
                 }
             }
         }
@@ -167,6 +188,35 @@ def test_mcp_config_update_response_model(monkeypatch):
     assert body["updated_at"] is None
 
 
+def test_mcp_config_rejects_stdio_save_for_non_admin(monkeypatch):
+    monkeypatch.setattr(mcp_config.settings, "mcp_stdio_command_policy", "allow_all", raising=False)
+    db = FakeDb(is_admin=False)
+
+    with _client(db, monkeypatch) as client:
+        response = client.put(
+            "/api/mcp/config",
+            json={"config_json": _stdio_config_json()},
+        )
+
+    assert response.status_code == 403
+    assert "stdio MCP server" in response.json()["detail"]
+    assert db.committed is False
+
+
+def test_mcp_config_allows_stdio_save_for_admin(monkeypatch):
+    monkeypatch.setattr(mcp_config.settings, "mcp_stdio_command_policy", "allow_all", raising=False)
+    db = FakeDb(is_admin=True)
+
+    with _client(db, monkeypatch) as client:
+        response = client.put(
+            "/api/mcp/config",
+            json={"config_json": _stdio_config_json()},
+        )
+
+    assert response.status_code == 200
+    assert db.committed is True
+
+
 def test_mcp_tools_response_model(monkeypatch):
     db = FakeDb(record=FakeRecord(_http_config_json()))
     manager = FakeMcpManager()
@@ -181,6 +231,19 @@ def test_mcp_tools_response_model(monkeypatch):
         "tools": [{"name": "lookup", "description": "Lookup data"}],
     }
     assert manager.created_sessions
+
+
+def test_mcp_tools_rejects_stale_stdio_config_for_non_admin(monkeypatch):
+    monkeypatch.setattr(mcp_config.settings, "mcp_stdio_command_policy", "allow_all", raising=False)
+    db = FakeDb(record=FakeRecord(_stdio_config_json()), is_admin=False)
+    manager = FakeMcpManager()
+
+    with _client(db, monkeypatch, manager=manager) as client:
+        response = client.get("/api/mcp/config/tools/local")
+
+    assert response.status_code == 403
+    assert "stdio MCP server" in response.json()["detail"]
+    assert manager.created_sessions == []
 
 
 def test_mcp_tool_invoke_response_model_preserves_json_result(monkeypatch):
@@ -201,6 +264,22 @@ def test_mcp_tool_invoke_response_model_preserves_json_result(monkeypatch):
     assert body["result"] == {"items": [1, None, {"ok": True}]}
     assert body["error"] is None
     assert body["is_error"] is False
+
+
+def test_mcp_tool_invoke_rejects_stale_stdio_config_for_non_admin(monkeypatch):
+    monkeypatch.setattr(mcp_config.settings, "mcp_stdio_command_policy", "allow_all", raising=False)
+    db = FakeDb(record=FakeRecord(_stdio_config_json()), is_admin=False)
+    manager = FakeMcpManager()
+
+    with _client(db, monkeypatch, manager=manager) as client:
+        response = client.post(
+            "/api/mcp/config/tools/local/invoke",
+            json={"toolName": "lookup", "arguments": {"q": "abc"}},
+        )
+
+    assert response.status_code == 403
+    assert "stdio MCP server" in response.json()["detail"]
+    assert manager.created_sessions == []
 
 
 def test_mcp_config_save_error_log_is_summarized(monkeypatch, caplog):

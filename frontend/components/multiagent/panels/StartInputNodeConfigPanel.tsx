@@ -11,7 +11,7 @@
  */
 
 import React from 'react';
-import { Node } from 'reactflow';
+import { Node } from '@xyflow/react';
 import { FileSpreadsheet, Image as ImageIcon, Mic, Upload, Video, X } from 'lucide-react';
 import { CustomNodeData } from '../CustomNode';
 import { NodeType } from '../nodeTypeConfigs';

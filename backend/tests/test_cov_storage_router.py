@@ -1172,8 +1172,8 @@ def test_get_prepared_storage_download_serves_file(client, monkeypatch, tmp_path
 
 
 def test_local_files_missing_resolves_404(client, monkeypatch):
-    monkeypatch.setattr(storage_mod, "resolve_local_public_file_path", lambda url: None)
-    resp = client.get("/api/storage/local-files/a/b.png")
+    monkeypatch.setattr(storage_mod, "resolve_local_public_file_path", lambda url, config=None: None)
+    resp = client.get(f"/api/storage/local-files/{TEST_USER}/a/b.png")
     assert resp.status_code == 404
     assert resp.json()["detail"] == "File not found"
 
@@ -1181,11 +1181,13 @@ def test_local_files_missing_resolves_404(client, monkeypatch):
 def test_local_files_serves_existing_file(client, monkeypatch, tmp_path):
     f = tmp_path / "pic.png"
     f.write_bytes(b"\x89PNG\r\n")
-    monkeypatch.setattr(storage_mod, "resolve_local_public_file_path", lambda url: f)
-    resp = client.get("/api/storage/local-files/pic.png")
+    monkeypatch.setattr(storage_mod, "resolve_local_public_file_path", lambda url, config=None: f)
+    resp = client.get(f"/api/storage/local-files/{TEST_USER}/pic.png")
     assert resp.status_code == 200
     assert resp.content == b"\x89PNG\r\n"
-    assert resp.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+    assert resp.headers["Cache-Control"] == "private, no-store"
+    assert resp.headers["Vary"] == "Authorization, Cookie"
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
 
 
 # ===========================================================================

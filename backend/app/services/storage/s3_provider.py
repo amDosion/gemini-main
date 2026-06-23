@@ -12,10 +12,32 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 from .base import BaseStorageProvider, UploadResult
+from app.core.config import settings
 from app.utils.url_security import validate_storage_egress_url, UnsafeURLError
 
 
 logger = logging.getLogger(__name__)
+
+
+def _normalise_endpoint_url(endpoint: str) -> str:
+    value = str(endpoint or "").strip()
+    return value if "://" in value else f"https://{value}"
+
+
+def _require_allowlisted_s3_endpoint(endpoint: str) -> str:
+    url_to_check = _normalise_endpoint_url(endpoint)
+    parsed = urlparse(url_to_check)
+    host = (parsed.hostname or "").strip().strip(".").lower()
+    allowed_hosts = settings.storage_s3_compatible_allowed_endpoint_hosts
+    if not host or host not in allowed_hosts:
+        raise ValueError(
+            "S3 endpoint host must be explicitly allowlisted via "
+            "STORAGE_S3_COMPATIBLE_ALLOWED_ENDPOINT_HOSTS before SDK SSRF-risk connections"
+        )
+    try:
+        return validate_storage_egress_url(url_to_check, allow_hosts=allowed_hosts)
+    except UnsafeURLError as exc:
+        raise ValueError(f'S3 endpoint 被 SSRF 安全策略拒绝: {exc}') from exc
 
 
 class S3Provider(BaseStorageProvider):
@@ -27,7 +49,7 @@ class S3Provider(BaseStorageProvider):
         secret_access_key = self.config.get("secret_access_key")
         region = self.config.get("region", "us-east-1")
         endpoint = self.config.get("endpoint")
-        force_path_style = self.config.get("force_path_style", False)
+        force_path_style = bool(endpoint) or bool(self.config.get("force_path_style", False))
         
         # 配置 boto3
         config = Config(
@@ -45,12 +67,9 @@ class S3Provider(BaseStorageProvider):
         
         # 如果指定了自定义 endpoint（用于 S3 兼容服务）
         if endpoint:
-            # SSRF 防护：在创建 boto3 客户端之前验证用户配置的 endpoint
-            _url_to_check = endpoint if '://' in endpoint else f'https://{endpoint}'
-            try:
-                validate_storage_egress_url(_url_to_check)
-            except UnsafeURLError as exc:
-                raise ValueError(f'S3 endpoint 被 SSRF 安全策略拒绝: {exc}') from exc
+            # boto3 owns the socket connection and cannot use our pinned httpx
+            # transport, so custom endpoints require an operator allowlist.
+            _require_allowlisted_s3_endpoint(endpoint)
             client_params['endpoint_url'] = endpoint
         
         return boto3.client(**client_params)
@@ -104,7 +123,7 @@ class S3Provider(BaseStorageProvider):
         region = self.config.get("region", "us-east-1")
         endpoint = self.config.get("endpoint")
         custom_domain = self.config.get("custom_domain")
-        force_path_style = self.config.get("force_path_style", False)
+        force_path_style = bool(endpoint) or bool(self.config.get("force_path_style", False))
 
         if custom_domain:
             domain = custom_domain.replace("https://", "").replace("http://", "").rstrip("/")

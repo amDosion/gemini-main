@@ -4,7 +4,7 @@
  * Shared types used across all workflow components
  */
 
-import type { Node, Edge } from 'reactflow';
+import type { Node, Edge } from '@xyflow/react';
 
 // Node execution status
 export type NodeStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
@@ -23,7 +23,7 @@ export interface WorkflowNodePortLayout {
 }
 
 // Custom node data interface
-export interface WorkflowNodeData {
+export interface WorkflowNodeData extends Record<string, unknown> {
   label: string;
   description: string;
   icon: string;

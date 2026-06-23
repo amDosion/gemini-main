@@ -1,4 +1,4 @@
-import type { Edge, Node } from 'reactflow';
+import type { Edge, Node } from '@xyflow/react';
 import type { WorkflowNodeData, WorkflowNodePortLayout } from './types';
 
 export type WorkflowNodePortSide = 'left' | 'right' | 'top' | 'bottom';

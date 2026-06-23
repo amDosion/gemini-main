@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { Edge, Node } from 'reactflow';
+import type { Edge, Node } from '@xyflow/react';
 import { fetchWorkflowPreviewImages } from '../../services/workflowHistoryService';
 import type { WorkflowNodeData } from './types';
 import {

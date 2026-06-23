@@ -56,7 +56,14 @@ class VideoGenerator:
     使用 httpx 调用 grok2api 的视频生成端点。
     """
 
-    def __init__(self, api_key: str, base_url: str, timeout: float = 600.0):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        timeout: float = 600.0,
+        user_id: Optional[str] = None,
+        **_: Any,
+    ):
         """
         初始化视频生成器
 
@@ -68,6 +75,7 @@ class VideoGenerator:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.user_id = user_id
         logger.info(
             "[Grok VideoGenerator] Initialized with base_url=%s",
             summarize_url_for_log(self.base_url),
@@ -240,6 +248,7 @@ class VideoGenerator:
                     treat_source_video_as_existing_base=is_video_extension_strategy(
                         request_kwargs.get("video_input_strategy") or request_kwargs.get("videoInputStrategy")
                     ),
+                    user_id=self.user_id,
                 )
                 return apply_video_prompt_enhancement_metadata(result, enhancement)
 

@@ -59,11 +59,13 @@ class TongyiVideoGenerationService:
         timeout: float = 120.0,
         poll_interval: float = 15.0,
         poll_timeout: float = 900.0,
+        user_id: Optional[str] = None,
     ) -> None:
         self.api_key = api_key
         self.timeout = timeout
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
+        self.user_id = user_id
 
     async def generate_video(self, prompt: str, model: str, **kwargs: Any) -> Dict[str, Any]:
         if not is_tongyi_video_model(model):
@@ -105,6 +107,7 @@ class TongyiVideoGenerationService:
                 treat_source_video_as_existing_base=is_video_extension_strategy(
                     request_kwargs.get("video_input_strategy") or request_kwargs.get("videoInputStrategy")
                 ),
+                user_id=self.user_id,
             )
             return apply_video_prompt_enhancement_metadata(result, enhancement)
 
@@ -205,7 +208,11 @@ class TongyiVideoGenerationService:
         if url.startswith(("http://", "https://", "data:", "oss://")):
             return media
 
-        content, mime_type = await load_video_bytes_from_source(media, fallback_mime_type=fallback_mime_type)
+        content, mime_type = await load_video_bytes_from_source(
+            media,
+            fallback_mime_type=fallback_mime_type,
+            user_id=self.user_id,
+        )
         data_url = to_data_url(content, mime_type)
 
         if isinstance(media, dict):

@@ -462,7 +462,8 @@ async def call_image_api_with_fanout(
 
     if not successes:
         # 全部失败: 抛出第一个异常以保留可诊断的失败路径。
-        assert first_error is not None  # for type-checkers; loop guarantees this
+        if first_error is None:
+            raise RuntimeError("OpenAI image fan-out failed without an exception")
         raise first_error
 
     if failure_count:

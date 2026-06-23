@@ -3,6 +3,7 @@ Celery 上传任务
 负责异步处理文件上传到云存储
 """
 import copy
+import logging
 import os
 import tempfile
 from datetime import datetime
@@ -14,6 +15,8 @@ from app.core.database import SessionLocal
 from app.models.db_models import ActiveStorage, ChatSession, StorageConfig, UploadTask
 from app.utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 from app.utils.url_security import sync_get_with_redirect_guard
+
+logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, name='app.tasks.upload_tasks.process_upload')
@@ -188,8 +191,9 @@ def process_upload(self, task_id: str):
                 task.status = 'failed'
                 task.error_message = str(e)
                 db.commit()
-        except:
-            pass
+        except Exception:
+            logger.error("[Celery] Failed to persist failed upload task status", exc_info=True)
+            db.rollback()
 
         return {
             'success': False,

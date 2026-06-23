@@ -319,7 +319,10 @@ class ChatHandler:
                             yield self._build_error_done_chunk()
                             return
                     except Exception:
-                        pass
+                        logger.debug(
+                            "[OpenAI ChatHandler] Failed to emit OpenAI-compatible error stream",
+                            exc_info=True,
+                        )
             
             logger.error(
                 "[OpenAI ChatHandler] Stream error: %s",

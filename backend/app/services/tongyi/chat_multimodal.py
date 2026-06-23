@@ -15,7 +15,7 @@ import re
 import base64
 import mimetypes
 
-from ..storage.local_provider import resolve_local_public_file_path
+from ..storage.local_provider import resolve_local_public_file_path_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,10 @@ class _QwenMultimodalMixin:
             # CANON-028: only read files that resolve within the allowed local-storage
             # root (shared allow-root resolver). Arbitrary filesystem paths and
             # file:// URLs are denied — no raw Path(...).read_bytes() on user/model input.
-            candidate = resolve_local_public_file_path(raw_path)
+            candidate = resolve_local_public_file_path_for_user(
+                raw_path,
+                getattr(self, "user_id", None),
+            )
             if candidate is None or not candidate.exists() or not candidate.is_file():
                 return None
 

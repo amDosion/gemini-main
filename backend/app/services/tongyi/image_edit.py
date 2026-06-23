@@ -28,7 +28,7 @@ from .base import (
     get_wan27_size,
     is_wan27_image_model,
 )
-from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path
+from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path_for_user
 from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 
 logger = logging.getLogger(__name__)
@@ -85,8 +85,9 @@ class ImageEditOptions:
 class ImageEditService:
     """图像编辑服务"""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, user_id: Optional[str] = None):
         self.api_key = api_key
+        self.user_id = user_id
         self._edit_optimizer = None  # 延迟加载
 
     @property
@@ -156,7 +157,10 @@ class ImageEditService:
             return None
         if not image_url.startswith(f"{DEFAULT_LOCAL_URL_PREFIX}/"):
             return None
-        local_path = resolve_local_public_file_path(image_url) or resolve_local_public_file_path(unquote(image_url))
+        local_path = (
+            resolve_local_public_file_path_for_user(image_url, self.user_id)
+            or resolve_local_public_file_path_for_user(unquote(image_url), self.user_id)
+        )
         if local_path and local_path.exists() and local_path.is_file():
             return local_path
         raise FileNotFoundError(f"本地存储图片不存在: {summarize_url_for_log(image_url)}")

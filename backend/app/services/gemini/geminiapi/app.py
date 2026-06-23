@@ -1,7 +1,7 @@
 import os
 import uuid
 import numpy as np
-import random
+import secrets
 import tempfile
 from PIL import Image
 from diffusers import QwenImageLayeredPipeline
@@ -12,7 +12,7 @@ import gradio as gr
 from modelscope import snapshot_download
 
 
-LOG_DIR = "/tmp/local"
+LOG_DIR = os.path.join(tempfile.gettempdir(), "local")
 MAX_SEED = np.iinfo(np.int32).max
 
 from modelscope.hub.api import HubApi
@@ -87,7 +87,7 @@ def infer(input_image,
           use_en_prompt=True):
     
     if randomize_seed:
-        seed = random.randint(0, MAX_SEED)
+        seed = secrets.randbelow(int(MAX_SEED) + 1)
         
     if isinstance(input_image, list):
         input_image = input_image[0]

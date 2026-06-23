@@ -64,7 +64,7 @@ class CacheService:
             try:
                 await client.close()
             except Exception:
-                pass
+                logger.debug("[CacheService] Failed to close dropped Redis client", exc_info=True)
 
     async def _ensure_connected(self) -> bool:
         if self._redis is not None:

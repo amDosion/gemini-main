@@ -35,7 +35,7 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
         parsed = json.loads(raw)
         return parsed if isinstance(parsed, dict) else {}
     except Exception:
-        pass
+        logger.debug("[GeminiVideoUnderstanding] Response was not a direct JSON object", exc_info=True)
     start = raw.find("{")
     end = raw.rfind("}")
     if start >= 0 and end > start:

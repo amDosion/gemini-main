@@ -40,35 +40,35 @@ def _clean_text(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _normalize_token(value: Any) -> str:
+def _normalize_task_marker(value: Any) -> str:
     text = _clean_text(value).lower()
     return re.sub(r"[\s_]+", "-", text)
 
 
 def _task_specific_expectation(task_type: str, language: str, is_final_node: bool) -> str:
-    token = _normalize_token(task_type)
+    task_marker = _normalize_task_marker(task_type)
     if language == "zh":
-        if token in {"data-analysis", "table-analysis", "sheet-analysis"}:
+        if task_marker in {"data-analysis", "table-analysis", "sheet-analysis"}:
             return (
                 "输出时必须区分“事实/判断/建议”，给出关键指标、异常或相关性依据，并标注样本不足或口径风险。"
             )
-        if token in {"image-gen", "image-generate"}:
+        if task_marker in {"image-gen", "image-generate"}:
             return (
                 "输出可直接执行的图片生成方案，明确主体、场景、镜头、光线、风格、禁用元素和交付标准。"
             )
-        if token in {"image-edit", "image-chat-edit"}:
+        if task_marker in {"image-edit", "image-chat-edit"}:
             return (
                 "输出可直接执行的图像编辑方案，明确必须保留的主体特征、禁止修改项、版式安全区和合规风险。"
             )
-        if token in {"vision-understand", "image-understand", "vision-analyze"}:
+        if task_marker in {"vision-understand", "image-understand", "vision-analyze"}:
             return (
                 "只依据可见视觉证据下结论；不确定信息标记为 unknown，并明确可保留元素、风险点和下一步建议。"
             )
-        if token == "video-gen":
+        if task_marker == "video-gen":
             return (
                 "输出适合直接生成视频的镜头脚本：主体、动作、场景、镜头运动、节奏、时长、风格和负面约束都要明确。"
             )
-        if token == "audio-gen":
+        if task_marker == "audio-gen":
             return (
                 "输出可直接用于旁白或语音生成的最终文本，并补充语速、停顿、语气、重音或情绪建议。"
             )
@@ -76,27 +76,27 @@ def _task_specific_expectation(task_type: str, language: str, is_final_node: boo
             return "你负责汇总多个上游结果，只保留证据充分、可执行、可交付的结论。"
         return "输出时给出结论、依据、风险和下一步动作，不要只复述输入。"
 
-    if token in {"data-analysis", "table-analysis", "sheet-analysis"}:
+    if task_marker in {"data-analysis", "table-analysis", "sheet-analysis"}:
         return (
             "Separate facts, inference, and actions. Cite the supporting fields or metrics and flag any sample-size or definition risk."
         )
-    if token in {"image-gen", "image-generate"}:
+    if task_marker in {"image-gen", "image-generate"}:
         return (
             "Produce an execution-ready image generation brief with subject, scene, camera, lighting, style, constraints, and negative elements."
         )
-    if token in {"image-edit", "image-chat-edit"}:
+    if task_marker in {"image-edit", "image-chat-edit"}:
         return (
             "Produce an execution-ready edit brief that preserves product identity, names protected elements, layout safe zones, and compliance constraints."
         )
-    if token in {"vision-understand", "image-understand", "vision-analyze"}:
+    if task_marker in {"vision-understand", "image-understand", "vision-analyze"}:
         return (
             "Use only visible evidence. Mark uncertainty as unknown and return preserved elements, risks, and downstream edit guidance."
         )
-    if token == "video-gen":
+    if task_marker == "video-gen":
         return (
             "Produce a generation-ready video brief with subject, motion, scene, camera movement, pacing, duration, style, and negative constraints."
         )
-    if token == "audio-gen":
+    if task_marker == "audio-gen":
         return (
             "Produce the final narration text plus speaking guidance for pace, pauses, emphasis, emotion, and delivery constraints."
         )
@@ -140,7 +140,7 @@ def _build_workflow_node_prompt(
         "负责完成当前节点目标" if language == "zh" else "Complete the current node objective."
     )
     node_identity = agent_name or tool_name or node_kind or "node"
-    is_final_node = any(token in f"{label_text} {description_text}".lower() for token in _FINAL_NODE_HINTS)
+    is_final_node = any(marker in f"{label_text} {description_text}".lower() for marker in _FINAL_NODE_HINTS)
     tags_text = ", ".join(str(item).strip() for item in tags if str(item).strip())
     expectation = _task_specific_expectation(task_type, language, is_final_node)
 
@@ -331,7 +331,7 @@ def enhance_seed_agents(seeds: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]
         if isinstance(agent_card, dict):
             defaults = agent_card.get("defaults")
             if isinstance(defaults, dict):
-                task_type = _normalize_token(defaults.get("defaultTaskType")) or "chat"
+                task_type = _normalize_task_marker(defaults.get("defaultTaskType")) or "chat"
         capability_area = " / ".join(
             part for part in (
                 _clean_text(item.get("provider_id")),

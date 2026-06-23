@@ -16,7 +16,6 @@ DashScope 临时文件上传服务
     result = upload_bytes_to_dashscope(image_data, "image.png", api_key)
 """
 import asyncio
-import base64
 import logging
 import time
 from dataclasses import dataclass
@@ -28,10 +27,16 @@ import requests
 from ...utils.attachment_handler import is_base64_url
 from ...utils.url_security import (
     UnsafeURLError,
-    get_with_redirect_guard,
-    sync_get_with_redirect_guard,
+    stream_with_redirect_guard,
+    sync_stream_with_redirect_guard,
     validate_outbound_http_url,
     validate_outbound_http_url_async,
+)
+from ...utils.media_limits import (
+    MediaTooLargeError,
+    decode_base64_data_url_limited,
+    read_httpx_response_limited,
+    read_httpx_response_limited_sync,
 )
 from ...utils.log_sanitization import summarize_url_for_log
 
@@ -275,11 +280,14 @@ def upload_to_dashscope(
             # Base64 数据 URL
             # 格式: data:image/jpeg;base64,/9j/4AAQ...
             try:
-                header, base64_data = image_url.split(",", 1)
-                mime_type = header.split(":")[1].split(";")[0] if ":" in header else "image/jpeg"
-                image_data = base64.b64decode(base64_data)
+                image_data, mime_type = decode_base64_data_url_limited(image_url)
                 extension = mime_type.split("/")[1] if "/" in mime_type else "jpg"
                 file_name = f"expansion-{int(time.time() * 1000)}.{extension}"
+            except MediaTooLargeError as e:
+                return DashScopeUploadResult(
+                    success=False,
+                    error=f"图片过大: {str(e)}"
+                )
             except Exception as e:
                 return DashScopeUploadResult(
                     success=False,
@@ -290,14 +298,19 @@ def upload_to_dashscope(
             try:
                 # CANON-012: per-hop redirect-validated fetch (requests follows
                 # redirects by default; a public URL could otherwise 302 -> internal).
-                image_response = sync_get_with_redirect_guard(image_url, timeout=30)
-                if image_response.status_code != 200:
-                    return DashScopeUploadResult(
-                        success=False,
-                        error=f"下载图片失败: HTTP {image_response.status_code}"
-                    )
-                image_data = image_response.content
+                with sync_stream_with_redirect_guard(image_url, timeout=30) as (image_response, _final_url):
+                    if image_response.status_code != 200:
+                        return DashScopeUploadResult(
+                            success=False,
+                            error=f"下载图片失败: HTTP {image_response.status_code}"
+                        )
+                    image_data = read_httpx_response_limited_sync(image_response)
                 file_name = f"expansion-{int(time.time() * 1000)}.jpg"
+            except MediaTooLargeError as e:
+                return DashScopeUploadResult(
+                    success=False,
+                    error=f"图片过大: {str(e)}"
+                )
             except Exception as e:
                 return DashScopeUploadResult(
                     success=False,
@@ -526,11 +539,14 @@ async def upload_to_dashscope_async(
 
         if is_base64_url(image_url):
             try:
-                header, base64_data = image_url.split(",", 1)
-                mime_type = header.split(":")[1].split(";")[0] if ":" in header else "image/jpeg"
-                image_data = base64.b64decode(base64_data)
+                image_data, mime_type = decode_base64_data_url_limited(image_url)
                 extension = mime_type.split("/")[1] if "/" in mime_type else "jpg"
                 file_name = f"expansion-{int(time.time() * 1000)}.{extension}"
+            except MediaTooLargeError as e:
+                return DashScopeUploadResult(
+                    success=False,
+                    error=f"图片过大: {str(e)}",
+                )
             except Exception as e:
                 return DashScopeUploadResult(
                     success=False,
@@ -540,16 +556,19 @@ async def upload_to_dashscope_async(
             try:
                 # CANON-012: per-hop redirect-validated fetch (so a public URL cannot
                 # 302 -> internal and legit redirect-serving URLs still work).
-                image_response, _final_url = await get_with_redirect_guard(
-                    client, image_url, max_redirects=5
-                )
-                if image_response.status_code != 200:
-                    return DashScopeUploadResult(
-                        success=False,
-                        error=f"下载图片失败: HTTP {image_response.status_code}",
-                    )
-                image_data = image_response.content
+                async with stream_with_redirect_guard(client, image_url, max_redirects=5) as (image_response, _final_url):
+                    if image_response.status_code != 200:
+                        return DashScopeUploadResult(
+                            success=False,
+                            error=f"下载图片失败: HTTP {image_response.status_code}",
+                        )
+                    image_data = await read_httpx_response_limited(image_response)
                 file_name = f"expansion-{int(time.time() * 1000)}.jpg"
+            except MediaTooLargeError as e:
+                return DashScopeUploadResult(
+                    success=False,
+                    error=f"图片过大: {str(e)}",
+                )
             except Exception as e:
                 return DashScopeUploadResult(
                     success=False,

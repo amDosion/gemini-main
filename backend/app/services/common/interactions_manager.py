@@ -16,7 +16,6 @@ from contextlib import contextmanager
 import logging
 import asyncio
 import os
-import time
 import warnings
 from sqlalchemy.orm import Session
 
@@ -289,7 +288,10 @@ class InteractionsManager:
         # 如果提供了 MCP 会话 ID，获取 MCP 工具
         if mcp_session_id and self._mcp_manager:
             try:
-                mcp_tools = await self._mcp_manager.get_gemini_tools(mcp_session_id)
+                mcp_tools = await self._mcp_manager.get_gemini_tools(
+                    mcp_session_id,
+                    owner_id=user_id,
+                )
                 if mcp_tools:
                     if tools is None:
                         tools = []
@@ -443,7 +445,8 @@ class InteractionsManager:
         vertexai: bool = False,
         project: Optional[str] = None,
         location: Optional[str] = None,
-        http_options: Optional[Union[HttpOptions, HttpOptionsDict]] = None
+        http_options: Optional[Union[HttpOptions, HttpOptionsDict]] = None,
+        user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         异步创建智能体交互
@@ -461,6 +464,7 @@ class InteractionsManager:
             project: Google Cloud 项目 ID
             location: Google Cloud 位置
             http_options: HTTP 选项
+            user_id: 用户 ID（用于 MCP 会话所有权校验）
 
         Returns:
             交互结果字典
@@ -477,7 +481,10 @@ class InteractionsManager:
         # 如果提供了 MCP 会话 ID，获取 MCP 工具
         if mcp_session_id and self._mcp_manager:
             try:
-                mcp_tools = await self._mcp_manager.get_gemini_tools(mcp_session_id)
+                mcp_tools = await self._mcp_manager.get_gemini_tools(
+                    mcp_session_id,
+                    owner_id=user_id,
+                )
                 if mcp_tools:
                     if tools is None:
                         tools = []
@@ -755,7 +762,10 @@ class InteractionsManager:
         # 如果提供了 MCP 会话 ID，获取 MCP 工具
         if mcp_session_id and self._mcp_manager:
             try:
-                mcp_tools = await self._mcp_manager.get_gemini_tools(mcp_session_id)
+                mcp_tools = await self._mcp_manager.get_gemini_tools(
+                    mcp_session_id,
+                    owner_id=user_id,
+                )
                 if mcp_tools:
                     if tools is None:
                         tools = []

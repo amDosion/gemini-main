@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import type { Node, Edge } from 'reactflow';
+import type { Node, Edge } from '@xyflow/react';
 import { useUndoRedo } from './useUndoRedo';
 import type { CustomNodeData } from './CustomNode';
 

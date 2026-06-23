@@ -77,7 +77,7 @@ async def worker_pool_supervisor_task(
                 try:
                     await redis_queue._redis.set(supervisor_pid_key, str(current_pid), ex=60)
                 except Exception:
-                    pass  # 锁续期失败不影响主逻辑
+                    logger.debug("[Supervisor] Failed to renew supervisor lock", exc_info=True)
 
             # 使用 is_reconciler_healthy() 方法进行健康检查
             # 该方法会考虑启动宽限期，避免误判

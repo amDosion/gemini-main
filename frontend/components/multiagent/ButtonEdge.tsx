@@ -1,5 +1,5 @@
 import React, { memo, useState } from 'react';
-import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath } from 'reactflow';
+import { BaseEdge, EdgeLabelRenderer, EdgeProps, getBezierPath } from '@xyflow/react';
 import { dispatchScopedWorkflowEvent } from './workflowEditorUtils';
 
 const ButtonEdgeComponent: React.FC<EdgeProps> = ({

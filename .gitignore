@@ -45,10 +45,9 @@ backend/credentials/.gitkeep
 # Databases
 *.db
 
-# Node modules & package locks
+# Node modules & alternate package-manager locks
 node_modules/
 pnpm-lock.yaml
-package-lock.json
 .npm/
 .next/
 frontend/.next/

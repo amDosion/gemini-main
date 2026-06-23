@@ -8,7 +8,14 @@ from typing import Dict, Any, Optional, List, Iterable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from urllib.parse import urlparse
 import shutil
+
+from ...utils.url_security import (
+    UnsafeURLError,
+    prevalidate_http_url_without_dns,
+    validate_storage_egress_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -185,26 +192,26 @@ def _find_high_risk_arg(command_name: str, args: Optional[List[str]]) -> Optiona
         return None
 
     for arg in args:
-        token = str(arg).strip().lower()
-        if not token:
+        option_text = str(arg).strip().lower()
+        if not option_text:
             continue
 
         if _is_python_command(command_name):
-            if token == "-c" or (token.startswith("-c") and len(token) > 2):
+            if option_text == "-c" or (option_text.startswith("-c") and len(option_text) > 2):
                 return str(arg)
 
         if _is_node_command(command_name):
-            if token == "-e" or token == "--eval":
+            if option_text == "-e" or option_text == "--eval":
                 return str(arg)
-            if token.startswith("--eval="):
+            if option_text.startswith("--eval="):
                 return str(arg)
-            if token.startswith("-e") and len(token) > 2:
+            if option_text.startswith("-e") and len(option_text) > 2:
                 return str(arg)
 
         if _is_shell_command(command_name):
-            if token in {"-c", "--command", "/c", "-command", "-encodedcommand"}:
+            if option_text in {"-c", "--command", "/c", "-command", "-encodedcommand"}:
                 return str(arg)
-            if token.startswith("--command="):
+            if option_text.startswith("--command="):
                 return str(arg)
 
     return None
@@ -357,6 +364,44 @@ def validate_mcp_stdio_command_policy(
             f"'{command_real_path_text}', which does not match allowlisted real path(s): "
             f"{allowed_real_paths_text}"
         )
+
+
+def validate_mcp_remote_url_policy(
+    config: MCPServerConfig,
+    *,
+    allowed_hosts: Optional[Iterable[str]],
+    context: Optional[str] = None,
+) -> None:
+    """Validate HTTP/SSE MCP endpoints before the SDK-owned transport connects."""
+    if config.server_type not in (
+        MCPServerType.SSE,
+        MCPServerType.HTTP,
+        MCPServerType.STREAMABLE_HTTP,
+    ):
+        return
+
+    context_prefix = f"[{context}] " if context else ""
+    raw_url = str(config.url or "").strip()
+    parsed = urlparse(raw_url)
+    host = (parsed.hostname or "").strip().strip(".").lower()
+    allowlist = {
+        str(item or "").strip().strip(".").lower()
+        for item in allowed_hosts or []
+        if str(item or "").strip()
+    }
+    if not host or host not in allowlist:
+        raise MCPUrlPolicyError(
+            f"{context_prefix}MCP HTTP endpoint host must be explicitly "
+            "allowlisted via MCP_HTTP_ALLOWED_HOSTS"
+        )
+
+    try:
+        prevalidate_http_url_without_dns(raw_url)
+        validate_storage_egress_url(raw_url, allow_hosts=allowlist)
+    except UnsafeURLError as exc:
+        raise MCPUrlPolicyError(
+            f"{context_prefix}MCP server URL rejected by outbound policy: {exc}"
+        ) from exc
 
 
 @dataclass

@@ -21,7 +21,6 @@ from .message_converter import (
 from .response_parser import ResponseParser
 from .config_builder import ConfigBuilder
 from ...common.errors import (
-    ProviderError,
     APIKeyError,
     ModelNotFoundError,
     InvalidRequestError,
@@ -637,7 +636,10 @@ class ChatHandler:
                     from ...mcp.mcp_manager import get_mcp_manager
 
                     mcp_manager = get_mcp_manager()
-                    gemini_tools = await mcp_manager.get_gemini_tools(mcp_session_id)
+                    gemini_tools = await mcp_manager.get_gemini_tools(
+                        mcp_session_id,
+                        owner_id=user_id,
+                    )
                     for tool_group in gemini_tools:
                         if not isinstance(tool_group, dict):
                             continue
@@ -806,7 +808,7 @@ class ChatHandler:
                                             if dedup_key in seen_function_call_keys:
                                                 continue
                                             seen_function_call_keys.add(dedup_key)
-                                            normalized_call_id = call_id or f"auto_{iteration}_{len(function_calls) + 1}_{hashlib.sha1(dedup_key.encode('utf-8')).hexdigest()[:10]}"
+                                            normalized_call_id = call_id or f"auto_{iteration}_{len(function_calls) + 1}_{hashlib.sha256(dedup_key.encode('utf-8')).hexdigest()[:10]}"
                                             function_calls.append(
                                                 {
                                                     "call_id": normalized_call_id,
@@ -836,7 +838,7 @@ class ChatHandler:
                                 if dedup_key in seen_function_call_keys:
                                     continue
                                 seen_function_call_keys.add(dedup_key)
-                                normalized_call_id = call_id or f"auto_{iteration}_{len(function_calls) + 1}_{hashlib.sha1(dedup_key.encode('utf-8')).hexdigest()[:10]}"
+                                normalized_call_id = call_id or f"auto_{iteration}_{len(function_calls) + 1}_{hashlib.sha256(dedup_key.encode('utf-8')).hexdigest()[:10]}"
                                 function_calls.append(
                                     {
                                         "call_id": normalized_call_id,

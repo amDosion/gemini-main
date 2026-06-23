@@ -8,7 +8,7 @@
  * - Statistics calculation
  */
 
-import { Node, Edge, Position } from 'reactflow';
+import { Node, Edge, Position } from '@xyflow/react';
 import dagre from '@dagrejs/dagre';
 import { CustomNodeData } from './CustomNode';
 import { WorkflowValidationResult, WorkflowStatistics } from './types';

@@ -11,7 +11,6 @@ import asyncio
 import logging
 import mimetypes
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
@@ -23,7 +22,7 @@ from ...utils.attachment_handler import is_base64_url
 from ...utils.url_security import get_with_redirect_guard, validate_outbound_http_url
 from ..gemini.base.video_common import LoadedSourceVideo, parse_data_url, to_data_url
 from ..gemini.base.video_frame_bridge import extract_last_frame_image
-from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path
+from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +36,29 @@ VIDEO_EXTENSION_STRATEGY_IDS = {
 
 VideoSegmentGenerator = Callable[[str, str, Dict[str, Any]], Awaitable[Dict[str, Any]]]
 SourceVideoLoader = Callable[[Any], Awaitable[Tuple[bytes, str]]]
+
+
+class FFmpegCommandError(RuntimeError):
+    """Raised when ffmpeg exits unsuccessfully while assembling video segments."""
+
+
+async def _run_ffmpeg_command(args: List[str]) -> None:
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode == 0:
+        return
+    detail = (stderr or stdout or b"").decode("utf-8", errors="replace").strip()
+    if detail:
+        raise FFmpegCommandError(f"ffmpeg failed with exit code {process.returncode}: {detail}")
+    raise FFmpegCommandError(f"ffmpeg failed with exit code {process.returncode}")
+
+
+def _run_ffmpeg_command_sync(args: List[str]) -> None:
+    asyncio.run(_run_ffmpeg_command(args))
 
 
 def normalize_video_extension_count(kwargs: Dict[str, Any]) -> int:
@@ -159,6 +181,7 @@ async def load_video_bytes_from_source(
     *,
     fallback_mime_type: str = "video/mp4",
     load_source_video: Optional[SourceVideoLoader] = None,
+    user_id: Optional[str] = None,
 ) -> Tuple[bytes, str]:
     if load_source_video is not None:
         loaded = await load_source_video(source)
@@ -175,7 +198,10 @@ async def load_video_bytes_from_source(
 
     local_url = unquote(url)
     if local_url.startswith(f"{DEFAULT_LOCAL_URL_PREFIX}/"):
-        local_path = resolve_local_public_file_path(local_url) or resolve_local_public_file_path(url)
+        local_path = (
+            resolve_local_public_file_path_for_user(local_url, user_id)
+            or resolve_local_public_file_path_for_user(url, user_id)
+        )
         if local_path and local_path.exists() and local_path.is_file():
             return local_path.read_bytes(), mimetypes.guess_type(local_path.name)[0] or mime_type
         raise ValueError(f"Local storage video file was not found: {url[:120]}")
@@ -318,7 +344,7 @@ def _concatenate_video_segments_sync(
                 continue
 
             trimmed_path = tmp_root / f"segment-{index:03d}-trimmed.mp4"
-            subprocess.run(
+            _run_ffmpeg_command_sync(
                 [
                     ffmpeg_path,
                     "-y",
@@ -342,9 +368,7 @@ def _concatenate_video_segments_sync(
                     "-movflags",
                     "+faststart",
                     str(trimmed_path),
-                ],
-                check=True,
-                capture_output=True,
+                ]
             )
             prepared_paths.append(trimmed_path)
 
@@ -370,9 +394,9 @@ def _concatenate_video_segments_sync(
             str(output_path),
         ]
         try:
-            subprocess.run(concat_cmd, check=True, capture_output=True)
-        except subprocess.CalledProcessError:
-            subprocess.run(
+            _run_ffmpeg_command_sync(concat_cmd)
+        except FFmpegCommandError:
+            _run_ffmpeg_command_sync(
                 [
                     ffmpeg_path,
                     "-y",
@@ -396,9 +420,7 @@ def _concatenate_video_segments_sync(
                     "-movflags",
                     "+faststart",
                     str(output_path),
-                ],
-                check=True,
-                capture_output=True,
+                ]
             )
         return output_path.read_bytes()
 
@@ -423,6 +445,7 @@ async def run_last_frame_video_extension_chain(
     load_source_video: Optional[SourceVideoLoader] = None,
     continuation_trim_seconds: float = LAST_FRAME_CONTINUATION_TRIM_SECONDS,
     treat_source_video_as_existing_base: bool = True,
+    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if extension_count <= 0:
         raise ValueError("Video extension chain requires extension_count > 0.")
@@ -440,6 +463,7 @@ async def run_last_frame_video_extension_chain(
             source_video,
             fallback_mime_type="video/mp4",
             load_source_video=load_source_video,
+            user_id=user_id,
         )
         segments.append((current_video_bytes, current_mime_type))
     else:
@@ -448,6 +472,7 @@ async def run_last_frame_video_extension_chain(
         first_bytes, current_mime_type = await load_video_bytes_from_source(
             first_result,
             fallback_mime_type=str(first_result.get("mime_type") or "video/mp4"),
+            user_id=user_id,
         )
         current_video_bytes = first_bytes
         segments.append((current_video_bytes, current_mime_type))
@@ -471,6 +496,7 @@ async def run_last_frame_video_extension_chain(
         current_video_bytes, current_mime_type = await load_video_bytes_from_source(
             result,
             fallback_mime_type=str(result.get("mime_type") or "video/mp4"),
+            user_id=user_id,
         )
         segments.append((current_video_bytes, current_mime_type))
         if result.get("job_id") or result.get("task_id"):

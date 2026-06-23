@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useRef, useEffect, useState } from 'react';
-import { Node, Edge } from 'reactflow';
+import { Node, Edge } from '@xyflow/react';
 
 interface PerformanceMetrics {
   nodeCount: number;

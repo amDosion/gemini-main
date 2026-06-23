@@ -10,12 +10,10 @@ with Google's Gemini AI model. It includes functions for:
 Based on Google Gemini Cookbook: Browser_as_a_tool.ipynb
 """
 
-import os
 import time
 import json
-import base64
 import requests
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any
 from urllib.parse import parse_qs, parse_qsl, unquote, urlparse, urlsplit
 from bs4 import BeautifulSoup
 
@@ -60,6 +58,70 @@ def _summarize_url_for_log(url: object) -> str:
 
 def _redact_url_in_log_text(text: object, url: object, summary: str) -> str:
     return str(text).replace(str(url), summary)
+
+
+_SELENIUM_STATIC_DROP_TAGS = {
+    "script",
+    "iframe",
+    "frame",
+    "object",
+    "embed",
+    "link",
+    "source",
+    "track",
+    "video",
+    "audio",
+}
+_SELENIUM_STATIC_DROP_ATTRS = {
+    "src",
+    "srcset",
+    "href",
+    "action",
+    "formaction",
+    "poster",
+    "data",
+    "background",
+    "ping",
+    "style",
+}
+
+
+def _build_static_selenium_document(html: str) -> str:
+    """Return a network-inert HTML snapshot for Selenium rendering.
+
+    Selenium cannot enforce the existing HTTP redirect guard before browser
+    redirects or subresource loads. The browser tool therefore fetches the page
+    through the pinned SSRF-safe HTTP client, strips active/network-loading
+    surfaces, and renders the inert snapshot locally.
+    """
+    soup = BeautifulSoup(html or "", "html.parser")
+
+    for tag in soup.find_all(_SELENIUM_STATIC_DROP_TAGS):
+        tag.decompose()
+
+    for meta in soup.find_all("meta"):
+        http_equiv = str(meta.get("http-equiv") or "").strip().lower()
+        if http_equiv in {"refresh", "content-security-policy"}:
+            meta.decompose()
+
+    for tag in soup.find_all(True):
+        for attr in list(tag.attrs):
+            attr_name = str(attr).lower()
+            if attr_name.startswith("on") or attr_name in _SELENIUM_STATIC_DROP_ATTRS:
+                del tag.attrs[attr]
+
+    csp = (
+        "default-src 'none'; img-src 'none'; media-src 'none'; "
+        "object-src 'none'; script-src 'none'; connect-src 'none'; "
+        "style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+    )
+    return (
+        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        f"<meta http-equiv=\"Content-Security-Policy\" content=\"{csp}\">"
+        "</head><body>"
+        f"{soup}"
+        "</body></html>"
+    )
 
 # Logger initialised first so optional-import warnings can use it below.
 try:
@@ -564,6 +626,34 @@ def selenium_browse(
         logger.error("%s %s", LOG_PREFIXES["error"], result["error"])
         return result
 
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            )
+        }
+        response = _http_get_with_ssrf_guard(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        final_url = str(getattr(response, "url", None) or url)
+        log_url = _summarize_url_for_log(final_url)
+        static_document = _build_static_selenium_document(response.text)
+    except UnsafeURLError as e:
+        result["error"] = f"Error: URL 被 SSRF 防护拒绝: {e}"
+        safe_error = _redact_url_in_log_text(e, url, log_url)
+        logger.warning("%s Error: URL 被 SSRF 防护拒绝: %s", LOG_PREFIXES["error"], safe_error)
+        return result
+    except Exception as e:
+        result["error"] = f"Error: Unable to fetch page through SSRF guard: {e}"
+        safe_error = _redact_url_in_log_text(e, url, log_url)
+        logger.error(
+            "%s Error fetching Selenium snapshot for %s: %s",
+            LOG_PREFIXES["error"],
+            log_url,
+            safe_error,
+        )
+        return result
+
     driver = get_driver(user_id=user_id)
 
     if driver is None:
@@ -575,9 +665,15 @@ def selenium_browse(
         # Set window size for better screenshots (2x high for capturing more content)
         driver.set_window_size(1024, 2048)
 
-        # Navigate to the URL
-        logger.info("%s Navigating to: %s", LOG_PREFIXES["navigate"], log_url)
-        driver.get(url)
+        # Load a local static snapshot. Do not call driver.get(url) for
+        # user-controlled URLs; browser-level redirects/subresource loads cannot
+        # be validated before connect.
+        logger.info("%s Loading SSRF-safe static snapshot for: %s", LOG_PREFIXES["navigate"], log_url)
+        driver.get("about:blank")
+        driver.execute_script(
+            "document.open(); document.write(arguments[0]); document.close();",
+            static_document,
+        )
 
         # Wait for the page to load
         WebDriverWait(driver, 10).until(

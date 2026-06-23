@@ -9,7 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Node, Edge } from 'reactflow';
+import { Node, Edge } from '@xyflow/react';
 import { Download, Upload, Undo, Redo, Keyboard } from 'lucide-react';
 import { CustomNodeData } from './CustomNode';
 import { validateWorkflow } from './workflowUtils';

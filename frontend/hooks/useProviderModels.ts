@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Node } from 'reactflow';
+import { Node } from '@xyflow/react';
 import { CustomNodeData } from '../components/multiagent/CustomNode';
 import { NodeType } from '../components/multiagent/nodeTypeConfigs';
 import {

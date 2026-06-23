@@ -10,7 +10,6 @@ from fastapi.responses import Response, RedirectResponse, FileResponse
 from pydantic import BaseModel, Field
 from typing import Annotated, Optional, List, Dict, Any
 from sqlalchemy.orm import Session
-import base64
 import logging
 import httpx
 
@@ -22,12 +21,20 @@ from ...utils.attachment_handler import is_base64_url, is_blob_url, is_http_url
 from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
 from ...utils.url_security import (
     UnsafeURLError,
-    get_with_redirect_guard,
+    stream_with_redirect_guard,
     validate_outbound_http_url,
+)
+from ...utils.media_limits import (
+    MediaTooLargeError,
+    decode_base64_data_url_limited,
+    read_httpx_response_limited,
 )
 from ...services.gemini.base.video_asset_download import download_google_video_asset_for_user
 from ...services.gemini.base.video_common import normalize_gemini_file_name
-from ...services.storage.local_provider import resolve_local_public_file_path
+from ...services.storage.local_provider import (
+    resolve_local_public_file_path,
+    scope_local_storage_config_for_user,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +74,16 @@ async def _proxy_remote_image(
         },
     ) as client:
         try:
-            upstream, _final_url = await get_with_redirect_guard(client, safe_url, max_redirects=5)
+            async with stream_with_redirect_guard(client, safe_url, max_redirects=5) as (upstream, _final_url):
+                upstream.raise_for_status()
+                content = await read_httpx_response_limited(upstream)
         except UnsafeURLError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        upstream.raise_for_status()
+        except MediaTooLargeError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
     content_type = (upstream.headers.get("content-type") or fallback_mime_type or "application/octet-stream").split(";")[0]
     return Response(
-        content=upstream.content,
+        content=content,
         media_type=content_type,
         headers={
             'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -130,8 +140,13 @@ async def _proxy_google_provider_video(
     )
 
 
-def _build_local_file_response(file_url: str, fallback_mime_type: Optional[str] = None) -> Optional[FileResponse]:
-    file_path = resolve_local_public_file_path(file_url)
+def _build_local_file_response(
+    file_url: str,
+    fallback_mime_type: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> Optional[FileResponse]:
+    config = scope_local_storage_config_for_user({}, user_id) if user_id else None
+    file_path = resolve_local_public_file_path(file_url, config)
     if file_path is None or not file_path.exists() or not file_path.is_file():
         return None
 
@@ -140,7 +155,8 @@ def _build_local_file_response(file_url: str, fallback_mime_type: Optional[str] 
         media_type=(fallback_mime_type or "application/octet-stream").split(";")[0],
         filename=file_path.name,
         headers={
-            'Cache-Control': 'public, max-age=31536000, immutable',
+            'Cache-Control': 'private, no-store',
+            'Vary': 'Authorization, Cookie',
             'X-Content-Type-Options': 'nosniff',
         }
     )
@@ -225,18 +241,18 @@ async def get_temp_image(
     auth_header = request.headers.get("Authorization")
     cookie_token = request.cookies.get("access_token")
     
-    token_source = "未知"
+    auth_source_label = "未知"
     if auth_header:
-        token_source = "Authorization header"
+        auth_source_label = "Authorization header"
     elif cookie_token:
-        token_source = "Cookie (access_token)"
+        auth_source_label = "Cookie (access_token)"
     else:
-        token_source = "无 token"
+        auth_source_label = "无 token"
     
     logger.info(
         f"[TempImage] 收到请求: attachment_id={attachment_id}, "
         f"user_id={current_user}, "
-        f"token来源={token_source}, "
+        f"token来源={auth_source_label}, "
         f"有Authorization header={'是' if auth_header else '否'}, "
         f"有Cookie token={'是' if cookie_token else '否'}"
     )
@@ -286,7 +302,11 @@ async def get_temp_image(
     if not attachment.temp_url:
         # temp_url为空 → 可能已上传完成，返回云URL重定向
         if attachment.url and attachment.upload_status == 'completed':
-            local_file_response = _build_local_file_response(attachment.url, attachment.mime_type)
+            local_file_response = _build_local_file_response(
+                attachment.url,
+                attachment.mime_type,
+                current_user,
+            )
             if local_file_response is not None:
                 logger.info(f"[TempImage] Serving persisted local file: {attachment_id}")
                 return local_file_response
@@ -342,8 +362,7 @@ async def get_temp_image(
     if is_base64_url(temp_url):
         # Base64 Data URL → 解码并返回
         try:
-            mime_type, base64_str = _split_data_url_header(temp_url)
-            image_bytes = base64.b64decode(base64_str)
+            image_bytes, mime_type = decode_base64_data_url_limited(temp_url)
 
             logger.info(f"[TempImage] Serving Base64 image: {attachment_id} (size: {len(image_bytes) / 1024:.2f} KB)")
 

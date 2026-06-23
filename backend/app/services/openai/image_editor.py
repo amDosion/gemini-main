@@ -16,7 +16,7 @@ import httpx
 
 from ...services.storage.local_provider import (
     DEFAULT_LOCAL_URL_PREFIX,
-    resolve_local_public_file_path,
+    resolve_local_public_file_path_for_user,
 )
 from ...utils.attachment_handler import is_base64_url
 from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
@@ -52,6 +52,7 @@ class ImageEditor:
     def __init__(self, api_key: str, base_url: Optional[str] = None, **kwargs):
         self.api_key = api_key
         self.base_url = base_url or "https://api.openai.com/v1"
+        self.user_id = kwargs.get("user_id")
         self.timeout = kwargs.get("timeout", 120.0)
         self.image_timeout = coerce_openai_image_timeout(kwargs.get("image_timeout"))
         self.image_max_retries = coerce_openai_image_max_retries(kwargs.get("image_max_retries"))
@@ -378,8 +379,8 @@ class ImageEditor:
             if not candidate.startswith(f"{DEFAULT_LOCAL_URL_PREFIX}/"):
                 continue
             local_path = (
-                resolve_local_public_file_path(candidate)
-                or resolve_local_public_file_path(unquote(candidate))
+                resolve_local_public_file_path_for_user(candidate, self.user_id)
+                or resolve_local_public_file_path_for_user(unquote(candidate), self.user_id)
             )
             if local_path:
                 return local_path

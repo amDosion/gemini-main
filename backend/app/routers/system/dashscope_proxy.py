@@ -324,7 +324,7 @@ async def proxy_dashscope(path: str, request: Request):
                         headers=response_headers
                     )
                 except Exception:
-                    pass
+                    logger.debug("[DashScope Proxy] Failed to decode upstream JSON response", exc_info=True)
             
             # 返回响应（使用 Response 而不是 JSONResponse，避免重复设置 content-length）
             return Response(

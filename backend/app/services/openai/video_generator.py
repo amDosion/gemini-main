@@ -18,7 +18,12 @@ import httpx
 from ...core.sdk_executor import run_in_sdk_thread
 from ...utils.attachment_handler import is_base64_url
 from ...utils.log_sanitization import summarize_text_for_log, summarize_url_for_log
-from ...utils.url_security import get_with_redirect_guard, validate_outbound_http_url
+from ...utils.media_limits import (
+    decode_base64_data_url_limited,
+    read_httpx_response_limited,
+    read_path_bytes_limited,
+)
+from ...utils.url_security import stream_with_redirect_guard, validate_outbound_http_url
 from ..common.video_extension_chain import (
     is_video_extension_strategy,
     normalize_video_extension_count,
@@ -28,7 +33,7 @@ from ..common.video_prompt_enhancement import (
     apply_video_prompt_enhancement_metadata,
     enhance_video_prompt_bundle,
 )
-from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path
+from ..storage.local_provider import DEFAULT_LOCAL_URL_PREFIX, resolve_local_public_file_path_for_user
 from ._shared import build_async_client, enhance_openai_video_prompt
 
 logger = logging.getLogger(__name__)
@@ -71,6 +76,7 @@ class VideoGenerator:
     def __init__(self, api_key: str, base_url: Optional[str] = None, **kwargs):
         self.api_key = api_key
         self.base_url = base_url or "https://api.openai.com/v1"
+        self.user_id = kwargs.get("user_id")
         self.timeout = kwargs.get("timeout", 120.0)
         self.max_retries = kwargs.get("max_retries", 3)
         self.poll_interval = float(kwargs.get("poll_interval", DEFAULT_POLL_INTERVAL_SECONDS))
@@ -169,6 +175,7 @@ class VideoGenerator:
                 treat_source_video_as_existing_base=is_video_extension_strategy(
                     request_kwargs.get("video_input_strategy") or request_kwargs.get("videoInputStrategy")
                 ),
+                user_id=self.user_id,
             )
             return apply_video_prompt_enhancement_metadata(result, enhancement)
 
@@ -528,10 +535,13 @@ class VideoGenerator:
             return self._parse_data_url(url)
 
         if url.startswith(f"{DEFAULT_LOCAL_URL_PREFIX}/"):
-            local_path = resolve_local_public_file_path(url) or resolve_local_public_file_path(unquote(url))
+            local_path = (
+                resolve_local_public_file_path_for_user(url, self.user_id)
+                or resolve_local_public_file_path_for_user(unquote(url), self.user_id)
+            )
             if local_path and local_path.exists() and local_path.is_file():
                 mime_type = mimetypes.guess_type(local_path.name)[0] or fallback_mime_type
-                return local_path.read_bytes(), mime_type
+                return read_path_bytes_limited(local_path), mime_type
             raise ValueError(
                 "Local storage media file not found for OpenAI video generation: "
                 f"{summarize_url_for_log(url)}"
@@ -543,10 +553,10 @@ class VideoGenerator:
         # validated by the outbound guard below.
         safe_url = validate_outbound_http_url(url)
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response, _ = await get_with_redirect_guard(client, safe_url, max_redirects=5)
-            response.raise_for_status()
-            mime_type = (response.headers.get("content-type") or fallback_mime_type).split(";")[0]
-            return response.content, mime_type
+            async with stream_with_redirect_guard(client, safe_url, max_redirects=5) as (response, _final_url):
+                response.raise_for_status()
+                mime_type = (response.headers.get("content-type") or fallback_mime_type).split(";")[0]
+                return await read_httpx_response_limited(response), mime_type
 
     def _write_reference_temp_file(self, content: bytes, mime_type: Optional[str]) -> Path:
         suffix = self._suffix_for_mime_type(mime_type)
@@ -706,9 +716,7 @@ class VideoGenerator:
         return error_message or f"OpenAI video job {video_id} finished with status '{status}'"
 
     def _parse_data_url(self, data_url: str) -> Tuple[bytes, str]:
-        header, encoded = data_url.split(",", 1)
-        mime_type = header.split(":", 1)[1].split(";", 1)[0]
-        return base64.b64decode(encoded), mime_type
+        return decode_base64_data_url_limited(data_url)
 
     def _to_data_url(self, content: bytes, mime_type: str) -> str:
         encoded = base64.b64encode(content).decode("ascii")

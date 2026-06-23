@@ -9,26 +9,14 @@ import io
 import json
 import logging
 import mimetypes
-import socket
-import ipaddress
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from urllib.error import HTTPError
-from urllib.parse import urljoin, urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
-
-
-class _NoFollowRedirect(HTTPRedirectHandler):
-    """Disable urllib auto-redirect so each hop's Location can be re-validated."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: N802
-        return None
-
-
-_REDIRECT_CODES = {301, 302, 303, 307, 308}
+from urllib.parse import urlparse
 
 from ....core.config import settings
 from ....utils.attachment_handler import is_base64_url
+from ....utils.media_limits import read_httpx_response_limited_sync
+from ....utils.url_security import UnsafeURLError, sync_stream_with_redirect_guard, validate_outbound_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -52,43 +40,10 @@ def _get_pandas() -> Any | None:
 
 
 def validate_remote_reference_url(engine: Any, ref_text: str) -> str:
-    raw_url = str(ref_text or "").strip()
-    parsed = urlparse(raw_url)
-    if parsed.scheme not in {"http", "https"}:
-        raise ValueError("文件引用仅支持 http/https 协议")
-
-    host = parsed.hostname
-    if not host:
-        raise ValueError("文件引用缺少主机名")
-    if engine._is_disallowed_reference_hostname(host):
-        raise ValueError("文件引用主机不被允许")
-
-    ip_literal = engine._parse_reference_ip_host(host)
-    if ip_literal is not None:
-        if engine._is_disallowed_reference_ip(ip_literal):
-            raise ValueError("文件引用指向受限地址")
-        return raw_url
-
     try:
-        addr_infos = socket.getaddrinfo(
-            host,
-            parsed.port or (443 if parsed.scheme == "https" else 80),
-            proto=socket.IPPROTO_TCP,
-        )
-    except socket.gaierror as exc:
-        raise ValueError(f"文件引用主机解析失败: {host}") from exc
-
-    resolved_ips = {
-        ipaddress.ip_address(info[4][0])
-        for info in addr_infos
-        if info and len(info) >= 5 and info[4]
-    }
-    if not resolved_ips:
-        raise ValueError(f"文件引用主机解析失败: {host}")
-    if any(engine._is_disallowed_reference_ip(ip_obj) for ip_obj in resolved_ips):
-        raise ValueError("文件引用指向受限网络地址")
-
-    return raw_url
+        return validate_outbound_http_url(ref_text)
+    except UnsafeURLError as exc:
+        raise ValueError(f"文件引用 URL 被出站策略拒绝: {exc}") from exc
 
 
 def load_binary_from_reference(
@@ -106,44 +61,24 @@ def load_binary_from_reference(
 
     parsed = urlparse(ref_text)
     if parsed.scheme in ("http", "https"):
-        # CANON-018 / W02R-023: validate the initial URL AND every redirect hop.
-        # urllib follows redirects by default, so disable auto-redirect and
-        # re-validate each Location before fetching it (otherwise a public URL
-        # could 302 into a private/internal host). The streaming size cap is
-        # preserved via response.read(max_bytes + 1).
+        # CANON-018 / W02R-023: validate the initial URL and every redirect hop,
+        # and connect through the same pinned sync httpx backend used by the
+        # shared outbound guard. The byte cap is enforced while streaming.
         current = validate_remote_reference_url(engine, ref_text)
-        opener = build_opener(_NoFollowRedirect)
-        for _ in range(6):  # initial request + up to 5 redirects
-            request = Request(
-                url=current,
-                headers={
-                    "User-Agent": "WorkflowEngine/1.0",
-                    "Accept": "*/*",
-                },
-            )
-            try:
-                response = opener.open(request, timeout=10)  # nosec B310
-            except HTTPError as exc:
-                code = exc.code
-                location = exc.headers.get("Location") if exc.headers else None
-                try:
-                    exc.close()  # best-effort: release the redirect connection
-                except Exception:  # noqa: BLE001
-                    pass
-                if code in _REDIRECT_CODES:
-                    if not location:
-                        raise ValueError("重定向缺少 Location")
-                    current = validate_remote_reference_url(engine, urljoin(current, location))
-                    continue
-                raise
-            with response:
-                content_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
-                raw = response.read(max_bytes + 1)
-            if len(raw) > max_bytes:
-                raise ValueError(f"文件过大，超过 {max_bytes // (1024 * 1024)}MB 上限")
-            file_name = Path(urlparse(current).path).name or "remote-file"
+        with sync_stream_with_redirect_guard(
+            current,
+            headers={
+                "User-Agent": "WorkflowEngine/1.0",
+                "Accept": "*/*",
+            },
+            timeout=10,
+            max_redirects=5,
+        ) as (response, final_url):
+            response.raise_for_status()
+            content_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            raw = read_httpx_response_limited_sync(response, max_bytes=max_bytes)
+            file_name = Path(urlparse(final_url).path).name or "remote-file"
             return raw, content_type, file_name
-        raise ValueError("重定向次数过多")
 
     if parsed.scheme in ("", "file"):
         if not settings.workflow_allow_local_file_reference:

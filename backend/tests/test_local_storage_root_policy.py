@@ -57,3 +57,85 @@ async def test_delete_rejects_sibling_dir_escape(tmp_path, monkeypatch):
 
     assert result is False
     assert victim.exists()  # escape must NOT have deleted the sibling file
+
+
+@pytest.mark.asyncio
+async def test_local_upload_url_and_path_are_scoped_to_owner(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCAL_STORAGE_ALLOWED_ROOTS", str(tmp_path))
+    root = tmp_path / "storage"
+    provider = local_provider.LocalProvider(
+        local_provider.scope_local_storage_config_for_user(
+            {"storage_path": str(root)},
+            "user-a",
+        )
+    )
+
+    result = await provider.upload("x.png", b"img", "image/png")
+
+    assert result.success is True
+    assert result.url.startswith("/api/storage/local-files/user-a/")
+    assert str(root / "user-a") in result.metadata["file_path"]
+
+
+@pytest.mark.asyncio
+async def test_local_browse_owner_scope_hides_sibling_users(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCAL_STORAGE_ALLOWED_ROOTS", str(tmp_path))
+    root = tmp_path / "storage"
+    (root / "user-a").mkdir(parents=True)
+    (root / "user-b").mkdir(parents=True)
+    (root / "user-a" / "a.txt").write_text("a", encoding="utf-8")
+    (root / "user-b" / "b.txt").write_text("b", encoding="utf-8")
+
+    provider = local_provider.LocalProvider(
+        local_provider.scope_local_storage_config_for_user(
+            {"storage_path": str(root)},
+            "user-a",
+        )
+    )
+
+    result = await provider.browse()
+    paths = {item["path"] for item in result["items"]}
+
+    assert paths == {"a.txt"}
+
+
+def test_local_public_file_resolution_is_owner_scoped(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCAL_STORAGE_ALLOWED_ROOTS", str(tmp_path))
+    root = tmp_path / "storage"
+    owner_file = root / "user-a" / "visible.txt"
+    sibling_file = root / "user-b" / "secret.txt"
+    owner_file.parent.mkdir(parents=True)
+    sibling_file.parent.mkdir(parents=True)
+    owner_file.write_text("visible", encoding="utf-8")
+    sibling_file.write_text("secret", encoding="utf-8")
+    config = {"storage_path": str(root)}
+
+    assert local_provider.resolve_local_public_file_path_for_user(
+        "/api/storage/local-files/user-a/visible.txt",
+        "user-a",
+        config,
+    ) == owner_file
+    assert local_provider.resolve_local_public_file_path_for_user(
+        "/api/storage/local-files/user-b/secret.txt",
+        "user-a",
+        config,
+    ) is None
+    assert local_provider.resolve_local_public_file_path_for_user(
+        "/api/storage/local-files/user-a/visible.txt",
+        None,
+        config,
+    ) is None
+
+
+def test_local_public_file_resolution_enforces_owner_prefix_boundary(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCAL_STORAGE_ALLOWED_ROOTS", str(tmp_path))
+    root = tmp_path / "storage"
+    misleading_alias = root / "user-a" / "b" / "visible.txt"
+    misleading_alias.parent.mkdir(parents=True)
+    misleading_alias.write_text("visible", encoding="utf-8")
+
+    assert local_provider.resolve_local_public_file_path_for_user(
+        "/api/storage/local-files/user-ab/visible.txt",
+        "user-a",
+        {"storage_path": str(root)},
+    ) is None

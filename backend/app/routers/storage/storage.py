@@ -29,7 +29,9 @@ from ...models.db_models import StorageConfig, ActiveStorage, UploadTask, ChatSe
 from ...services.storage.storage_manager import StorageManager
 from ...services.storage.local_provider import (
     DEFAULT_LOCAL_URL_PREFIX,
+    normalize_local_storage_owner_id,
     resolve_local_public_file_path,
+    scope_local_storage_config_for_user,
 )
 from ...services.common.redis_queue_service import redis_queue
 from ...services.common.cache_service import CacheService
@@ -3035,7 +3037,7 @@ async def get_worker_pool_health(
                 UploadTask.status == 'pending'
             ).count()
         except Exception:
-            pass
+            logger.debug("[StorageHealth] Failed to count pending upload tasks", exc_info=True)
 
     return health
 
@@ -3456,16 +3458,20 @@ async def get_local_storage_file(
     relative_path: str,
     user_id: str = Depends(require_current_user),
 ):
-    # CANON-024 / W02R-011: require authentication. Same-origin <img> requests
-    # authenticate via the httpOnly access_token cookie, so media display is
-    # unaffected, but anonymous cross-user reads by guessable path are blocked.
-    # (Per-object ownership is a follow-up: the default layout is not user-scoped.)
     normalized_relative_path = str(relative_path or "").strip().lstrip("/")
     if not normalized_relative_path:
         raise HTTPException(status_code=404, detail="File not found")
 
+    owner_id = normalize_local_storage_owner_id(user_id)
+    first_segment = normalized_relative_path.split("/", 1)[0]
+    if first_segment != owner_id:
+        raise HTTPException(status_code=404, detail="File not found")
+
     public_url = f"{DEFAULT_LOCAL_URL_PREFIX}/{normalized_relative_path}"
-    file_path = resolve_local_public_file_path(public_url)
+    file_path = resolve_local_public_file_path(
+        public_url,
+        scope_local_storage_config_for_user({}, user_id),
+    )
     if file_path is None or not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -3475,7 +3481,8 @@ async def get_local_storage_file(
         media_type=guessed_media_type,
         filename=file_path.name,
         headers={
-            "Cache-Control": "public, max-age=31536000, immutable",
+            "Cache-Control": "private, no-store",
+            "Vary": "Authorization, Cookie",
             "X-Content-Type-Options": "nosniff",
         },
     )

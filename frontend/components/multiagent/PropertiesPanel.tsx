@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { Node } from 'reactflow';
+import { Node } from '@xyflow/react';
 import { X, RefreshCw, CheckCircle2, XCircle, Clock, Loader2, Trash2 } from 'lucide-react';
 import { CustomNodeData } from './CustomNode';
 import { nodeTypeConfigs, NodeType } from './nodeTypeConfigs';

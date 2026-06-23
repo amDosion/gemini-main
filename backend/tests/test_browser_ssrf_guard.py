@@ -7,7 +7,6 @@ or RFC-1918 hosts. The url_security.validate_outbound_http_url guard already
 existed; these tests pin that it is now wired in BEFORE any network/driver call.
 """
 
-import pytest
 import logging
 
 from app.services.gemini.common import browser
@@ -116,7 +115,18 @@ def test_read_webpage_logs_url_summary_without_signed_query(monkeypatch, caplog)
 
 
 def test_selenium_browse_logs_url_summary_and_not_step_payload(monkeypatch, caplog):
-    captured = {}
+    captured = {"driver_get": [], "guard_url": None, "documents": []}
+
+    class _FakeResponse:
+        text = "<html><body><h1>selenium-private</h1><script>fetch('http://127.0.0.1/')</script></body></html>"
+        url = "http://8.8.8.8/private/path?token=secret-token&X-Amz-Signature=secret-signature#private-fragment"
+
+        def raise_for_status(self):
+            return None
+
+    def _fake_guard(url, *, headers, timeout, max_redirects=5):
+        captured["guard_url"] = url
+        return _FakeResponse()
 
     class _FakeDriver:
         page_source = "<html><body><h1>selenium-private</h1></body></html>"
@@ -125,9 +135,12 @@ def test_selenium_browse_logs_url_summary_and_not_step_payload(monkeypatch, capl
             return None
 
         def get(self, url):
-            captured["url"] = url
+            captured["driver_get"].append(url)
 
         def execute_script(self, script, *args):
+            if "document.write" in script:
+                captured["documents"].append(args[0])
+                return None
             if "scrollHeight" in script:
                 return 100
             if "pageYOffset" in script:
@@ -149,6 +162,7 @@ def test_selenium_browse_logs_url_summary_and_not_step_payload(monkeypatch, capl
             return object()
 
     monkeypatch.setattr(browser, "SELENIUM_AVAILABLE", True)
+    monkeypatch.setattr(browser, "_http_get_with_ssrf_guard", _fake_guard)
     monkeypatch.setattr(browser, "get_driver", lambda user_id="default": _FakeDriver())
     monkeypatch.setattr(browser, "WebDriverWait", _FakeWait)
     monkeypatch.setattr(browser.time, "sleep", lambda seconds: None)
@@ -169,7 +183,12 @@ def test_selenium_browse_logs_url_summary_and_not_step_payload(monkeypatch, capl
 
     assert result["error"] is None
     assert "selenium-private" in result["content"].lower()
-    assert captured.get("url") == raw_url
+    assert captured["guard_url"] == raw_url
+    assert captured["driver_get"] == ["about:blank"]
+    assert captured["documents"]
+    assert "<script" not in captured["documents"][0].lower()
+    assert "script-src 'none'" in captured["documents"][0]
+    assert "127.0.0.1" not in captured["documents"][0]
 
     log_text = "\n".join(record.getMessage() for record in caplog.records)
     assert "http://8.8.8.8 path_len=13 query_params=2 fragment=yes" in log_text
@@ -180,3 +199,24 @@ def test_selenium_browse_logs_url_summary_and_not_step_payload(monkeypatch, capl
     assert "secret-signature" not in log_text
     assert "private-fragment" not in log_text
     assert "super-secret-password" not in log_text
+
+
+def test_selenium_browse_rejects_redirect_to_internal_before_driver(monkeypatch):
+    def _blocked_redirect(url, *, headers, timeout, max_redirects=5):
+        raise browser.UnsafeURLError("redirect target is restricted")
+
+    def _no_driver(*args, **kwargs):
+        raise AssertionError("get_driver must not be reached when guarded fetch blocks")
+
+    monkeypatch.setattr(browser, "SELENIUM_AVAILABLE", True)
+    monkeypatch.setattr(browser, "_http_get_with_ssrf_guard", _blocked_redirect)
+    monkeypatch.setattr(browser, "get_driver", _no_driver)
+
+    result = browser.selenium_browse(
+        "http://8.8.8.8/",
+        capture_screenshot=False,
+        auto_scroll=False,
+    )
+
+    assert result["error"]
+    assert "SSRF" in result["error"] or "防护" in result["error"]

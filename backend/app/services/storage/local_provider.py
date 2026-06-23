@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_LOCAL_URL_PREFIX = "/api/storage/local-files"
 DEFAULT_LOCAL_STORAGE_RELATIVE_PATH = "backend/app/temp/local_storage"
+_LOCAL_OWNER_CONFIG_KEY = "_owner_user_id"
 
 
 @functools.lru_cache(maxsize=8)
@@ -67,6 +68,50 @@ def _path_is_contained(target: str, root: str) -> bool:
     return target == root or target.startswith(root + os.sep)
 
 
+def normalize_local_storage_owner_id(value: object) -> str:
+    owner = str(value or "").strip().strip("/\\")
+    if not owner:
+        return ""
+    if (
+        any(ch in owner for ch in ("/", "\\"))
+        or owner in {".", ".."}
+        or "\x00" in owner
+        or any(ord(ch) < 32 or ord(ch) == 127 for ch in owner)
+    ):
+        raise ValueError("非法本地存储用户标识")
+    return owner
+
+
+def scope_local_storage_config_for_user(
+    config: Optional[Dict[str, Any]],
+    user_id: str,
+) -> Dict[str, Any]:
+    scoped = dict(config or {})
+    owner = normalize_local_storage_owner_id(user_id)
+    if owner:
+        scoped[_LOCAL_OWNER_CONFIG_KEY] = owner
+    return scoped
+
+
+def _owner_scope_from_config(config: Optional[Dict[str, Any]]) -> str:
+    runtime_config = dict(config or {})
+    return normalize_local_storage_owner_id(runtime_config.get(_LOCAL_OWNER_CONFIG_KEY))
+
+
+def _apply_owner_scope(
+    storage_path: str,
+    url_prefix: str,
+    config: Optional[Dict[str, Any]],
+) -> tuple[str, str]:
+    owner = _owner_scope_from_config(config)
+    if not owner:
+        return storage_path, url_prefix
+    return (
+        os.path.join(storage_path, owner),
+        f"{url_prefix.rstrip('/')}/{owner}",
+    )
+
+
 def _is_within_allowed_local_root(path: str) -> bool:
     target = os.path.realpath(path)
     return any(_path_is_contained(target, root) for root in _local_storage_allowed_roots())
@@ -102,9 +147,10 @@ def resolve_local_storage_runtime_config(config: Optional[Dict[str, Any]] = None
 
 def resolve_local_public_file_path(file_url: str, config: Optional[Dict[str, Any]] = None) -> Optional[Path]:
     storage_path, url_prefix = resolve_local_storage_runtime_config(config)
+    storage_path, url_prefix = _apply_owner_scope(storage_path, url_prefix, config)
     normalized_url = str(file_url or "").strip()
     url_prefix_clean = url_prefix.rstrip("/")
-    if not normalized_url.startswith(url_prefix_clean):
+    if normalized_url != url_prefix_clean and not normalized_url.startswith(f"{url_prefix_clean}/"):
         return None
 
     relative_path = normalized_url[len(url_prefix_clean):].lstrip("/").replace("/", os.sep)
@@ -117,6 +163,20 @@ def resolve_local_public_file_path(file_url: str, config: Optional[Dict[str, Any
         return None
 
     return Path(target)
+
+
+def resolve_local_public_file_path_for_user(
+    file_url: str,
+    user_id: Optional[str],
+    config: Optional[Dict[str, Any]] = None,
+) -> Optional[Path]:
+    owner = normalize_local_storage_owner_id(user_id)
+    if not owner:
+        return None
+    return resolve_local_public_file_path(
+        file_url,
+        scope_local_storage_config_for_user(config, owner),
+    )
 
 
 class LocalProvider(BaseStorageProvider):
@@ -204,6 +264,7 @@ class LocalProvider(BaseStorageProvider):
             UploadResult: 上传结果
         """
         storage_path, url_prefix = resolve_local_storage_runtime_config(self.config)
+        storage_path, url_prefix = _apply_owner_scope(storage_path, url_prefix, self.config)
 
         # 检查存储空间（_check_storage_space 内部调用阻塞式 os.walk，移至线程池执行）
         space_ok, space_error = await asyncio.to_thread(
@@ -297,6 +358,7 @@ class LocalProvider(BaseStorageProvider):
             bool: 删除是否成功
         """
         storage_path, url_prefix = resolve_local_storage_runtime_config(self.config)
+        storage_path, url_prefix = _apply_owner_scope(storage_path, url_prefix, self.config)
 
         try:
             # 从 URL 中提取相对路径
@@ -341,6 +403,7 @@ class LocalProvider(BaseStorageProvider):
         cursor: Optional[str] = None
     ) -> Dict[str, Any]:
         storage_path, url_prefix = resolve_local_storage_runtime_config(self.config)
+        storage_path, url_prefix = _apply_owner_scope(storage_path, url_prefix, self.config)
 
         try:
             Path(storage_path).mkdir(parents=True, exist_ok=True)
@@ -426,6 +489,7 @@ class LocalProvider(BaseStorageProvider):
 
     async def count_items(self, path: str = "") -> Dict[str, Any]:
         storage_path, _url_prefix = resolve_local_storage_runtime_config(self.config)
+        storage_path, _url_prefix = _apply_owner_scope(storage_path, _url_prefix, self.config)
 
         try:
             Path(storage_path).mkdir(parents=True, exist_ok=True)
@@ -473,6 +537,7 @@ class LocalProvider(BaseStorageProvider):
         file_url: Optional[str] = None
     ) -> Dict[str, Any]:
         storage_path, _url_prefix = resolve_local_storage_runtime_config(self.config)
+        storage_path, _url_prefix = _apply_owner_scope(storage_path, _url_prefix, self.config)
 
         try:
             root = os.path.realpath(storage_path)
@@ -506,6 +571,7 @@ class LocalProvider(BaseStorageProvider):
         is_directory: bool = False
     ) -> Dict[str, Any]:
         storage_path, _url_prefix = resolve_local_storage_runtime_config(self.config)
+        storage_path, _url_prefix = _apply_owner_scope(storage_path, _url_prefix, self.config)
 
         try:
             root = os.path.realpath(storage_path)
@@ -544,6 +610,7 @@ class LocalProvider(BaseStorageProvider):
             UploadResult: 测试结果
         """
         storage_path, url_prefix = resolve_local_storage_runtime_config(self.config)
+        storage_path, url_prefix = _apply_owner_scope(storage_path, url_prefix, self.config)
 
         try:
             # 检查存储路径是否存在

@@ -231,7 +231,7 @@ class SimpleImageEditService:
                 try:
                     os.unlink(tmp_path)
                 except Exception:
-                    pass
+                    logger.debug("[SimpleImageEdit] Failed to delete temporary upload file: %s", tmp_path, exc_info=True)
     
     
     async def edit_with_generate_content(

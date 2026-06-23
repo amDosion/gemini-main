@@ -1,4 +1,4 @@
-import type { Node, Edge } from 'reactflow';
+import type { Node, Edge } from '@xyflow/react';
 import { CustomNode } from './CustomNode';
 import { NodeType } from './nodeTypeConfigs';
 import type { AgentDef, WorkflowNodeData } from './types';
@@ -238,7 +238,7 @@ const normalizeSelectionId = (value: unknown): string | null => {
   return normalized || null;
 };
 
-export const applySingleNodeSelection = <TData>(
+export const applySingleNodeSelection = <TData extends Record<string, unknown>>(
   inputNodes: Array<Node<TData>>,
   selectedNodeId: unknown
 ): Array<Node<TData>> => {

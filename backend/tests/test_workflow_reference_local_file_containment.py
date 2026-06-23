@@ -13,6 +13,7 @@ path like ``C:\\...`` is parsed as scheme "c" and never reaches this branch).
 """
 
 import pytest
+from contextlib import contextmanager
 
 from app.core.config import settings
 from app.services.agent.workflow_engine import references
@@ -64,3 +65,32 @@ def test_local_reference_disabled_by_default(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ValueError):
         references.load_binary_from_reference(None, "data.csv")
+
+
+def test_remote_reference_uses_guarded_sync_stream(monkeypatch):
+    class _FakeResponse:
+        status_code = 200
+        headers = {"Content-Type": "text/csv", "content-length": "7"}
+
+        def raise_for_status(self):
+            return None
+
+        def iter_bytes(self):
+            yield b"a,b\n1\n"
+
+    calls = []
+
+    @contextmanager
+    def _fake_stream(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        yield _FakeResponse(), "https://example.test/data.csv"
+
+    monkeypatch.setattr(references, "validate_outbound_http_url", lambda url: url)
+    monkeypatch.setattr(references, "sync_stream_with_redirect_guard", _fake_stream)
+
+    raw, mime, name = references.load_binary_from_reference(None, "https://example.test/data.csv")
+
+    assert raw == b"a,b\n1\n"
+    assert mime == "text/csv"
+    assert name == "data.csv"
+    assert calls and calls[0]["max_redirects"] == 5

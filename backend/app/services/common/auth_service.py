@@ -3,6 +3,8 @@
 """
 import hashlib
 import logging
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
 
@@ -14,6 +16,8 @@ from ...models.db_models import User, RefreshToken, LoginAttempt, IPBlocklist, I
 from ...core.config import settings
 from ...core.password import hash_password, verify_password
 from ...core.jwt_utils import (
+    ExpiredSignatureError,
+    JWTError,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -21,10 +25,46 @@ from ...core.jwt_utils import (
     TokenPayload
 )
 from ...utils.log_sanitization import summarize_text_for_log
-from .system_config_service import get_system_config, get_client_ip
+from .system_config_service import get_system_config
 
 logger = logging.getLogger(__name__)
 NO_CONTROL_CHARS_PATTERN = r"^[^\x00-\x1F\x7F]*$"
+_LOGIN_ATTEMPT_LOCK_STRIPE_COUNT = 256
+_LOGIN_ATTEMPT_LOCK_STRIPES = tuple(
+    threading.Lock() for _ in range(_LOGIN_ATTEMPT_LOCK_STRIPE_COUNT)
+)
+
+
+def _stable_lock_key(text_value: str) -> int:
+    digest = hashlib.sha256(text_value.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big", signed=False) & ((1 << 63) - 1)
+
+
+def _login_attempt_lock_names(email: Optional[str], ip_address: str) -> tuple[str, ...]:
+    names = {f"ip:{str(ip_address or 'unknown').strip() or 'unknown'}"}
+    normalized_email = str(email or "").strip().lower()
+    if normalized_email:
+        names.add(f"email:{normalized_email}")
+    return tuple(sorted(names))
+
+
+@contextmanager
+def _process_login_attempt_locks(email: Optional[str], ip_address: str):
+    names = _login_attempt_lock_names(email, ip_address)
+    stripe_indexes = sorted(
+        {
+            _stable_lock_key(f"process-login-attempt:{name}") % _LOGIN_ATTEMPT_LOCK_STRIPE_COUNT
+            for name in names
+        }
+    )
+    locks = [_LOGIN_ATTEMPT_LOCK_STRIPES[index] for index in stripe_indexes]
+    for lock in locks:
+        lock.acquire()
+    try:
+        yield
+    finally:
+        for lock in reversed(locks):
+            lock.release()
 
 
 # ============================================
@@ -297,6 +337,44 @@ class AuthService:
         
         return True, None
 
+    def _acquire_login_attempt_db_locks(self, email: Optional[str], ip_address: str) -> None:
+        dialect = getattr(getattr(self.db, "bind", None), "dialect", None)
+        if dialect is None or getattr(dialect, "name", "") != "postgresql":
+            return
+        for name in _login_attempt_lock_names(email, ip_address):
+            self.db.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"),
+                {"k": _stable_lock_key(f"login-attempt:{name}")},
+            )
+
+    def _assert_login_attempt_allowed_locked(
+        self,
+        email: Optional[str],
+        ip_address: str,
+    ) -> None:
+        from fastapi import HTTPException
+
+        with _process_login_attempt_locks(email, ip_address):
+            self._acquire_login_attempt_db_locks(email, ip_address)
+            is_allowed, error_msg = self._check_login_attempts(email, ip_address)
+            if not is_allowed:
+                raise HTTPException(status_code=429, detail=error_msg)
+
+    def _record_failed_login_attempt_or_raise(
+        self,
+        email: Optional[str],
+        ip_address: str,
+        user_agent: Optional[str] = None,
+    ) -> None:
+        from fastapi import HTTPException
+
+        with _process_login_attempt_locks(email, ip_address):
+            self._acquire_login_attempt_db_locks(email, ip_address)
+            is_allowed, error_msg = self._check_login_attempts(email, ip_address)
+            if not is_allowed:
+                raise HTTPException(status_code=429, detail=error_msg)
+            self._record_login_attempt(email, ip_address, False, user_agent)
+
     # W02R-002: stable application-defined key for the first-admin advisory lock.
     _FIRST_ADMIN_LOCK_KEY = 7723391011
 
@@ -394,15 +472,20 @@ class AuthService:
             logger.warning(f"[AuthService] 封禁的 IP 尝试登录: {ip_address}")
             raise HTTPException(status_code=403, detail="Your IP address has been blocked")
         
-        # 检查登录尝试次数
-        is_allowed, error_msg = self._check_login_attempts(data.email, ip_address or "unknown")
-        if not is_allowed:
+        client_ip = ip_address or "unknown"
+
+        # 检查登录尝试次数。This first check avoids password work for already
+        # locked identities; failed attempts re-check and reserve under the same
+        # identity lock before recording the failure.
+        try:
+            self._assert_login_attempt_allowed_locked(data.email, client_ip)
+        except HTTPException as exc:
             logger.warning(
                 "[AuthService] 登录尝试次数过多: %s, ip=%s",
                 summarize_text_for_log(data.email, label="email"),
                 ip_address,
             )
-            raise HTTPException(status_code=429, detail=error_msg)
+            raise exc
         
         # 查找用户
         user = self.db.query(User).filter(User.email == data.email).first()
@@ -413,12 +496,15 @@ class AuthService:
             password_valid = verify_password(data.password, user.password_hash)
         
         # 记录登录尝试（无论成功或失败）- 用于防暴力破解
-        self._record_login_attempt(data.email, ip_address or "unknown", password_valid, user_agent)
+        if password_valid:
+            self._record_login_attempt(data.email, client_ip, True, user_agent)
+        else:
+            self._record_failed_login_attempt_or_raise(data.email, client_ip, user_agent)
         
         if not user or not password_valid:
             # 登录失败，记录到 IPLoginHistory（如果用户存在）
             if user:
-                self._record_ip_login_history(user.id, ip_address or "unknown", "failed_login", user_agent)
+                self._record_ip_login_history(user.id, client_ip, "failed_login", user_agent)
             raise InvalidCredentialsError()
 
         # 检查账户状态
@@ -473,20 +559,13 @@ class AuthService:
             InvalidTokenError: 无效令牌
             TokenExpiredError: 令牌已过期
         """
-        # ✅ A-8: 显式区分 jose 异常类别，保留诊断上下文（避免吞掉所有 Exception）
-        from jose import JWTError
-        try:
-            from jose import ExpiredSignatureError, JWTClaimsError
-        except ImportError:  # pragma: no cover - jose 老版本兼容
-            ExpiredSignatureError = JWTError  # type: ignore[assignment]
-            JWTClaimsError = JWTError  # type: ignore[assignment]
-
+        # ✅ A-8: 显式区分 JWT 异常类别，保留诊断上下文（避免吞掉所有 Exception）
         try:
             payload = decode_token(token)
         except ExpiredSignatureError:
-            logger.warning("[AuthService] Token 已过期 (jose ExpiredSignatureError)")
+            logger.warning("[AuthService] Token 已过期 (JWT ExpiredSignatureError)")
             raise TokenExpiredError()
-        except (JWTClaimsError, JWTError) as e:
+        except JWTError as e:
             logger.warning(f"[AuthService] Token 无效: {type(e).__name__}: {e}")
             raise InvalidTokenError()
         except TokenExpiredError:
@@ -496,7 +575,7 @@ class AuthService:
             logger.warning(f"[AuthService] Token 解码异常: {type(e).__name__}: {e}")
             raise InvalidTokenError()
 
-        # 内部 exp 检查（jwt_utils.decode_token 包了一层 JWTError，
+        # 内部 exp 检查（兼容测试或自定义 payload 场景，
         # 这里仍需基于 payload.exp 判定，以与 is_token_expired 行为一致）
         if payload.exp < int(datetime.now(timezone.utc).timestamp()):
             raise TokenExpiredError()

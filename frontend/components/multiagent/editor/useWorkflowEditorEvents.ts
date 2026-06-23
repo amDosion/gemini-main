@@ -16,7 +16,7 @@
  */
 
 import { useEffect } from 'react';
-import type { Edge, Node } from 'reactflow';
+import type { Edge, Node } from '@xyflow/react';
 
 import type { ExecutionStatus, WorkflowNodeData } from '../types';
 import {

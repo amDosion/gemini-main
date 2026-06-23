@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def extract_text_preview(
@@ -190,17 +193,17 @@ def extract_cost_summary(payload: Any) -> Dict[str, Any]:
                     if input_tokens is not None:
                         token_totals["input_tokens"] += int(float(str(input_tokens)))
                 except Exception:
-                    pass
+                    logger.debug("[WorkflowResultContract] Ignoring invalid input token count", exc_info=True)
                 try:
                     if output_tokens is not None:
                         token_totals["output_tokens"] += int(float(str(output_tokens)))
                 except Exception:
-                    pass
+                    logger.debug("[WorkflowResultContract] Ignoring invalid output token count", exc_info=True)
                 try:
                     if total_tokens is not None:
                         token_totals["total_tokens"] += int(float(str(total_tokens)))
                 except Exception:
-                    pass
+                    logger.debug("[WorkflowResultContract] Ignoring invalid total token count", exc_info=True)
             for nested in value.values():
                 walk(nested, depth + 1)
             return

@@ -11,10 +11,9 @@ from fastapi import Request, HTTPException, status
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.exc import SQLAlchemyError
-from ..core.jwt_utils import decode_token, TokenPayload
+from ..core.jwt_utils import JWTError, decode_token, TokenPayload
 from ..core.database import SessionLocal
 from ..models.db_models import User
-from jose import JWTError
 import logging
 
 

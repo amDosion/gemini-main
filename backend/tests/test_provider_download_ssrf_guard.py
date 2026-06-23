@@ -217,37 +217,28 @@ async def test_geminiapi_conversational_download_blocks_loopback():
 
 def test_workflow_remote_reference_blocks_redirect_to_internal(monkeypatch):
     # CANON-018 / W02R-023: the workflow remote-reference loader validated the
-    # initial URL but urlopen followed redirects; a 302 -> internal host must be
-    # re-validated per hop and rejected.
-    import ipaddress
+    # initial URL but the legacy fetcher followed redirects; remote references
+    # must now delegate to the shared guarded stream so every hop is validated.
+    from contextlib import contextmanager
     from types import SimpleNamespace
-    from urllib.error import HTTPError
 
     from app.services.agent.workflow_engine import references as refs
-
-    def _parse_ip(host):
-        try:
-            return ipaddress.ip_address(host)
-        except ValueError:
-            return None
+    from app.utils.url_security import UnsafeURLError
 
     engine = SimpleNamespace(
         _is_disallowed_reference_hostname=lambda h: False,
-        _parse_reference_ip_host=_parse_ip,
+        _parse_reference_ip_host=lambda h: None,
         _is_disallowed_reference_ip=lambda ip: ip.is_loopback or ip.is_private or ip.is_link_local,
     )
 
-    class _Opener:
-        def open(self, request, timeout=None):
-            raise HTTPError(
-                getattr(request, "full_url", "http://1.1.1.1/start"),
-                302,
-                "Found",
-                {"Location": "http://127.0.0.1/secret"},
-                None,
-            )
+    @contextmanager
+    def _guarded_stream(url, **kwargs):
+        assert url == "http://1.1.1.1/start"
+        assert kwargs["max_redirects"] == 5
+        raise UnsafeURLError("URL 指向受限地址")
+        yield
 
-    monkeypatch.setattr(refs, "build_opener", lambda *a, **k: _Opener())
+    monkeypatch.setattr(refs, "sync_stream_with_redirect_guard", _guarded_stream)
     with pytest.raises(ValueError):
         refs.load_binary_from_reference(engine, "http://1.1.1.1/start", 1024 * 1024)
 

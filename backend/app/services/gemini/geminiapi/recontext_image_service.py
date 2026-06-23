@@ -102,7 +102,7 @@ class GeminiRecontextImageService:
         except AttributeError:
             return genai_types.Part(inline_data=genai_types.Blob(data=data, mime_type=mime_type))
 
-    def _part_from_reference_item(self, item: Any) -> Optional[Any]:
+    def _part_from_reference_item(self, item: Any, user_id: Optional[str] = None) -> Optional[Any]:
         if isinstance(item, dict):
             if item.get("google_file_uri"):
                 return genai_types.Part(file_data=genai_types.FileData(
@@ -119,8 +119,8 @@ class GeminiRecontextImageService:
             return None
 
         if text.startswith("/api/storage/local-files/"):
-            from ...storage.local_provider import resolve_local_public_file_path
-            local_path = resolve_local_public_file_path(text)
+            from ...storage.local_provider import resolve_local_public_file_path_for_user
+            local_path = resolve_local_public_file_path_for_user(text, user_id)
             if not local_path or not local_path.exists():
                 raise ValueError(f"Local file not found: {text}")
             mime_type = mimetypes.guess_type(str(local_path))[0] or "image/png"
@@ -153,10 +153,11 @@ class GeminiRecontextImageService:
         prompt: str,
         reference_images: Dict[str, Any],
         number_of_images: int = 1,
+        user_id: Optional[str] = None,
     ) -> List[Any]:
         image_parts = []
         for item in self._normalize_reference_items(reference_images):
-            part = self._part_from_reference_item(item)
+            part = self._part_from_reference_item(item, user_id)
             if part is not None:
                 image_parts.append(part)
 
@@ -281,12 +282,11 @@ class GeminiRecontextImageService:
         user_id: Optional[str] = None,
         **kwargs: Any,
     ) -> List[Dict[str, Any]]:
-        del user_id
         client = self._get_client()
         output_mime_type = kwargs.get("output_mime_type") or "image/png"
         number_of_images = max(1, min(10, int(kwargs.get("number_of_images") or kwargs.get("numberOfImages") or 1)))
 
-        message = self._build_message(prompt, reference_images, number_of_images)
+        message = self._build_message(prompt, reference_images, number_of_images, user_id=user_id)
         config = self._build_config(kwargs)
         chat = client.chats.create(model=model, config=config)
         response = await run_in_sdk_thread(

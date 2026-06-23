@@ -170,8 +170,8 @@ def setup_logger(name: str = "backend", level: int = logging.INFO) -> logging.Lo
         if hasattr(console_handler.stream, 'reconfigure'):
             try:
                 console_handler.stream.reconfigure(encoding='utf-8')
-            except Exception:
-                pass  # If reconfigure fails, continue without it
+            except Exception as exc:
+                sys.stderr.write(f"[logger] failed to set stderr UTF-8 encoding: {exc}\n")
 
         # Create formatter with timestamp
         formatter = logging.Formatter(
@@ -222,8 +222,8 @@ def setup_root_logger(level: int = logging.INFO) -> None:
     if hasattr(console_handler.stream, 'reconfigure'):
         try:
             console_handler.stream.reconfigure(encoding='utf-8')
-        except Exception:
-            pass
+        except Exception as exc:
+            sys.stderr.write(f"[logger] failed to set root stderr UTF-8 encoding: {exc}\n")
 
     # Create formatter with timestamp
     formatter = logging.Formatter(

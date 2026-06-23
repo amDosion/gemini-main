@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { Edge, Node } from 'reactflow';
+import type { Edge, Node } from '@xyflow/react';
 
 import { useWorkflowExecuteHandler } from './useWorkflowExecuteHandler';
 import type { WorkflowNodeData } from '../types';

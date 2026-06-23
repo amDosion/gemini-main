@@ -10,7 +10,7 @@ const redoMock = vi.fn(() => null);
 const takeSnapshotMock = vi.fn();
 const setCenterMock = vi.fn();
 
-vi.mock('reactflow', () => {
+vi.mock('@xyflow/react', () => {
   const useNodesState = (initial: any[]) => {
     const [nodes, setNodes] = React.useState(initial);
     return [nodes, setNodes, vi.fn()] as const;
@@ -20,7 +20,7 @@ vi.mock('reactflow', () => {
     return [edges, setEdges, vi.fn()] as const;
   };
   return {
-    default: ({ children, onInit }: any) => {
+    ReactFlow: ({ children, onInit }: any) => {
       React.useEffect(() => {
         onInit?.({ setCenter: setCenterMock, fitView: vi.fn() });
       }, [onInit]);

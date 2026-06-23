@@ -90,7 +90,7 @@ class GlobalRedisConnectionPool:
                 try:
                     await self._redis.close()
                 except Exception:
-                    pass
+                    logger.debug("[GlobalRedisPool] Failed to close Redis client after init failure", exc_info=True)
             self._redis = None
             self._initialized = False
             logger.error(f"[GlobalRedisPool] ❌ 连接池初始化失败: {e}")
@@ -151,7 +151,7 @@ class GlobalRedisConnectionPool:
                         try:
                             await self._redis.close()
                         except Exception:
-                            pass
+                            logger.debug("[GlobalRedisPool] Failed to close unhealthy Redis client", exc_info=True)
                         await self.initialize()
                 except asyncio.CancelledError:
                     break

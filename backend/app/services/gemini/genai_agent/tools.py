@@ -345,6 +345,7 @@ class ToolManager:
             try:
                 path = self._resolve_file_search_path(value)
             except Exception:
+                logger.debug("[ToolManager] Ignoring invalid file search store path", exc_info=True)
                 continue
             if not self._is_path_under_allowed_roots(path, allowed_roots):
                 continue
@@ -358,6 +359,7 @@ class ToolManager:
                     try:
                         resolved_candidate = candidate.resolve()
                     except Exception:
+                        logger.debug("[ToolManager] Ignoring unresolvable file search candidate", exc_info=True)
                         continue
                     if (
                         self._is_path_under_allowed_roots(resolved_candidate, allowed_roots)
@@ -393,6 +395,7 @@ class ToolManager:
             try:
                 root = self._resolve_file_search_path(value)
             except Exception:
+                logger.debug("[ToolManager] Ignoring invalid file search allowed root", exc_info=True)
                 continue
             marker = str(root)
             if marker in seen:
@@ -450,7 +453,7 @@ class ToolManager:
             if max_size_int > 0:
                 normalized["max_file_size_bytes"] = max_size_int
         except Exception:
-            pass
+            logger.debug("[ToolManager] Ignoring invalid max_file_size_bytes filter", exc_info=True)
 
         return normalized
 
@@ -541,6 +544,7 @@ class ToolManager:
                     continue
                 content = path.read_text(encoding="utf-8", errors="ignore")
             except Exception:
+                logger.debug("[ToolManager] Skipping unreadable file search candidate: %s", path, exc_info=True)
                 continue
             for line_no, line in enumerate(content.splitlines(), start=1):
                 match = pattern.search(line)

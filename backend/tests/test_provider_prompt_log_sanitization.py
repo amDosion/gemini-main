@@ -480,7 +480,7 @@ async def test_tongyi_image_edit_logs_local_upload_success_summary(
     oss_url = "oss://dashscope/private/local-upload.png?token=oss-secret"
     calls = []
 
-    def fake_resolve_local_public_file_path(value):
+    def fake_resolve_local_public_file_path_for_user(value, user_id=None, config=None):
         assert value == local_url
         return local_file
 
@@ -497,8 +497,8 @@ async def test_tongyi_image_edit_logs_local_upload_success_summary(
 
     monkeypatch.setattr(
         tongyi_image_edit_module,
-        "resolve_local_public_file_path",
-        fake_resolve_local_public_file_path,
+        "resolve_local_public_file_path_for_user",
+        fake_resolve_local_public_file_path_for_user,
     )
     monkeypatch.setattr(
         tongyi_image_edit_module,

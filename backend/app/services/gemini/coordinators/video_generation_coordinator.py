@@ -8,7 +8,6 @@ import asyncio
 import logging
 import os
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -53,6 +52,29 @@ from ....utils.attachment_handler import is_base64_url
 from ._config_cache import get_or_load as _cached_load
 
 logger = logging.getLogger(__name__)
+
+
+class FFmpegCommandError(RuntimeError):
+    """Raised when ffmpeg exits unsuccessfully while assembling video segments."""
+
+
+async def _run_ffmpeg_command(args: List[str]) -> None:
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode == 0:
+        return
+    detail = (stderr or stdout or b"").decode("utf-8", errors="replace").strip()
+    if detail:
+        raise FFmpegCommandError(f"ffmpeg failed with exit code {process.returncode}: {detail}")
+    raise FFmpegCommandError(f"ffmpeg failed with exit code {process.returncode}")
+
+
+def _run_ffmpeg_command_sync(args: List[str]) -> None:
+    asyncio.run(_run_ffmpeg_command(args))
 
 _LOCAL_ENHANCE_PROMPT_FALLBACK_MODEL = "gemini-2.5-pro"
 _LAST_FRAME_BRIDGE_CONTINUATION_TRIM_SECONDS = 1.0
@@ -770,7 +792,7 @@ class VideoGenerationCoordinator:
                     continue
 
                 trimmed_path = tmp_root / f"segment-{index:03d}-trimmed.mp4"
-                subprocess.run(
+                _run_ffmpeg_command_sync(
                     [
                         ffmpeg_path,
                         "-y",
@@ -794,9 +816,7 @@ class VideoGenerationCoordinator:
                         "-movflags",
                         "+faststart",
                         str(trimmed_path),
-                    ],
-                    check=True,
-                    capture_output=True,
+                    ]
                 )
                 prepared_paths.append(trimmed_path)
 
@@ -822,9 +842,9 @@ class VideoGenerationCoordinator:
                 str(output_path),
             ]
             try:
-                subprocess.run(concat_cmd, check=True, capture_output=True)
-            except subprocess.CalledProcessError:
-                subprocess.run(
+                _run_ffmpeg_command_sync(concat_cmd)
+            except FFmpegCommandError:
+                _run_ffmpeg_command_sync(
                     [
                         ffmpeg_path,
                         "-y",
@@ -848,9 +868,7 @@ class VideoGenerationCoordinator:
                         "-movflags",
                         "+faststart",
                         str(output_path),
-                    ],
-                    check=True,
-                    capture_output=True,
+                    ]
                 )
             return output_path.read_bytes()
 

@@ -319,7 +319,11 @@ class UploadWorkerPool:
                             source="reconcile",
                         )
                     except Exception:
-                        pass
+                        logger.debug(
+                            "[WorkerPool] Failed to append reconcile requeue log for task=%s",
+                            task.id,
+                            exc_info=True,
+                        )
                     continue
 
                 # 已在队列中则跳过
@@ -341,7 +345,11 @@ class UploadWorkerPool:
                         source="reconcile",
                     )
                 except Exception:
-                    pass
+                    logger.debug(
+                        "[WorkerPool] Failed to append reconcile enqueue log for task=%s",
+                        task.id,
+                        exc_info=True,
+                    )
 
             db.commit()
         except Exception as e:
@@ -1215,7 +1223,7 @@ class UploadWorkerPool:
             try:
                 verify_db.close()
             except Exception:
-                pass
+                logger.debug("[WorkerPool] Failed to close verification DB session", exc_info=True)
 
     async def _update_session_attachment(
         self,
